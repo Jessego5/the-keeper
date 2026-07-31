@@ -1,0 +1,14 @@
+[tool.pytest.ini_options]
+# backend/ on the path so tests import modules directly (persona, energy, ...).
+pythonpath = ["backend"]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+markers = [
+    "unit: fast, deterministic, no key/network/OS (Tier 1)",
+    "integration: real subsystems — OS sensors, MCP, running app (Tier 2)",
+    "eval: LLM behavior, needs OPENAI_API_KEY, non-deterministic rates (Tier 3)",
+    "mac: requires macOS hardware signals",
+]
+# Default run excludes evals (they cost money and are non-deterministic).
+# Run them explicitly with:  .venv/bin/pytest tests/evals -m eval
+addopts = "-m 'not eval'"

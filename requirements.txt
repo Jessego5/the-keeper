@@ -6,3 +6,6 @@ pyobjc-framework-Quartz; sys_platform == "darwin"
 python-dotenv
 openai
 mcp
+pytest
+pytest-asyncio
+httpx
