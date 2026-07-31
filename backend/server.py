@@ -26,9 +26,13 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from typing import Optional
 
+from pathlib import Path
+
 from fastapi import FastAPI
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
+
+STATIC_DIR = Path(__file__).resolve().parent / "static"
 
 import compose
 import energy
@@ -177,7 +181,8 @@ async def chat(body: ChatIn):
 
     reply = result.text or ""
     STATE.history.append({"role": "assistant", "content": reply, "ts": time.time()})
-    await _push("assistant", reply, "reply")
+    # Note: the reply is returned in the HTTP response and rendered from there;
+    # SSE (/events) carries ONLY unbidden proactive lines, so nothing double-renders.
 
     # Distill this exchange into the drawers, off the response path.
     asyncio.create_task(_distill_async(msg, reply))
@@ -254,6 +259,11 @@ async def set_config(body: ConfigIn):
 
 @app.get("/")
 async def root():
+    return FileResponse(STATIC_DIR / "index.html")
+
+
+@app.get("/info")
+async def info():
     return {"name": "Rusty Companion — the Keeper",
             "endpoints": ["/chat", "/events", "/state", "/config"],
             "facts_kept": len(STATE.store.facts)}
