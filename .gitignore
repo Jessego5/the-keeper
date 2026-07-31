@@ -5,3 +5,5 @@ __pycache__/
 .DS_Store
 memory_store/
 *.db
+backend/mcp.json
+keeper_sandbox/

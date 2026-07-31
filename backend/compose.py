@@ -17,10 +17,11 @@ not failing.
 
 from __future__ import annotations
 
+import json
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Any, Callable, Optional
 
 import persona
 import voice_eval
@@ -205,6 +206,67 @@ def openai_generator(
         return _call(fast, system, user, 128)
 
     return generate, fast_model
+
+
+async def tool_reply(
+    system: str,
+    user: str,
+    *,
+    mcp: Any,
+    model: str = "gpt-4o",
+    max_rounds: int = 4,
+    max_tokens: int = 400,
+) -> str:
+    """Passive-only: let the Keeper use MCP tools, then answer in voice.
+
+    Runs the model<->tool loop with the async OpenAI client: the model may call
+    tools (executed through `mcp`), sees their results, and eventually writes a
+    final line. Returns that line's text (scoring/voice-checking is the caller's
+    job — a tool-grounded factual answer is allowed to be plainer than a pure
+    proactive line, so it must not be replaced by a canned fallback).
+
+    This path is never used by the proactive loop, which stays sealed.
+    """
+    from openai import AsyncOpenAI
+
+    aclient = AsyncOpenAI()
+    tools = mcp.openai_tools() if mcp is not None else []
+    messages: list[dict] = [
+        {"role": "system", "content": system},
+        {"role": "user", "content": user or "."},
+    ]
+
+    for _ in range(max_rounds):
+        resp = await aclient.chat.completions.create(
+            model=model, messages=messages, max_tokens=max_tokens,
+            tools=tools or None,
+            tool_choice="auto" if tools else "none",
+        )
+        msg = resp.choices[0].message
+        if not msg.tool_calls:
+            return msg.content or ""
+        # Record the assistant's tool-call turn, then satisfy each call.
+        messages.append({
+            "role": "assistant", "content": msg.content,
+            "tool_calls": [
+                {"id": tc.id, "type": "function",
+                 "function": {"name": tc.function.name,
+                              "arguments": tc.function.arguments}}
+                for tc in msg.tool_calls],
+        })
+        for tc in msg.tool_calls:
+            try:
+                args = json.loads(tc.function.arguments or "{}")
+            except json.JSONDecodeError:
+                args = {}
+            out = await mcp.call(tc.function.name, args)
+            messages.append({"role": "tool", "tool_call_id": tc.id,
+                            "content": out[:4000]})
+
+    # Ran out of rounds — force a final answer with tools off.
+    resp = await aclient.chat.completions.create(
+        model=model, messages=messages, max_tokens=max_tokens)
+    return resp.choices[0].message.content or ""
 
 
 def make_generator() -> tuple[Generator, Optional[Generator]]:

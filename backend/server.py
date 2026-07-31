@@ -37,9 +37,26 @@ STATIC_DIR = Path(__file__).resolve().parent / "static"
 import compose
 import energy
 import memory
+import persona
 import proactive
 import sensors
+import tools
 import voice_eval
+
+TOOL_MODEL = "gpt-4o"   # model used for the passive tool-calling path
+
+# Reconciles "no window on the world" with "tools when asked": the sealing rule
+# bars INVENTING the world unbidden. When they hand you a key — ask you to look —
+# looking is keeping, not trespassing. This is appended only on the passive tool
+# path; the proactive loop never sees it and stays sealed.
+TOOL_ADDENDUM = """You have been given tools to look at what is theirs — files they
+keep, and the like. When they ask you to look at something, USE the tools to look,
+then answer from what you actually find. Do not decline, and do not guess at the
+contents. If a tool lists the folders or files you may read, follow it to the one
+they mean, then read it. Reading what they have pointed you to is an act of keeping,
+not a window on the world — the sealing rule bars inventing events unbidden, not
+reading what they asked you to read. Answer in your own voice, but true to what the
+tool returned."""
 
 RECENT_WINDOW_MIN = 240.0   # "recent" messages = last 4h, for context richness
 
@@ -60,6 +77,7 @@ class AppState:
     generate: compose.Generator = compose.stub_generator
     fast: Optional[compose.Generator] = None
     wake: Optional[asyncio.Event] = None   # set to interrupt the loop's sleep
+    mcp: Optional[tools.MCPManager] = None  # passive-loop tools; None until connected
 
     def minutes_since_user(self) -> Optional[float]:
         if self.last_user_at is None:
@@ -144,11 +162,22 @@ async def _proactive_loop() -> None:
 async def lifespan(app: FastAPI):
     STATE.generate, STATE.fast = compose.make_generator()
     STATE.wake = asyncio.Event()
+    # Passive-loop tools (optional). Connects only if backend/mcp.json exists.
+    STATE.mcp = tools.MCPManager.from_config()
+    try:
+        await STATE.mcp.connect()
+    except Exception as exc:  # noqa: BLE001 - never let MCP break startup
+        print(f"[mcp] connect failed: {exc}", flush=True)
     task = asyncio.create_task(_proactive_loop())
     try:
         yield
     finally:
         task.cancel()
+        if STATE.mcp is not None:
+            try:
+                await STATE.mcp.aclose()
+            except Exception:  # noqa: BLE001
+                pass
 
 
 app = FastAPI(title="Rusty Companion — the Keeper", lifespan=lifespan)
@@ -174,12 +203,23 @@ async def chat(body: ChatIn):
     ctx = sensors.read().to_context_line()
     water = voice_eval.detect_state(msg)
 
-    result = await asyncio.to_thread(
-        compose.compose, "passive", water,
-        generate=STATE.generate, fast_model=STATE.fast,
-        user_message=msg, memory=mem, context=ctx)
+    used_tools = STATE.mcp is not None and STATE.mcp.has_tools
+    if used_tools:
+        # Tool path: the Keeper may reach for MCP tools, then answer. A
+        # tool-grounded answer can be plainer (a real fact in voice), so we score
+        # it for information only and never replace it with a canned fallback.
+        system = persona.build_system_prompt("passive", water, memory=mem, context=ctx)
+        system = system + "\n\n---\n\n" + TOOL_ADDENDUM
+        reply = await compose.tool_reply(system, msg, mcp=STATE.mcp, model=TOOL_MODEL)
+        report = voice_eval.evaluate(reply)   # deterministic, for logging
+        score, fell_back = report.score, False
+    else:
+        result = await asyncio.to_thread(
+            compose.compose, "passive", water,
+            generate=STATE.generate, fast_model=STATE.fast,
+            user_message=msg, memory=mem, context=ctx)
+        reply, score, fell_back = result.text or "", result.score, result.fell_back
 
-    reply = result.text or ""
     STATE.history.append({"role": "assistant", "content": reply, "ts": time.time()})
     # Note: the reply is returned in the HTTP response and rendered from there;
     # SSE (/events) carries ONLY unbidden proactive lines, so nothing double-renders.
@@ -189,8 +229,8 @@ async def chat(body: ChatIn):
     if STATE.wake is not None:
         STATE.wake.set()   # re-tick: energy just reset, loop should back off
 
-    return {"reply": reply, "water_state": water, "score": result.score,
-            "fell_back": result.fell_back}
+    return {"reply": reply, "water_state": water, "score": score,
+            "fell_back": fell_back, "used_tools": used_tools}
 
 
 async def _distill_async(user_msg: str, reply: str) -> None:
