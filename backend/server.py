@@ -201,7 +201,7 @@ async def chat(body: ChatIn):
 
     mem = memory.recall(STATE.store, msg, k=4)
     ctx = sensors.read().to_context_line()
-    water = voice_eval.detect_state(msg)
+    water = voice_eval.read_register(msg)   # meet them in the right register
 
     used_tools = STATE.mcp is not None and STATE.mcp.has_tools
     if used_tools:

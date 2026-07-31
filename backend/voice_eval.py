@@ -92,6 +92,26 @@ OVERT_HOPE = {
     "you'll be okay", "it gets better", "hold on", "don't give up",
 }
 
+# --- Emotional signal in the PERSON's message (not the Keeper's line). ---
+# People don't speak in water vocabulary; they say "I'm sad," "I'm stuck." These
+# pick the register a reply should meet them in. Distress -> the cold (frozen);
+# an upswing -> the moving water (tidal). This is what read_register() reads.
+FROZEN_FEELING = {
+    "sad", "sadness", "stuck", "tired", "exhausted", "drained", "lost", "empty",
+    "numb", "alone", "lonely", "hopeless", "heavy", "down", "low", "depressed",
+    "anxious", "scared", "afraid", "worthless", "overwhelmed", "dread", "grief",
+    "grieving", "hurt", "hurting", "crying", "cry", "ache", "aching", "weary",
+    "frozen", "cold", "stalled", "unmotivated", "burnt out", "burned out",
+    "can't", "cant", "give up", "giving up", "no point", "nothing matters",
+    "so hard", "falling apart", "not okay",
+}
+TIDAL_FEELING = {
+    "better", "lighter", "hopeful", "hope", "started", "began", "back to",
+    "went back", "did it", "finally", "progress", "moving", "moved forward",
+    "good day", "okay now", "relieved", "calmer", "easier", "lifted", "brighter",
+    "grateful", "excited", "proud",
+}
+
 
 # ---------------------------------------------------------------------------
 # Data structures
@@ -221,6 +241,23 @@ def detect_state(text: str) -> str:
     if thaw > tide:
         return "frozen"
     return "tidal"            # moving, or calm/ambiguous — the resting default
+
+
+def read_register(message: str) -> str:
+    """Pick the register to MEET the person in, from what they actually said.
+
+    Unlike detect_state (which reads water vocabulary in the Keeper's own lines),
+    this reads the person's emotional signal — they speak in feelings, not tides.
+    Distress -> "frozen" (stay in the cold with them); a clear upswing -> "tidal".
+    Falls back to motif detection, then to the calm default. Used to choose the
+    register for a passive reply, so sadness is never met with movement.
+    """
+    low = _lower(message)
+    frozen = len(_contains_any(low, FROZEN_FEELING))
+    tidal = len(_contains_any(low, TIDAL_FEELING))
+    if frozen or tidal:
+        return "frozen" if frozen >= tidal else "tidal"
+    return detect_state(message)   # no feeling words — fall back to motif/default
 
 
 # ---------------------------------------------------------------------------
