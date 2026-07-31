@@ -29,8 +29,20 @@ async def client(monkeypatch):
         server.STATE.generate, server.STATE.fast = compose.stub_generator, None
         transport = httpx.ASGITransport(app=server.app)
         async with httpx.AsyncClient(transport=transport,
-                                     base_url="http://t") as c:
+                                     base_url="http://localhost") as c:
             yield c
+
+
+async def test_rejects_foreign_host(client):
+    # DNS-rebinding defense: a request whose Host isn't localhost/127.0.0.1 (as a
+    # malicious website's rebind would send) must be refused, not served.
+    r = await client.get("/state", headers={"host": "evil.example.com"})
+    assert r.status_code == 400, "foreign Host was served — DNS-rebinding open"
+
+
+async def test_allows_localhost(client):
+    assert (await client.get("/state", headers={"host": "localhost"})).status_code == 200
+    assert (await client.get("/state", headers={"host": "127.0.0.1:8737"})).status_code == 200
 
 
 async def test_chat_returns_a_reply(client):
