@@ -178,10 +178,12 @@ def deterministic_checks(text: str,
         "restraint_questions", q_ok, 0.5,
         f"{qmarks} question marks"))
 
-    # Rule 3 — at least one motif-noun anchors the closed vocabulary.
+    # Rule 3 — at least one motif-noun anchors the closed vocabulary. Weighted
+    # heavily: a line with NO water motif is almost always off-voice reportage
+    # (it reads like a notification), so losing this should sink the score.
     motifs = [n for n in motif_nouns if n in low]
     results.append(RuleResult(
-        "motif_noun", bool(motifs), 1.0,
+        "motif_noun", bool(motifs), 2.5,
         f"motifs: {motifs}" if motifs else "no motif noun"))
 
     # Tone guard — greeting-card / therapy-speak. Hard fail: kills the whole voice.
