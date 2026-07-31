@@ -6,39 +6,55 @@
 <title>The Keeper</title>
 <style>
   :root {
-    --umber:      #211a14;   /* deep aged background            */
-    --umber-deep: #17120d;   /* vignette edge                  */
-    --paper:      #d8c7a8;   /* aged-paper text (the Keeper)   */
-    --paper-dim:  #a8946f;   /* the person's own lines         */
-    --rust:       #8a5a3a;   /* accent, underline, tide-mark   */
-    --faint:      #5c4a38;   /* timestamps, hairlines          */
+    --deep:    #081316;   /* the dark bottom                    */
+    --sea:     #0d2327;   /* mid water                          */
+    --surface: #14383a;   /* faint light near the surface       */
+    --foam:    #cfe0da;   /* moonlit text (the Keeper)          */
+    --foam-dim:#7ea59d;   /* the person's own lines             */
+    --tide:    #5aa39a;   /* accent, tide-mark, current         */
+    --current: #2c5254;   /* hairlines, timestamps              */
     --serif: "Iowan Old Style", "Palatino Linotype", Palatino,
              "Book Antiqua", Georgia, "Times New Roman", serif;
   }
 
   * { box-sizing: border-box; }
 
-  html, body {
-    height: 100%;
-    margin: 0;
-    background: var(--umber);
-    color: var(--paper);
+  html, body { height: 100%; margin: 0; }
+  body {
+    /* descending depth: lighter at the surface, dark as you sink */
+    background: linear-gradient(180deg,
+                var(--surface) 0%, var(--sea) 38%, var(--deep) 100%);
+    color: var(--foam);
     font-family: var(--serif);
     -webkit-font-smoothing: antialiased;
+    overflow: hidden;
   }
 
-  /* soft vignette — the photograph's darkened edges */
-  body::before {
-    content: "";
-    position: fixed; inset: 0; z-index: 0; pointer-events: none;
-    background: radial-gradient(120% 90% at 50% 42%,
-                rgba(0,0,0,0) 42%, var(--umber-deep) 100%);
+  /* slow pools of light drifting like sun through water */
+  #tide-glow {
+    position: fixed; inset: -20%; z-index: 0; pointer-events: none;
+    background:
+      radial-gradient(38% 30% at 30% 22%, rgba(90,163,154,0.16), transparent 70%),
+      radial-gradient(46% 34% at 74% 40%, rgba(120,200,190,0.10), transparent 72%),
+      radial-gradient(40% 40% at 52% 80%, rgba(40,90,95,0.18), transparent 75%);
+    filter: blur(8px);
+    animation: drift 42s ease-in-out infinite alternate;
   }
-  /* fine paper grain — inline SVG turbulence, no external asset */
+  @keyframes drift {
+    from { transform: translate3d(-3%, -2%, 0) scale(1.05); }
+    to   { transform: translate3d(4%, 3%, 0) scale(1.12); }
+  }
+
+  /* depth vignette — dark toward the edges and the floor */
+  body::before {
+    content: ""; position: fixed; inset: 0; z-index: 0; pointer-events: none;
+    background: radial-gradient(130% 100% at 50% 30%,
+                transparent 40%, rgba(3,8,10,0.85) 100%);
+  }
+  /* fine grain, like silt suspended in the water */
   body::after {
-    content: "";
-    position: fixed; inset: 0; z-index: 0; pointer-events: none;
-    opacity: 0.05; mix-blend-mode: overlay;
+    content: ""; position: fixed; inset: 0; z-index: 0; pointer-events: none;
+    opacity: 0.045; mix-blend-mode: overlay;
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
   }
 
@@ -50,101 +66,105 @@
   }
 
   header {
-    text-align: center;
-    padding: 2rem 0 1.25rem;
+    text-align: center; padding: 2rem 0 1.1rem;
     letter-spacing: 0.5em; text-indent: 0.5em;
     font-size: 0.72rem; text-transform: uppercase;
-    color: var(--rust); opacity: 0.75;
+    color: var(--tide); opacity: 0.8;
   }
-  header .rule {
-    margin: 0.9rem auto 0; width: 3rem; height: 1px;
-    background: var(--faint);
+  /* a slow tide-line under the title */
+  header .wave {
+    margin: 1rem auto 0; width: 8rem; height: 8px;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='48' height='8'%3E%3Cpath d='M0 4 Q 12 0 24 4 T 48 4' fill='none' stroke='%232c5254' stroke-width='1'/%3E%3C/svg%3E");
+    background-repeat: repeat-x; background-size: 24px 8px;
+    animation: tideline 9s linear infinite;
   }
+  @keyframes tideline { to { background-position-x: 24px; } }
 
   #log {
-    flex: 1 1 auto; overflow-y: auto;
-    padding: 1rem 0 1.5rem;
-    scrollbar-width: thin; scrollbar-color: var(--faint) transparent;
+    flex: 1 1 auto; overflow-y: auto; padding: 1rem 0 1.5rem;
+    scrollbar-width: thin; scrollbar-color: var(--current) transparent;
   }
   #log::-webkit-scrollbar { width: 6px; }
-  #log::-webkit-scrollbar-thumb { background: var(--faint); border-radius: 3px; }
+  #log::-webkit-scrollbar-thumb { background: var(--current); border-radius: 3px; }
 
-  /* empty-state watermark */
   #log .watermark {
     height: 100%; display: flex; align-items: center; justify-content: center;
-    color: var(--faint); font-style: italic; font-size: 1.05rem;
-    letter-spacing: 0.04em; opacity: 0.8;
+    color: var(--current); font-style: italic; font-size: 1.05rem;
+    letter-spacing: 0.04em; opacity: 0.9;
   }
 
-  .line {
-    margin: 1.35rem 0; line-height: 1.6;
-    animation: surface 1.1s ease both;
-  }
-  @keyframes surface {
-    from { opacity: 0; transform: translateY(6px); filter: blur(1px); }
+  .line { margin: 1.35rem 0; line-height: 1.6; animation: rise 1.3s ease both; }
+  /* surface up from the deep */
+  @keyframes rise {
+    from { opacity: 0; transform: translateY(14px); filter: blur(2px); }
     to   { opacity: 1; transform: none; filter: none; }
   }
 
-  /* the Keeper — like lines in a letter, no bubble */
   .line.keeper .text {
-    font-size: 1.28rem; color: var(--paper);
-    letter-spacing: 0.01em;
+    font-size: 1.28rem; color: var(--foam); letter-spacing: 0.01em;
+    text-shadow: 0 0 22px rgba(90,163,154,0.12);   /* a faint underwater glow */
   }
-  .line.keeper.proactive .text {
-    font-style: italic; color: var(--paper);
-  }
+  .line.keeper.proactive .text { font-style: italic; }
   .line.keeper.proactive .text::before {
-    content: "\203A";           /* a small tide-mark for unbidden lines */
-    color: var(--rust); margin-right: 0.55rem; font-style: normal;
+    content: "\223F";           /* a sine-wave tide-mark for unbidden lines */
+    color: var(--tide); margin-right: 0.55rem; font-style: normal;
+    text-shadow: 0 0 10px rgba(90,163,154,0.5);
   }
 
-  /* the person — quieter, set to the right, written into the house */
   .line.me { text-align: right; }
-  .line.me .text {
-    font-size: 1rem; color: var(--paper-dim);
-    font-style: italic;
-  }
+  .line.me .text { font-size: 1rem; color: var(--foam-dim); font-style: italic; }
 
   .ts {
-    display: block; margin-top: 0.4rem;
-    font-size: 0.66rem; letter-spacing: 0.08em;
-    color: var(--faint); font-style: normal;
+    display: block; margin-top: 0.4rem; font-size: 0.66rem;
+    letter-spacing: 0.08em; color: var(--current); font-style: normal;
   }
   .line.me .ts { text-align: right; }
 
-  /* the composing pause — a slow tide-mark pulse */
-  #pending { margin: 1.35rem 0; color: var(--rust); font-size: 1.28rem; }
+  #pending { margin: 1.35rem 0; color: var(--tide); font-size: 1.28rem; }
   #pending::after {
-    content: "\203A"; animation: breathe 2.4s ease-in-out infinite;
+    content: "\223F"; animation: breathe 2.6s ease-in-out infinite;
+    text-shadow: 0 0 12px rgba(90,163,154,0.5);
   }
-  @keyframes breathe { 0%,100% { opacity: 0.25; } 50% { opacity: 0.9; } }
+  @keyframes breathe { 0%,100% { opacity: 0.25; } 50% { opacity: 0.95; } }
 
   footer { padding: 0.5rem 0 1.75rem; }
-  #compose { display: flex; align-items: baseline; gap: 0.6rem;
-             border-bottom: 1px solid var(--faint); padding-bottom: 0.5rem; }
-  #compose:focus-within { border-color: var(--rust); }
-  #compose .prompt { color: var(--rust); font-size: 1rem; }
+  #compose {
+    display: flex; align-items: baseline; gap: 0.6rem;
+    border-bottom: 1px solid var(--current); padding-bottom: 0.5rem;
+    transition: border-color 0.4s;
+  }
+  #compose:focus-within { border-color: var(--tide); }
+  #compose .prompt {
+    color: var(--tide); font-size: 1rem;
+    text-shadow: 0 0 10px rgba(90,163,154,0.4);
+  }
   #entry {
     flex: 1; background: transparent; border: none; outline: none;
-    color: var(--paper); font-family: var(--serif); font-size: 1.05rem;
-    caret-color: var(--rust); font-style: italic;
+    color: var(--foam); font-family: var(--serif); font-size: 1.05rem;
+    caret-color: var(--tide); font-style: italic;
   }
-  #entry::placeholder { color: var(--faint); font-style: italic; }
+  #entry::placeholder { color: var(--current); font-style: italic; }
 
-  #hint { text-align: center; font-size: 0.62rem; color: var(--faint);
+  #hint { text-align: center; font-size: 0.62rem; color: var(--current);
           margin-top: 0.75rem; letter-spacing: 0.06em; min-height: 1em; }
+
+  @media (prefers-reduced-motion: reduce) {
+    #tide-glow, header .wave { animation: none; }
+    .line { animation: none; }
+  }
 </style>
 </head>
 <body>
+  <div id="tide-glow"></div>
   <div id="shell">
     <header>
       the keeper
-      <div class="rule"></div>
+      <div class="wave"></div>
     </header>
     <div id="log"><div class="watermark">the water is still.</div></div>
     <footer>
       <form id="compose" autocomplete="off">
-        <span class="prompt">&rsaquo;</span>
+        <span class="prompt">&#8767;</span>
         <input id="entry" placeholder="say something to the water&hellip;" autofocus>
       </form>
       <div id="hint"></div>
@@ -200,7 +220,6 @@
     if (!msg) return;
     entry.value = "";
     addLine("user", msg, "reply");
-    // ask for notification permission on the first real gesture
     if ("Notification" in window && Notification.permission === "default") {
       Notification.requestPermission();
     }
@@ -220,14 +239,16 @@
     }
   });
 
-  // unbidden lines arrive over SSE
   const events = new EventSource("/events");
   events.onmessage = (e) => {
     let m; try { m = JSON.parse(e.data); } catch { return; }
     if (!m.content) return;
     addLine("assistant", m.content, m.kind || "proactive", m.ts);
-    if ("Notification" in window && Notification.permission === "granted"
-        && document.visibilityState !== "visible") {
+    // Banner only when the person is away: the tab is hidden OR the window isn't
+    // focused (so a still-visible-but-unfocused window still notifies). When the
+    // tab is the one they're looking at, the on-page line is enough.
+    const away = document.visibilityState !== "visible" || !document.hasFocus();
+    if ("Notification" in window && Notification.permission === "granted" && away) {
       new Notification("the keeper", { body: m.content, silent: true });
     }
   };
