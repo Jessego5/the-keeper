@@ -1,0 +1,163 @@
+"""sensors.py — the Keeper's senses. Read-only macOS presence signals.
+
+Answers three cheap questions, none of which trip a permission dialog:
+
+    idle_seconds   how long since the human last touched keyboard/mouse
+    screen_locked  is the screen locked (they've stepped away)
+    frontmost_app  which app has focus (name only, never window contents)
+
+Design rules:
+  - Read-only. This module observes; it never acts.
+  - No scary permissions. `NSWorkspace.frontmostApplication()` gives the app NAME
+    without Accessibility access; only reading INSIDE windows would need it, and we
+    deliberately never do. That boundary is the whole privacy story.
+  - Degrade to {} off macOS or if a framework is missing, so nothing downstream has
+    to special-case the platform.
+
+What this feeds:
+  - the water-state read (idle at 2am -> frozen; active daytime -> tidal),
+  - the proactive gate (never speak into a locked screen),
+  - the Keeper's voice (the focused app is a concrete, on-voice detail).
+"""
+
+from __future__ import annotations
+
+import subprocess
+import sys
+from dataclasses import dataclass
+
+_IS_MAC = sys.platform == "darwin"
+
+# Import the macOS frameworks once, tolerantly. If pyobjc isn't present we simply
+# lose the lock/app signals and keep idle (which is pure shell).
+try:  # pragma: no cover - platform dependent
+    from AppKit import NSWorkspace  # type: ignore
+except Exception:  # noqa: BLE001
+    NSWorkspace = None
+
+try:  # pragma: no cover - platform dependent
+    from Quartz import CGSessionCopyCurrentDictionary  # type: ignore
+except Exception:  # noqa: BLE001
+    CGSessionCopyCurrentDictionary = None
+
+
+@dataclass(frozen=True)
+class Presence:
+    """One read of the machine. Any field may be None if unreadable."""
+
+    idle_seconds: float | None = None
+    screen_locked: bool | None = None
+    frontmost_app: str | None = None
+
+    @property
+    def available(self) -> bool:
+        """True if we got at least one real signal."""
+        return any(v is not None for v in (
+            self.idle_seconds, self.screen_locked, self.frontmost_app))
+
+    def to_context_line(self) -> str:
+        """Render for the system prompt's context block. Empty string if blind.
+
+        Kept factual and terse; the model is told elsewhere never to recite it.
+        """
+        if not self.available:
+            return ""
+        bits: list[str] = []
+        if self.idle_seconds is not None:
+            bits.append(f"idle for {_human_duration(self.idle_seconds)}")
+        if self.screen_locked is not None:
+            bits.append("screen locked" if self.screen_locked else "screen awake")
+        if self.frontmost_app:
+            bits.append(f"focused app: {self.frontmost_app}")
+        return "; ".join(bits)
+
+
+# --------------------------------------------------------------------------- #
+# Individual reads. Each returns None rather than raising.
+# --------------------------------------------------------------------------- #
+
+def read_idle_seconds() -> float | None:
+    """Seconds since the last HID (keyboard/mouse) event.
+
+    Parses `ioreg -c IOHIDSystem`'s HIDIdleTime, which is in nanoseconds. Pure
+    shell, no dependency, no permission.
+    """
+    if not _IS_MAC:
+        return None
+    try:
+        out = subprocess.run(
+            ["ioreg", "-c", "IOHIDSystem"],
+            capture_output=True, text=True, timeout=2,
+        ).stdout
+    except (OSError, subprocess.SubprocessError):
+        return None
+    for line in out.splitlines():
+        if "HIDIdleTime" in line:
+            # line looks like:  "HIDIdleTime" = 113780083
+            try:
+                ns = int(line.split("=")[-1].strip())
+            except ValueError:
+                return None
+            return ns / 1_000_000_000
+    return None
+
+
+def read_screen_locked() -> bool | None:
+    """True if the login session's screen is locked. No permission needed."""
+    if not _IS_MAC or CGSessionCopyCurrentDictionary is None:
+        return None
+    try:
+        d = CGSessionCopyCurrentDictionary()
+    except Exception:  # noqa: BLE001
+        return None
+    if not d:
+        return None
+    return bool(d.get("CGSSessionScreenIsLocked", 0))
+
+
+def read_frontmost_app() -> str | None:
+    """Localized name of the focused app (e.g. 'Safari'). Name only — never
+    window titles or contents, so no Accessibility prompt."""
+    if not _IS_MAC or NSWorkspace is None:
+        return None
+    try:
+        app = NSWorkspace.sharedWorkspace().frontmostApplication()
+    except Exception:  # noqa: BLE001
+        return None
+    if app is None:
+        return None
+    name = app.localizedName()
+    return str(name) if name else None
+
+
+def read() -> Presence:
+    """Take one full read of the machine. Never raises."""
+    return Presence(
+        idle_seconds=read_idle_seconds(),
+        screen_locked=read_screen_locked(),
+        frontmost_app=read_frontmost_app(),
+    )
+
+
+# --------------------------------------------------------------------------- #
+# Helpers
+# --------------------------------------------------------------------------- #
+
+def _human_duration(seconds: float) -> str:
+    s = int(seconds)
+    if s < 90:
+        return f"{s}s"
+    m = s // 60
+    if m < 90:
+        return f"{m}m"
+    h = m // 60
+    if h < 48:
+        return f"{h}h"
+    return f"{h // 24}d"
+
+
+if __name__ == "__main__":
+    p = read()
+    print("Presence:", p)
+    print("context line:", repr(p.to_context_line()))
+    print("available:", p.available)

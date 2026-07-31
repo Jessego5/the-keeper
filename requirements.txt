@@ -1,0 +1,7 @@
+anthropic
+fastapi[standard]
+uvicorn
+pyobjc-framework-Cocoa; sys_platform == "darwin"
+pyobjc-framework-Quartz; sys_platform == "darwin"
+python-dotenv
+openai
