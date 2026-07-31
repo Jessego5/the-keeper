@@ -1,0 +1,9 @@
+{
+  "servers": [
+    {
+      "name": "files",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/absolute/path/to/a/folder"]
+    }
+  ]
+}
