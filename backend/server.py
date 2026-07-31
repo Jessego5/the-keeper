@@ -31,6 +31,7 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 
@@ -186,6 +187,13 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Rusty Companion — the Keeper", lifespan=lifespan)
+
+# DNS-rebinding defense: only serve requests whose Host is localhost. A malicious
+# website that rebinds its domain to 127.0.0.1 would send its own Host header, so
+# it is refused. This is the main thing standing in for auth on a local, no-login
+# app — do NOT expose this server publicly without real authentication.
+app.add_middleware(TrustedHostMiddleware,
+                   allowed_hosts=["localhost", "127.0.0.1"])
 
 
 # --------------------------------------------------------------------------- #

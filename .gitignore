@@ -8,3 +8,4 @@ memory_store/
 backend/mcp.json
 keeper_sandbox/
 .keeper.log
+DESIGN_NOTES.md
