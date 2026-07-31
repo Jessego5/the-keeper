@@ -45,6 +45,10 @@ import voice_eval
 
 TOOL_MODEL = "gpt-4o"   # model used for the passive tool-calling path
 
+# Shown in the Keeper's own register when generation fails (outage, rate limit),
+# so a broken model degrades to atmosphere instead of a 500 or a stack trace.
+ERROR_LINE = "The line to the water has gone quiet. Stay; it returns."
+
 # Reconciles "no window on the world" with "tools when asked": the sealing rule
 # bars INVENTING the world unbidden. When they hand you a key — ask you to look —
 # looking is keeping, not trespassing. This is appended only on the passive tool
@@ -211,28 +215,36 @@ async def chat(body: ChatIn):
     water = STATE.current_register or voice_eval.detect_state(msg)
 
     used_tools = STATE.mcp is not None and STATE.mcp.has_tools
-    if used_tools:
-        # Tool path: the Keeper may reach for MCP tools, then answer. A
-        # tool-grounded answer can be plainer (a real fact in voice), so we score
-        # it for information only and never replace it with a canned fallback.
-        system = persona.build_system_prompt("passive", water, memory=mem, context=ctx)
-        system = system + "\n\n---\n\n" + TOOL_ADDENDUM
-        reply = await compose.tool_reply(system, msg, mcp=STATE.mcp, model=TOOL_MODEL)
-        report = voice_eval.evaluate(reply)   # deterministic, for logging
-        score, fell_back = report.score, False
-    else:
-        result = await asyncio.to_thread(
-            compose.compose, "passive", water,
-            generate=STATE.generate, fast_model=STATE.fast,
-            user_message=msg, memory=mem, context=ctx)
-        reply, score, fell_back = result.text or "", result.score, result.fell_back
+    try:
+        if used_tools:
+            # Tool path: the Keeper may reach for MCP tools, then answer. A
+            # tool-grounded answer can be plainer (a real fact in voice), so we
+            # score it for information only, never replacing it with a fallback.
+            system = persona.build_system_prompt(
+                "passive", water, memory=mem, context=ctx)
+            system = system + "\n\n---\n\n" + TOOL_ADDENDUM
+            reply = await compose.tool_reply(
+                system, msg, mcp=STATE.mcp, model=TOOL_MODEL)
+            report = voice_eval.evaluate(reply)   # deterministic, for logging
+            score, fell_back = report.score, False
+        else:
+            result = await asyncio.to_thread(
+                compose.compose, "passive", water,
+                generate=STATE.generate, fast_model=STATE.fast,
+                user_message=msg, memory=mem, context=ctx)
+            reply, score, fell_back = result.text or "", result.score, result.fell_back
+    except Exception as exc:  # noqa: BLE001 - the water must never 500 at them
+        print(f"[chat] generation failed: {type(exc).__name__}: {exc}", flush=True)
+        reply, score, fell_back = ERROR_LINE, None, True
 
     STATE.history.append({"role": "assistant", "content": reply, "ts": time.time()})
     # Note: the reply is returned in the HTTP response and rendered from there;
     # SSE (/events) carries ONLY unbidden proactive lines, so nothing double-renders.
 
-    # Distill this exchange into the drawers, off the response path.
-    asyncio.create_task(_distill_async(msg, reply))
+    # Distill this exchange into the drawers, off the response path — but not a
+    # failed turn, which carries no real reply to learn from.
+    if reply != ERROR_LINE:
+        asyncio.create_task(_distill_async(msg, reply))
     if STATE.wake is not None:
         STATE.wake.set()   # re-tick: energy just reset, loop should back off
 
