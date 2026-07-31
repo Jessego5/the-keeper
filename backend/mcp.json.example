@@ -3,7 +3,10 @@
     {
       "name": "files",
       "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/absolute/path/to/a/folder"]
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/absolute/path/to/a/folder"],
+
+      "read_only": true,
+      "_comment": "read_only (default true) blocks write/edit/delete tools. Set false to allow them. Optional: \"tools\": [\"read_file\",\"list_directory\"] to allow ONLY those; \"deny\": [\"foo\"] to block specific names."
     }
   ]
 }

@@ -21,7 +21,7 @@ import json
 import re
 from contextlib import AsyncExitStack
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 CONFIG_PATH = Path(__file__).resolve().parent / "mcp.json"
 
@@ -29,9 +29,22 @@ CONFIG_PATH = Path(__file__).resolve().parent / "mcp.json"
 _QUALIFY = "__"
 _NAME_OK = re.compile(r"[^a-zA-Z0-9_-]")
 
+# Tool names hinting at mutation. Blocked by default so the Keeper can READ what
+# is yours but never change it. A server spec may opt back in with
+# "read_only": false (or narrow it with "tools"/"deny" allow/deny lists).
+_MUTATING = (
+    "write", "edit", "delete", "remove", "move", "rename", "create", "mkdir",
+    "unlink", "patch", "append", "modify", "update", "truncate", "drop", "put",
+)
+
 
 def _safe(name: str) -> str:
     return _NAME_OK.sub("_", name)
+
+
+def _is_mutating(name: str) -> bool:
+    n = name.lower()
+    return any(k in n for k in _MUTATING)
 
 
 class MCPManager:
@@ -81,6 +94,9 @@ class MCPManager:
 
         for spec in self.specs:
             name = _safe(spec.get("name", "srv"))
+            read_only = spec.get("read_only", True)
+            allow = set(spec.get("tools") or [])   # if set, ONLY these (by real name)
+            deny = set(spec.get("deny") or [])
             try:
                 params = StdioServerParameters(
                     command=spec["command"], args=spec.get("args", []),
@@ -95,7 +111,16 @@ class MCPManager:
                 print(f"[mcp] server {name!r} failed: {exc}", flush=True)
                 continue
 
+            blocked = 0
             for t in listed.tools:
+                # Filter: explicit allow/deny first, then the read-only default.
+                if allow and t.name not in allow:
+                    continue
+                if t.name in deny:
+                    continue
+                if read_only and _is_mutating(t.name):
+                    blocked += 1
+                    continue
                 qualified = f"{name}{_QUALIFY}{_safe(t.name)}"
                 # SDK versions differ: input_schema (snake) vs inputSchema (camel).
                 schema = (getattr(t, "input_schema", None)
@@ -110,7 +135,9 @@ class MCPManager:
                     },
                 })
                 self._route[qualified] = (session, t.name)
-            print(f"[mcp] {name}: {len(listed.tools)} tools", flush=True)
+            kept = len([q for q in self._route if q.startswith(name + _QUALIFY)])
+            note = f" ({blocked} mutating blocked, read-only)" if blocked else ""
+            print(f"[mcp] {name}: {kept} tools{note}", flush=True)
 
         self.connected = True
 
