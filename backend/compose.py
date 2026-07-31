@@ -100,7 +100,9 @@ def compose(
                    scoring is deterministic-only (still catches hedges/sentiment/
                    length/motif — the hard fails).
     threshold:     min fidelity to accept a generated line.
-    max_attempts:  total generations before falling back to a SAFE_LINE.
+    max_attempts:  generations tried before giving up on passing threshold. In
+                   passive mode the best real attempt is then kept unless it hard-
+                   failed (sentiment/hedge), in which case a SAFE_LINE stands in.
 
     In drift mode the output is a private memory note, not a sent line: it is
     returned verbatim (no scoring, no fallback), since the voice rests there.
@@ -123,6 +125,7 @@ def compose(
             mode=mode, attempts=1, fell_back=False, score=None)
 
     best: Optional[voice_eval.VoiceReport] = None
+    best_text: Optional[str] = None
 
     for attempt in range(1, max_attempts + 1):
         raw = generate(system, user_turn).strip()
@@ -137,7 +140,7 @@ def compose(
             raw, fast_model=fast_model, threshold=threshold)
 
         if best is None or report.score > best.score:
-            best = report
+            best, best_text = report, raw
 
         if report.passed:
             return ComposeResult(
@@ -145,14 +148,25 @@ def compose(
                 attempts=attempt, fell_back=False, score=report.score,
                 report=report)
 
-    # Every attempt missed. In proactive mode a mediocre unbidden line is worse
-    # than silence, so we stay quiet rather than force a fallback interruption.
+    # Every attempt missed threshold. In proactive mode a mediocre unbidden line
+    # is worse than silence, so we stay quiet rather than interrupt.
     if mode == "proactive":
         return ComposeResult(
             text=None, silent=True, water_state=water_state, mode=mode,
             attempts=max_attempts, fell_back=False, score=None, report=best)
 
-    # Passive: they asked; owe them a reply. Use the hand-written safe line.
+    # Passive: they asked, so they are owed a reply. The canned safe line is a net
+    # for genuinely BAD output — a hard fail (sentiment / hedge). A merely
+    # low-motif answer is usually an honest, plain reply to a plain question
+    # ("100 degrees Celsius"); clobbering it with a water non-answer would break
+    # "a plain question gets a true answer." So keep the best real attempt unless
+    # it hard-failed (or there is none).
+    if best_text is not None and not best.hard_fail:
+        return ComposeResult(
+            text=best_text, silent=False, water_state=water_state, mode=mode,
+            attempts=max_attempts, fell_back=False,
+            score=best.score, report=best)
+
     return ComposeResult(
         text=SAFE_LINES.get(water_state, SAFE_LINES["tidal"]),
         silent=False, water_state=water_state, mode=mode,
