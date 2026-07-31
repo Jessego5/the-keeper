@@ -243,21 +243,30 @@ def detect_state(text: str) -> str:
     return "tidal"            # moving, or calm/ambiguous — the resting default
 
 
-def read_register(message: str) -> str:
-    """Pick the register to MEET the person in, from what they actually said.
+def register_signal(message: str) -> Optional[str]:
+    """The person's EMOTIONAL register signal, or None if the message carries none.
 
-    Unlike detect_state (which reads water vocabulary in the Keeper's own lines),
-    this reads the person's emotional signal — they speak in feelings, not tides.
-    Distress -> "frozen" (stay in the cold with them); a clear upswing -> "tidal".
-    Falls back to motif detection, then to the calm default. Used to choose the
-    register for a passive reply, so sadness is never met with movement.
+    Returns "frozen" (distress) or "tidal" (upswing) only when feeling words are
+    present. Returns None for neutral messages ("what should i do", "what's on my
+    list") so the caller can decide to INHERIT the recent register rather than
+    reset — the difference between listening to the arc and forgetting it.
     """
     low = _lower(message)
     frozen = len(_contains_any(low, FROZEN_FEELING))
     tidal = len(_contains_any(low, TIDAL_FEELING))
     if frozen or tidal:
         return "frozen" if frozen >= tidal else "tidal"
-    return detect_state(message)   # no feeling words — fall back to motif/default
+    return None
+
+
+def read_register(message: str) -> str:
+    """Register for a reply from one message alone (no conversation memory).
+
+    A clear emotional signal wins; otherwise fall back to motif/default. Prefer
+    register continuity at the call site (inherit the last signal on a neutral
+    turn) — this single-message form is the floor when there's no history.
+    """
+    return register_signal(message) or detect_state(message)
 
 
 # ---------------------------------------------------------------------------

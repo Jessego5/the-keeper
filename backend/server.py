@@ -72,6 +72,7 @@ class AppState:
     user_msg_times: list[float] = field(default_factory=list)
     last_user_at: Optional[float] = None
     last_proactive_at: Optional[float] = None
+    current_register: Optional[str] = None   # last emotional register, for continuity
     config: proactive.ProactiveConfig = field(default_factory=proactive.ProactiveConfig)
     listeners: set[asyncio.Queue] = field(default_factory=set)
     generate: compose.Generator = compose.stub_generator
@@ -201,7 +202,13 @@ async def chat(body: ChatIn):
 
     mem = memory.recall(STATE.store, msg, k=4)
     ctx = sensors.read().to_context_line()
-    water = voice_eval.read_register(msg)   # meet them in the right register
+    # Register continuity: a clear emotional signal sets the register; a neutral
+    # follow-up ("what should i do") INHERITS it rather than resetting to tidal,
+    # so a stuck person is never told they're moving.
+    signal = voice_eval.register_signal(msg)
+    if signal is not None:
+        STATE.current_register = signal
+    water = STATE.current_register or voice_eval.detect_state(msg)
 
     used_tools = STATE.mcp is not None and STATE.mcp.has_tools
     if used_tools:
