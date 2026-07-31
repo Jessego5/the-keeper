@@ -52,6 +52,7 @@ class ProactiveConfig:
     speed: float = 1.0           # >1 compresses tick waits for demos
     respect_lock: bool = True    # never speak into a locked screen
     cooldown_min: float = 600.0  # refractory: hold silence 10h after speaking
+    use_presence: bool = True    # let idle time modulate restlessness
 
 
 @dataclass
@@ -63,6 +64,27 @@ class TickDecision:
     wait_next_s: int             # seconds until the next tick (speed-adjusted)
     text: Optional[str] = None   # the line, if it spoke
     water_state: str = "tidal"
+
+
+def presence_factor(idle_seconds: Optional[float]) -> float:
+    """How the person's idle time nudges the urge to speak.
+
+    A companion's reach-out lands best when they are HERE but quiet — so catch
+    them (a small boost). If they have been idle a long while they are away, and
+    a line just waits in an empty room, so ease off. This is the "are you even
+    here right now?" signal that message-timing alone can't provide.
+
+        present, at the keyboard (< 2 min idle)   -> 1.15  (catch them)
+        stepped away briefly (2-30 min)           -> 1.00  (neutral)
+        gone (> 30 min)                           -> 0.60  (reaching into an empty room)
+    """
+    if idle_seconds is None:
+        return 1.0
+    if idle_seconds < 120:
+        return 1.15
+    if idle_seconds < 1800:
+        return 1.0
+    return 0.60
 
 
 def derive_state(minutes_since_user: Optional[float]) -> str:
@@ -98,6 +120,9 @@ def tick(
     def quiet(reason: str) -> TickDecision:
         return TickDecision(False, reason, en, score, wait, None, water)
 
+    # One read of the machine, shared by the lock gate and the idle factor.
+    pres = presence if presence is not None else sensors.read()
+
     # Gate 0 — cooldown. If it just reached out and got no reply, hold silence;
     # otherwise low energy would make it pester on every tick.
     if (state.minutes_since_proactive is not None
@@ -105,13 +130,14 @@ def tick(
         return quiet("in cooldown since last outreach")
 
     # Gate 1 — reachability. Don't speak to a locked screen.
-    if config.respect_lock:
-        pres = presence if presence is not None else sensors.read()
-        if pres.screen_locked:
-            return quiet("screen locked")
+    if config.respect_lock and pres.screen_locked:
+        return quiet("screen locked")
 
-    # Gate 2 — restlessness. The roll usually says no.
-    if not energy.roll_speak(score, rng=rng, p_min=config.p_min, p_max=config.p_max):
+    # Gate 2 — restlessness, modulated by presence. Idle time nudges the score:
+    # present-but-quiet is a good moment to reach out; long-gone is not.
+    factor = presence_factor(pres.idle_seconds) if config.use_presence else 1.0
+    if not energy.roll_speak(score * factor, rng=rng,
+                             p_min=config.p_min, p_max=config.p_max):
         return quiet("did not roll to speak")
 
     # Gate 3 — content. Recall what's present, then let compose try (or decline).
