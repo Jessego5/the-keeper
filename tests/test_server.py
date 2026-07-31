@@ -39,6 +39,18 @@ async def test_chat_returns_a_reply(client):
     assert r.json()["reply"]
 
 
+async def test_chat_survives_model_failure(client):
+    # If the model call blows up (outage, rate limit), /chat must degrade to a
+    # graceful in-voice line, not throw a raw 500 at the person.
+    def boom(system, user):
+        raise RuntimeError("model is down")
+    server.STATE.generate = boom
+
+    r = await client.post("/chat", json={"message": "are you there"})
+    assert r.status_code == 200, f"got {r.status_code}, not a graceful reply"
+    assert r.json()["reply"], "no reply text on failure"
+
+
 async def test_state_shape(client):
     s = (await client.get("/state")).json()
     for key in ("energy", "base_score", "speak_probability", "facts_kept", "speed"):
