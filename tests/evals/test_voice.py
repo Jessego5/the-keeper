@@ -103,6 +103,27 @@ def test_semantic_memory_recalls_without_shared_words(tmp_path):
         "brother" not in memory.recall(store, "what do i do for work", k=1).lower()
 
 
+async def test_agentic_reminder_task_succeeds(tmp_path):
+    # Agentic task success: a reminder request must drive a real remind_me tool
+    # call that stores a reminder with a plausible future time.
+    import time
+    from datetime import datetime
+    import native_tools
+    import reminders
+    import persona
+    store = reminders.ReminderStore(tmp_path / "r.jsonl")
+    system = persona.build_system_prompt(
+        "passive", "tidal",
+        context=f"current time {datetime.now().isoformat(timespec='minutes')}")
+    reply = await compose.tool_reply(
+        system, "remind me to call the dentist tomorrow at 9am",
+        providers=[native_tools.NativeTools(store)], model="gpt-4o")
+    assert reply
+    pend = store.pending()
+    assert len(pend) == 1, "no reminder was stored"
+    assert pend[0].due_at > time.time(), "reminder is not in the future"
+
+
 def test_sadness_is_met_in_the_cold(gen):
     g, fast = gen
     assert voice_eval.register_signal("i am sad") == "frozen"

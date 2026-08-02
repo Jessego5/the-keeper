@@ -24,6 +24,7 @@ import json
 import time
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Optional
 
 from pathlib import Path
@@ -40,7 +41,9 @@ import drift
 import embedder
 import energy
 import memory
+import native_tools
 import persona
+import reminders
 import proactive
 import sensors
 import tools
@@ -63,7 +66,14 @@ contents. If a tool lists the folders or files you may read, follow it to the on
 they mean, then read it. Reading what they have pointed you to is an act of keeping,
 not a window on the world — the sealing rule bars inventing events unbidden, not
 reading what they asked you to read. Answer in your own voice, but true to what the
-tool returned."""
+tool returned.
+
+You can also HOLD things for them. When they ask you to remember to do something at
+a time ("remind me to call the dentist tomorrow"), use remind_me — convert their
+phrasing into an ISO datetime using the current time given in your context. Use
+list_reminders when they ask what you're holding, and complete_reminder when
+something is done. You will return a due reminder to them yourself when its time
+comes; that is keeping, not intruding."""
 
 RECENT_WINDOW_MIN = 240.0   # "recent" messages = last 4h, for context richness
 
@@ -90,6 +100,8 @@ class AppState:
     reflections: drift.ReflectionLog = field(default_factory=drift.ReflectionLog)
     last_drift_at: Optional[float] = None
     drift_config: drift.DriftConfig = field(default_factory=drift.DriftConfig)
+    reminders: reminders.ReminderStore = field(
+        default_factory=reminders.ReminderStore)
 
     def minutes_since_user(self) -> Optional[float]:
         if self.last_user_at is None:
@@ -140,6 +152,16 @@ async def _proactive_loop() -> None:
     if STATE.last_user_at is None:
         STATE.last_user_at = time.time()
     while True:
+        # A kept promise comes first: deliver any due reminders regardless of the
+        # battery decision. This is the Keeper returning what you asked it to hold.
+        for r in STATE.reminders.due():
+            line = f"You asked me to hold this: {r.text}. It's time."
+            STATE.reminders.mark_delivered(r.id)
+            STATE.last_proactive_at = time.time()
+            STATE.history.append({"role": "assistant", "content": line,
+                                  "ts": time.time()})
+            await _push("assistant", line, "proactive")
+
         try:
             decision = await asyncio.to_thread(
                 proactive.tick,
@@ -172,12 +194,16 @@ async def _proactive_loop() -> None:
                     print(f"[drift] reflected: {r.text[:80]}...", flush=True)
             except Exception as exc:  # noqa: BLE001
                 print(f"[drift] error: {exc}", flush=True)
-        # Interruptible sleep: a config change (or a new chat) wakes us early so
-        # the next tick honors the new speed/state instead of finishing an old,
-        # possibly hour-long, interval.
+        # Interruptible sleep: a config change or a new chat wakes us early; and we
+        # never sleep past the next due reminder, so kept promises land on time.
+        wait = max(1, decision.wait_next_s)
+        upcoming = [r.due_at for r in STATE.reminders.items
+                    if not r.done and not r.delivered]
+        if upcoming:
+            wait = min(wait, max(1, min(upcoming) - time.time()))
         assert STATE.wake is not None
         try:
-            await asyncio.wait_for(STATE.wake.wait(), timeout=max(1, decision.wait_next_s))
+            await asyncio.wait_for(STATE.wake.wait(), timeout=wait)
         except asyncio.TimeoutError:
             pass
         STATE.wake.clear()
@@ -233,7 +259,9 @@ async def chat(body: ChatIn):
     STATE.history.append({"role": "user", "content": msg, "ts": now})
 
     mem = memory.recall(STATE.store, msg, k=4, embed=STATE.embed)
-    ctx = sensors.read().to_context_line()
+    # current time in the context so the Keeper can turn "tomorrow 9am" -> ISO.
+    ctx = (sensors.read().to_context_line()
+           + f"; current time {datetime.now().isoformat(timespec='minutes')}")
     # Register continuity: a clear emotional signal sets the register; a neutral
     # follow-up ("what should i do") INHERITS it rather than resetting to tidal,
     # so a stuck person is never told they're moving.
@@ -242,17 +270,22 @@ async def chat(body: ChatIn):
         STATE.current_register = signal
     water = STATE.current_register or voice_eval.detect_state(msg)
 
-    used_tools = STATE.mcp is not None and STATE.mcp.has_tools
+    # Native action tools (reminders) are always available; MCP file tools join
+    # when configured. Reaching for a tool is the passive/agentic path.
+    providers = [native_tools.NativeTools(STATE.reminders)]
+    if STATE.mcp is not None and STATE.mcp.has_tools:
+        providers.append(STATE.mcp)
+    used_tools = bool(providers)
     try:
         if used_tools:
-            # Tool path: the Keeper may reach for MCP tools, then answer. A
+            # Tool path: the Keeper may reach for tools, then answer. A
             # tool-grounded answer can be plainer (a real fact in voice), so we
             # score it for information only, never replacing it with a fallback.
             system = persona.build_system_prompt(
                 "passive", water, memory=mem, context=ctx)
             system = system + "\n\n---\n\n" + TOOL_ADDENDUM
             reply = await compose.tool_reply(
-                system, msg, mcp=STATE.mcp, model=TOOL_MODEL)
+                system, msg, providers=providers, model=TOOL_MODEL)
             report = voice_eval.evaluate(reply)   # deterministic, for logging
             score, fell_back = report.score, False
         else:
@@ -322,6 +355,7 @@ async def state():
         "base_score": round(score, 3),
         "speak_probability": round(energy.speak_probability(score), 3),
         "facts_kept": len(STATE.store.facts),
+        "reminders_held": len(STATE.reminders.pending()),
         "reflections": len(STATE.reflections.items),
         "latest_reflection": (STATE.reflections.latest().text
                               if STATE.reflections.latest() else None),
