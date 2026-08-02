@@ -41,6 +41,7 @@ import drift
 import embedder
 import energy
 import memory
+import mood
 import native_tools
 import persona
 import reminders
@@ -73,7 +74,12 @@ a time ("remind me to call the dentist tomorrow"), use remind_me — convert the
 phrasing into an ISO datetime using the current time given in your context. Use
 list_reminders when they ask what you're holding, and complete_reminder when
 something is done. You will return a due reminder to them yourself when its time
-comes; that is keeping, not intruding."""
+comes; that is keeping, not intruding.
+
+For a request that takes more than one step, work it in steps: call a tool, read
+what it returns, then call the next — e.g. list_reminders to see what you hold,
+then complete_reminder on the right one. Take the steps you need, then answer once
+in your voice."""
 
 RECENT_WINDOW_MIN = 240.0   # "recent" messages = last 4h, for context richness
 
@@ -95,6 +101,7 @@ class AppState:
     generate: compose.Generator = compose.stub_generator
     fast: Optional[compose.Generator] = None
     embed: Optional[memory.Embedder] = None   # semantic recall; None => keyword
+    mood_signal: Optional[object] = None   # local mood classifier; None => keyword
     wake: Optional[asyncio.Event] = None   # set to interrupt the loop's sleep
     mcp: Optional[tools.MCPManager] = None  # passive-loop tools; None until connected
     reflections: drift.ReflectionLog = field(default_factory=drift.ReflectionLog)
@@ -213,6 +220,9 @@ async def _proactive_loop() -> None:
 async def lifespan(app: FastAPI):
     STATE.generate, STATE.fast = compose.make_generator()
     STATE.embed = embedder.make_embedder()   # semantic recall when a key is set
+    STATE.mood_signal = mood.build_local_mood_signal()   # local; None -> keyword
+    print(f"[mood] classifier: {'model2vec' if STATE.mood_signal else 'keyword'}",
+          flush=True)
     STATE.wake = asyncio.Event()
     # Passive-loop tools (optional). Connects only if backend/mcp.json exists.
     STATE.mcp = tools.MCPManager.from_config()
@@ -265,7 +275,14 @@ async def chat(body: ChatIn):
     # Register continuity: a clear emotional signal sets the register; a neutral
     # follow-up ("what should i do") INHERITS it rather than resetting to tidal,
     # so a stuck person is never told they're moving.
+    # Mood, two layers: the high-precision keyword signal wins when a feeling word
+    # is present; the local Model2Vec classifier (benchmark winner) fills the gap
+    # for IMPLICIT mood the lexicon misses ("i don't know why i bother" -> frozen).
+    # Known tradeoff: the embedding layer can over-commit on ambiguous requests
+    # ("what should i do"); register continuity softens that downstream.
     signal = voice_eval.register_signal(msg)
+    if signal is None and STATE.mood_signal is not None:
+        signal = STATE.mood_signal(msg)
     if signal is not None:
         STATE.current_register = signal
     water = STATE.current_register or voice_eval.detect_state(msg)
@@ -285,7 +302,7 @@ async def chat(body: ChatIn):
                 "passive", water, memory=mem, context=ctx)
             system = system + "\n\n---\n\n" + TOOL_ADDENDUM
             reply = await compose.tool_reply(
-                system, msg, providers=providers, model=TOOL_MODEL)
+                system, msg, providers=providers, model=TOOL_MODEL, max_rounds=6)
             report = voice_eval.evaluate(reply)   # deterministic, for logging
             score, fell_back = report.score, False
         else:
