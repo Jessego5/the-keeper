@@ -1,0 +1,12 @@
+# One command:  docker compose up
+# The Keeper at http://localhost:8790  (dashboard: /dashboard)
+services:
+  keeper:
+    build: .
+    ports:
+      - "8790:8790"
+    env_file:
+      - backend/.env          # OPENAI_API_KEY lives here (gitignored)
+    volumes:
+      - ./memory_store:/app/memory_store   # persist facts + reflections
+    restart: unless-stopped

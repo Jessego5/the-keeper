@@ -1,0 +1,9 @@
+.venv/
+__pycache__/
+*.pyc
+.git/
+memory_store/
+evals/results/
+.keeper.log
+tests/
+DESIGN_NOTES.md

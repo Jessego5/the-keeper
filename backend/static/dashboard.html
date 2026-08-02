@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Keeper — state</title>
+<style>
+  :root {
+    --deep:#081316; --sea:#0d2327; --surface:#14383a; --foam:#cfe0da;
+    --foam-dim:#7ea59d; --tide:#5aa39a; --current:#2c5254;
+    --serif:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
+  }
+  * { box-sizing:border-box; }
+  html,body { height:100%; margin:0; }
+  body {
+    background:linear-gradient(180deg,var(--surface),var(--sea) 40%,var(--deep));
+    color:var(--foam); font-family:var(--serif); -webkit-font-smoothing:antialiased;
+    padding:2.5rem 1.5rem;
+  }
+  .wrap { max-width:44rem; margin:0 auto; }
+  h1 { text-align:center; font-size:0.72rem; text-transform:uppercase;
+       letter-spacing:0.5em; text-indent:0.5em; color:var(--tide);
+       opacity:0.85; font-weight:normal; margin:0 0 2rem; }
+
+  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(9rem,1fr));
+          gap:0.9rem; margin-bottom:1.6rem; }
+  .tile { background:rgba(20,56,58,0.28); border:1px solid var(--current);
+          border-radius:0.6rem; padding:0.9rem 1rem; }
+  .tile .label { font-size:0.6rem; text-transform:uppercase; letter-spacing:0.16em;
+                 color:var(--foam-dim); margin-bottom:0.4rem; }
+  .tile .val { font-size:1.5rem; color:var(--foam); }
+  .tile .sub { font-size:0.7rem; color:var(--foam-dim); margin-top:0.15rem; }
+
+  .meter { margin:0.3rem 0 0.1rem; height:6px; border-radius:3px;
+           background:var(--current); overflow:hidden; }
+  .meter > span { display:block; height:100%; background:var(--tide);
+                  transition:width 0.6s ease; }
+
+  .reflection { background:rgba(8,19,22,0.4); border:1px solid var(--current);
+                border-left:2px solid var(--tide); border-radius:0.5rem;
+                padding:1.1rem 1.3rem; margin-bottom:1.2rem; }
+  .reflection .label { font-size:0.6rem; text-transform:uppercase;
+                       letter-spacing:0.16em; color:var(--tide); margin-bottom:0.5rem; }
+  .reflection .text { font-style:italic; line-height:1.6; color:var(--foam);
+                      white-space:pre-wrap; }
+  .reflection .none { color:var(--current); font-style:italic; }
+
+  .badges { display:flex; gap:0.5rem; flex-wrap:wrap; justify-content:center; }
+  .badge { font-size:0.66rem; letter-spacing:0.06em; color:var(--foam-dim);
+           border:1px solid var(--current); border-radius:999px;
+           padding:0.25rem 0.7rem; }
+  .foot { text-align:center; font-size:0.6rem; color:var(--current);
+          margin-top:1.4rem; letter-spacing:0.08em; }
+  a { color:var(--tide); text-decoration:none; }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>the keeper — state</h1>
+
+    <div class="grid">
+      <div class="tile">
+        <div class="label">energy (battery)</div>
+        <div class="val" id="energy">—</div>
+        <div class="meter"><span id="energy-bar" style="width:0%"></span></div>
+        <div class="sub">just talked = full → leaves you alone</div>
+      </div>
+      <div class="tile">
+        <div class="label">restlessness</div>
+        <div class="val" id="score">—</div>
+        <div class="meter"><span id="score-bar" style="width:0%"></span></div>
+        <div class="sub">base score → urge to reach out</div>
+      </div>
+      <div class="tile">
+        <div class="label">P(speak) / tick</div>
+        <div class="val" id="pspeak">—</div>
+        <div class="sub">chance it reaches out this tick</div>
+      </div>
+      <div class="tile">
+        <div class="label">facts kept</div>
+        <div class="val" id="facts">—</div>
+        <div class="sub">the drawers (semantic memory)</div>
+      </div>
+      <div class="tile">
+        <div class="label">reflections</div>
+        <div class="val" id="reflections">—</div>
+        <div class="sub">drift notes (inner life)</div>
+      </div>
+      <div class="tile">
+        <div class="label">quiet for</div>
+        <div class="val" id="since">—</div>
+        <div class="sub">virtual minutes since you spoke</div>
+      </div>
+    </div>
+
+    <div class="reflection">
+      <div class="label">latest reflection</div>
+      <div class="text" id="reflection-text"><span class="none">the water is still.</span></div>
+    </div>
+
+    <div class="badges">
+      <span class="badge" id="b-backend">backend —</span>
+      <span class="badge" id="b-embed">memory —</span>
+      <span class="badge" id="b-speed">speed —</span>
+      <span class="badge" id="b-listeners">listeners —</span>
+    </div>
+    <div class="foot"><a href="/">← back to the water</a> · refreshes every 3s</div>
+  </div>
+
+<script>
+  function pct(x) { return Math.max(0, Math.min(100, Math.round((x||0)*100))) + "%"; }
+  function fmtMin(m) {
+    if (m == null) return "—";
+    if (m < 90) return Math.round(m) + "m";
+    if (m < 60*48) return Math.round(m/60) + "h";
+    return Math.round(m/1440) + "d";
+  }
+  async function tick() {
+    let s; try { s = await (await fetch("/state")).json(); } catch (e) { return; }
+    document.getElementById("energy").textContent = (s.energy ?? 0).toFixed(2);
+    document.getElementById("energy-bar").style.width = pct(s.energy);
+    document.getElementById("score").textContent = (s.base_score ?? 0).toFixed(2);
+    document.getElementById("score-bar").style.width = pct(s.base_score);
+    document.getElementById("pspeak").textContent = (s.speak_probability ?? 0).toFixed(2);
+    document.getElementById("facts").textContent = s.facts_kept ?? 0;
+    document.getElementById("reflections").textContent = s.reflections ?? 0;
+    document.getElementById("since").textContent = fmtMin(s.minutes_since_user_virtual);
+    const rt = document.getElementById("reflection-text");
+    if (s.latest_reflection) rt.textContent = s.latest_reflection;
+    else rt.innerHTML = '<span class="none">nothing kept yet — it has not drifted.</span>';
+    document.getElementById("b-backend").textContent = "backend " + (s.backend || "—");
+    document.getElementById("b-embed").textContent = "memory " + (s.embedder || "—");
+    document.getElementById("b-speed").textContent = "speed " + (s.speed ?? 1) + "×";
+    document.getElementById("b-listeners").textContent = (s.listeners ?? 0) + " listening";
+  }
+  tick(); setInterval(tick, 3000);
+</script>
+</body>
+</html>
