@@ -9,3 +9,4 @@ mcp
 pytest
 pytest-asyncio
 httpx
+model2vec
