@@ -78,3 +78,28 @@ def make_mood_classifier(embed: Embedder,
         return classify(message, embed, anchor_vecs, floor, margin)
 
     return signal
+
+
+def _model2vec_embedder():
+    """A local, offline static-embedding model (Model2Vec). None if unavailable.
+    Clears a stale HF token that would block the public model download."""
+    import os
+    for k in ("HF_TOKEN", "HUGGING_FACE_HUB_TOKEN", "HUGGINGFACE_TOKEN", "HF_HUB_TOKEN"):
+        os.environ.pop(k, None)
+    os.environ["HF_HUB_DISABLE_IMPLICIT_TOKEN"] = "1"
+    try:
+        from model2vec import StaticModel
+        m = StaticModel.from_pretrained("minishlab/potion-base-8M")
+    except Exception:  # noqa: BLE001
+        return None
+    return lambda texts: [list(map(float, v)) for v in m.encode(texts)]
+
+
+def build_local_mood_signal(floor: float = 0.18):
+    """The chosen mood sensor: a local Model2Vec anchor classifier, or None if the
+    model can't load (caller falls back to the keyword register_signal). floor 0.18
+    is tuned on evals/register_dataset.json (see mood_bench.py) for this model."""
+    embed = _model2vec_embedder()
+    if embed is None:
+        return None
+    return make_mood_classifier(embed, floor=floor)

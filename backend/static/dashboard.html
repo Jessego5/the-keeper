@@ -87,6 +87,11 @@
         <div class="sub">drift notes (inner life)</div>
       </div>
       <div class="tile">
+        <div class="label">reminders held</div>
+        <div class="val" id="reminders">—</div>
+        <div class="sub">things to return when due</div>
+      </div>
+      <div class="tile">
         <div class="label">quiet for</div>
         <div class="val" id="since">—</div>
         <div class="sub">virtual minutes since you spoke</div>
@@ -124,6 +129,7 @@
     document.getElementById("pspeak").textContent = (s.speak_probability ?? 0).toFixed(2);
     document.getElementById("facts").textContent = s.facts_kept ?? 0;
     document.getElementById("reflections").textContent = s.reflections ?? 0;
+    document.getElementById("reminders").textContent = s.reminders_held ?? 0;
     document.getElementById("since").textContent = fmtMin(s.minutes_since_user_virtual);
     const rt = document.getElementById("reflection-text");
     if (s.latest_reflection) rt.textContent = s.latest_reflection;
