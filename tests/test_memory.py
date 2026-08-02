@@ -42,3 +42,45 @@ def test_persistence_round_trip(tmp_path):
 
 def test_empty_store_recall_is_empty(store):
     assert memory.recall(store, "anything") == ""
+
+
+# --- semantic layer (deterministic fake embedder, no key needed) --- #
+
+_TOPICS = ["brother", "painter", "age"]
+
+
+def _fake_embed(texts):
+    """One-hot topic vectors, with query synonyms mapped to the same topic — so
+    'sibling'~brother and 'work'~painter share a dimension without sharing words."""
+    out = []
+    for t in texts:
+        low = t.lower()
+        v = [0.0] * len(_TOPICS)
+        for i, kw in enumerate(_TOPICS):
+            if kw in low:
+                v[i] = 1.0
+        if "sibling" in low:
+            v[0] = 1.0
+        if "work" in low:
+            v[1] = 1.0
+        if "old" in low:
+            v[2] = 1.0
+        out.append(v)
+    return out
+
+
+def test_semantic_recall_ranks_by_cosine(store):
+    # REGRESSION/feature: recall by MEANING, not shared words.
+    store.add("Has a brother named Sam.", "identity", embed=_fake_embed)
+    store.add("Is a painter.", "identity", embed=_fake_embed)
+    store.add("Turns 30 next month.", "identity", embed=_fake_embed)
+    assert "brother" in memory.recall(store, "tell me about my sibling", k=1,
+                                      embed=_fake_embed)
+    assert "painter" in memory.recall(store, "what is my work", k=1,
+                                      embed=_fake_embed)
+
+
+def test_semantic_dedup_merges_reworded_fact(store):
+    store.add("Has a brother named Sam.", "identity", embed=_fake_embed)
+    dup = store.add("Her brother is named Sam.", "identity", embed=_fake_embed)
+    assert len(store.facts) == 1 and dup.mentions == 2  # same topic vector -> merge

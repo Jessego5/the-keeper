@@ -28,6 +28,11 @@ from typing import Callable, Iterable, Optional
 
 # (system_prompt, user_message) -> raw model text. Same shape compose.py uses.
 Generator = Callable[[str, str], str]
+# texts -> one embedding vector each. Injected like Generator; None => keyword-only.
+Embedder = Callable[[list[str]], list[list[float]]]
+
+# Above this cosine, two facts are "the same thing said differently" (semantic dedup).
+_SEMANTIC_DUP = 0.86
 
 STORE_DIR = Path(__file__).resolve().parent.parent / "memory_store"
 STORE_PATH = STORE_DIR / "facts.jsonl"
@@ -50,6 +55,7 @@ class Fact:
     created: float = field(default_factory=time.time)
     last_seen: float = field(default_factory=time.time)
     mentions: int = 1              # how many times it has resurfaced
+    embedding: Optional[list[float]] = None   # semantic vector (None => keyword-only)
 
     def age_days(self, now: Optional[float] = None) -> float:
         return ((now or time.time()) - self.last_seen) / 86400.0
@@ -82,35 +88,61 @@ class MemoryStore:
             "".join(json.dumps(asdict(f), ensure_ascii=False) + "\n"
                     for f in self.facts))
 
-    def add(self, text: str, kind: str = "event") -> Optional[Fact]:
-        """Add a fact, or bump an existing near-duplicate instead of duplicating.
+    def add(self, text: str, kind: str = "event",
+            embed: Optional[Embedder] = None) -> Optional[Fact]:
+        """Add a fact, or bump an existing duplicate instead of duplicating.
 
+        With an embedder, dedup is SEMANTIC (cosine): "has a brother, Sam" and
+        "her brother is named Sam" collapse even though their words differ — which
+        keyword jaccard misses. Without one, falls back to keyword dedup.
         Returns the Fact if stored/updated, None if it was empty.
         """
         text = text.strip()
         if not text:
             return None
-        dupe = self._find_similar(text)
+        vec = None
+        if embed is not None:
+            try:
+                vec = embed([text])[0]
+            except Exception:  # noqa: BLE001 - degrade to keyword, never crash
+                vec = None
+        dupe = self._find_similar(text, vec)
         if dupe is not None:
             dupe.mentions += 1
             dupe.last_seen = time.time()
+            if dupe.embedding is None and vec is not None:
+                dupe.embedding = vec       # backfill a vector on an old fact
             self._save()
             return dupe
-        fact = Fact(text=text, kind=kind)
+        fact = Fact(text=text, kind=kind, embedding=vec)
         self.facts.append(fact)
         self._save()
         return fact
 
-    def add_many(self, items: Iterable[tuple[str, str]]) -> list[Fact]:
-        out = [self.add(text, kind) for text, kind in items]
+    def add_many(self, items: Iterable[tuple[str, str]],
+                 embed: Optional[Embedder] = None) -> list[Fact]:
+        out = [self.add(text, kind, embed) for text, kind in items]
         return [f for f in out if f is not None]
 
-    def _find_similar(self, text: str, thresh: float = 0.6) -> Optional[Fact]:
+    def _find_similar(self, text: str,
+                      vec: Optional[list[float]] = None) -> Optional[Fact]:
+        # Semantic dedup when we have a vector for the new fact and stored vectors.
+        if vec is not None:
+            best, best_sim = None, 0.0
+            for f in self.facts:
+                if f.embedding is None:
+                    continue
+                sim = _cosine(vec, f.embedding)
+                if sim > best_sim:
+                    best, best_sim = f, sim
+            if best is not None and best_sim >= _SEMANTIC_DUP:
+                return best
+        # Keyword fallback (also covers facts with no vectors).
         toks = _tokens(text)
         if not toks:
             return None
         for f in self.facts:
-            if _jaccard(toks, _tokens(f.text)) >= thresh:
+            if _jaccard(toks, _tokens(f.text)) >= 0.6:
                 return f
         return None
 
@@ -120,28 +152,68 @@ class MemoryStore:
 # --------------------------------------------------------------------------- #
 
 def recall(store: MemoryStore, cue: str = "", k: int = 5,
-           now: Optional[float] = None) -> str:
+           now: Optional[float] = None, embed: Optional[Embedder] = None) -> str:
     """Return up to k relevant facts rendered for the system prompt's memory slot.
 
-    Scoring blends keyword overlap with the cue, recency, and recurrence. With an
-    empty cue (proactive / drift, no user message) it falls back to the most
-    recent and most-mentioned — what is most "present" for the Keeper right now.
-    Empty string if the store is empty.
+    With an embedder and a cue, recall is SEMANTIC: it embeds the cue and ranks
+    facts by cosine similarity (blended with recency/recurrence), so "tell me
+    about my sibling" surfaces "has a brother, Sam" even with no shared words.
+    Falls back to keyword overlap when there is no embedder, no cue (proactive/
+    drift), or the query can't be embedded. Empty string if the store is empty.
     """
     if not store.facts:
         return ""
     now = now or time.time()
-    cue_toks = _tokens(cue)
 
-    ranked = sorted(
-        store.facts,
-        key=lambda f: _score(f, cue_toks, now),
-        reverse=True,
-    )
+    # ── semantic path ──
+    if embed is not None and cue.strip() and any(f.embedding for f in store.facts):
+        cue_vec = None
+        try:
+            cue_vec = embed([cue])[0]
+        except Exception:  # noqa: BLE001
+            cue_vec = None
+        if cue_vec is not None:
+            scored = []
+            for f in store.facts:
+                if f.embedding is None:
+                    continue
+                sim = _cosine(cue_vec, f.embedding)
+                score = sim * 3.0 + _presence(f, now)
+                scored.append((score, f))
+            scored.sort(key=lambda x: x[0], reverse=True)
+            top = [f for _, f in scored[:k]]
+            if top:
+                return "\n".join(f"- {f.text}" for f in top)
+
+    # ── keyword / presence fallback ──
+    cue_toks = _tokens(cue)
+    ranked = sorted(store.facts, key=lambda f: _score(f, cue_toks, now), reverse=True)
     top = [f for f in ranked if _score(f, cue_toks, now) > 0][:k]
     if not top:
-        top = ranked[:k]  # nothing matched the cue; give the most present facts
+        top = ranked[:k]
     return "\n".join(f"- {f.text}" for f in top)
+
+
+def _cosine(a: list[float], b: list[float]) -> float:
+    """Cosine similarity of two vectors. Pure Python — no heavy deps, fine at this
+    scale (hundreds of facts x ~1k dims). Swap in numpy / a vector DB to scale."""
+    dot = 0.0
+    na = 0.0
+    nb = 0.0
+    for x, y in zip(a, b):
+        dot += x * y
+        na += x * x
+        nb += y * y
+    if na == 0.0 or nb == 0.0:
+        return 0.0
+    return dot / ((na ** 0.5) * (nb ** 0.5))
+
+
+def _presence(f: Fact, now: float) -> float:
+    """Recency + recurrence — how 'present' a fact is, independent of the cue."""
+    recency = 1.0 / (1.0 + f.age_days(now))
+    recurrence = min(f.mentions, 5) / 5.0
+    return recency * 0.6 + recurrence * 0.4
 
 
 def _score(f: Fact, cue_toks: set[str], now: float) -> float:
@@ -174,11 +246,13 @@ _KIND_RE = re.compile(r"^\[(identity|state|event|preference)\]\s*", re.I)
 
 
 def distill(messages: list[dict], generate: Generator,
-            store: Optional[MemoryStore] = None) -> list[Fact]:
+            store: Optional[MemoryStore] = None,
+            embed: Optional[Embedder] = None) -> list[Fact]:
     """Extract durable facts from a conversation and, if a store is given, keep them.
 
     messages: [{"role": "user"|"assistant", "content": str}, ...]
     generate: the injected model call (use a cheap one — the fast_model is ideal).
+    embed:    optional embedder; extracted facts are embedded for semantic recall.
 
     Returns the Facts extracted (already stored if `store` was provided).
     """
@@ -204,7 +278,7 @@ def distill(messages: list[dict], generate: Generator,
 
     if store is None:
         return [Fact(text=t, kind=k) for t, k in parsed]
-    return store.add_many(parsed)
+    return store.add_many(parsed, embed=embed)
 
 
 # --------------------------------------------------------------------------- #

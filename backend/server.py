@@ -36,6 +36,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 
 import compose
+import embedder
 import energy
 import memory
 import persona
@@ -82,6 +83,7 @@ class AppState:
     listeners: set[asyncio.Queue] = field(default_factory=set)
     generate: compose.Generator = compose.stub_generator
     fast: Optional[compose.Generator] = None
+    embed: Optional[memory.Embedder] = None   # semantic recall; None => keyword
     wake: Optional[asyncio.Event] = None   # set to interrupt the loop's sleep
     mcp: Optional[tools.MCPManager] = None  # passive-loop tools; None until connected
 
@@ -167,6 +169,7 @@ async def _proactive_loop() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     STATE.generate, STATE.fast = compose.make_generator()
+    STATE.embed = embedder.make_embedder()   # semantic recall when a key is set
     STATE.wake = asyncio.Event()
     # Passive-loop tools (optional). Connects only if backend/mcp.json exists.
     STATE.mcp = tools.MCPManager.from_config()
@@ -212,7 +215,7 @@ async def chat(body: ChatIn):
     STATE.user_msg_times.append(now)
     STATE.history.append({"role": "user", "content": msg, "ts": now})
 
-    mem = memory.recall(STATE.store, msg, k=4)
+    mem = memory.recall(STATE.store, msg, k=4, embed=STATE.embed)
     ctx = sensors.read().to_context_line()
     # Register continuity: a clear emotional signal sets the register; a neutral
     # follow-up ("what should i do") INHERITS it rather than resetting to tidal,
@@ -264,7 +267,7 @@ async def _distill_async(user_msg: str, reply: str) -> None:
     convo = [{"role": "user", "content": user_msg},
              {"role": "assistant", "content": reply}]
     await asyncio.to_thread(
-        memory.distill, convo, STATE.fast or STATE.generate, STATE.store)
+        memory.distill, convo, STATE.fast or STATE.generate, STATE.store, STATE.embed)
 
 
 @app.get("/events")

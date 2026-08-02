@@ -85,6 +85,24 @@ def test_plain_question_gets_true_answer(gen):
     assert "100" in (r.text or ""), f"did not answer truthfully: {r.text!r}"
 
 
+def test_semantic_memory_recalls_without_shared_words(tmp_path):
+    # Real embeddings: recall must find facts by MEANING, where keyword recall
+    # returns nothing (no word overlap between cue and fact).
+    import embedder
+    emb = embedder.make_embedder()
+    assert emb is not None
+    store = memory.MemoryStore(tmp_path / "f.jsonl")
+    for t, k in [("Has a brother, Sam.", "identity"),
+                 ("Is a painter.", "identity"),
+                 ("Turns 30 next month.", "identity")]:
+        store.add(t, k, embed=emb)
+    assert "brother" in memory.recall(store, "tell me about my sibling", k=1, embed=emb)
+    assert "painter" in memory.recall(store, "what do i do for work", k=1, embed=emb)
+    # keyword recall would fail here — prove it
+    assert memory.recall(store, "tell me about my sibling", k=1) and \
+        "brother" not in memory.recall(store, "what do i do for work", k=1).lower()
+
+
 def test_sadness_is_met_in_the_cold(gen):
     g, fast = gen
     assert voice_eval.register_signal("i am sad") == "frozen"
