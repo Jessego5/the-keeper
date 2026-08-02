@@ -226,25 +226,34 @@ async def tool_reply(
     system: str,
     user: str,
     *,
-    mcp: Any,
+    providers: Optional[list] = None,
     model: str = "gpt-4o",
     max_rounds: int = 4,
     max_tokens: int = 400,
 ) -> str:
-    """Passive-only: let the Keeper use MCP tools, then answer in voice.
+    """Passive-only: let the Keeper use tools, then answer in voice.
 
-    Runs the model<->tool loop with the async OpenAI client: the model may call
-    tools (executed through `mcp`), sees their results, and eventually writes a
-    final line. Returns that line's text (scoring/voice-checking is the caller's
-    job — a tool-grounded factual answer is allowed to be plainer than a pure
-    proactive line, so it must not be replaced by a canned fallback).
+    providers: objects shaped like tools.MCPManager — each exposes
+        openai_tools() -> list[def]  and  async call(name, args) -> str.
+    Pass any mix (MCP file tools + native action tools like reminders); each tool
+    call is routed to the provider that declared it. The model may call tools
+    across several rounds, sees results, and writes a final line. Returns that
+    line's text (scoring is the caller's job — a tool-grounded answer may be
+    plainer than a proactive line and must not be replaced by a canned fallback).
 
-    This path is never used by the proactive loop, which stays sealed.
+    Never used by the proactive loop, which stays sealed.
     """
     from openai import AsyncOpenAI
 
     aclient = AsyncOpenAI()
-    tools = mcp.openai_tools() if mcp is not None else []
+    providers = providers or []
+    tools: list[dict] = []
+    route: dict[str, object] = {}
+    for p in providers:
+        for t in p.openai_tools():
+            tools.append(t)
+            route[t["function"]["name"]] = p
+
     messages: list[dict] = [
         {"role": "system", "content": system},
         {"role": "user", "content": user or "."},
@@ -273,7 +282,9 @@ async def tool_reply(
                 args = json.loads(tc.function.arguments or "{}")
             except json.JSONDecodeError:
                 args = {}
-            out = await mcp.call(tc.function.name, args)
+            provider = route.get(tc.function.name)
+            out = (await provider.call(tc.function.name, args)
+                   if provider is not None else f"(no such tool: {tc.function.name})")
             messages.append({"role": "tool", "tool_call_id": tc.id,
                             "content": out[:4000]})
 
