@@ -101,6 +101,11 @@ def _openai_embedder():
 
 
 def _model2vec_embedder():
+    import os
+    # A stale HF token in the env breaks even public-model downloads; clear it.
+    for k in ("HF_TOKEN", "HUGGING_FACE_HUB_TOKEN", "HUGGINGFACE_TOKEN", "HF_HUB_TOKEN"):
+        os.environ.pop(k, None)
+    os.environ["HF_HUB_DISABLE_IMPLICIT_TOKEN"] = "1"
     try:
         from model2vec import StaticModel
         m = StaticModel.from_pretrained("minishlab/potion-base-8M")
