@@ -36,6 +36,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 
 import compose
+import drift
 import embedder
 import energy
 import memory
@@ -86,6 +87,9 @@ class AppState:
     embed: Optional[memory.Embedder] = None   # semantic recall; None => keyword
     wake: Optional[asyncio.Event] = None   # set to interrupt the loop's sleep
     mcp: Optional[tools.MCPManager] = None  # passive-loop tools; None until connected
+    reflections: drift.ReflectionLog = field(default_factory=drift.ReflectionLog)
+    last_drift_at: Optional[float] = None
+    drift_config: drift.DriftConfig = field(default_factory=drift.DriftConfig)
 
     def minutes_since_user(self) -> Optional[float]:
         if self.last_user_at is None:
@@ -155,6 +159,19 @@ async def _proactive_loop() -> None:
             STATE.history.append({"role": "assistant", "content": decision.text,
                                   "ts": time.time()})
             await _push("assistant", decision.text, "proactive")
+        else:
+            # Idle: nothing to say -> occasionally drift (reflect on memory).
+            # Runs off the response path, never sent to the person.
+            try:
+                r = await asyncio.to_thread(
+                    drift.maybe_drift, STATE.store,
+                    STATE.fast or STATE.generate, STATE.reflections,
+                    last_drift_at=STATE.last_drift_at, config=STATE.drift_config)
+                if r is not None:
+                    STATE.last_drift_at = time.time()
+                    print(f"[drift] reflected: {r.text[:80]}...", flush=True)
+            except Exception as exc:  # noqa: BLE001
+                print(f"[drift] error: {exc}", flush=True)
         # Interruptible sleep: a config change (or a new chat) wakes us early so
         # the next tick honors the new speed/state instead of finishing an old,
         # possibly hour-long, interval.
@@ -305,6 +322,10 @@ async def state():
         "base_score": round(score, 3),
         "speak_probability": round(energy.speak_probability(score), 3),
         "facts_kept": len(STATE.store.facts),
+        "reflections": len(STATE.reflections.items),
+        "latest_reflection": (STATE.reflections.latest().text
+                              if STATE.reflections.latest() else None),
+        "embedder": "openai" if STATE.embed is not None else "keyword",
         "speed": STATE.config.speed,
         "backend": "openai" if STATE.fast is not None else "stub",
         "listeners": len(STATE.listeners),
@@ -320,6 +341,7 @@ class ConfigIn(BaseModel):
 async def set_config(body: ConfigIn):
     if body.speed is not None:
         STATE.config.speed = max(1.0, body.speed)
+        STATE.drift_config.speed = STATE.config.speed   # compress drift clock too
     if body.cooldown_min is not None:
         STATE.config.cooldown_min = max(0.0, body.cooldown_min)
     if STATE.wake is not None:
