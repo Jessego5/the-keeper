@@ -349,6 +349,11 @@ async def set_config(body: ConfigIn):
     return {"speed": STATE.config.speed, "cooldown_min": STATE.config.cooldown_min}
 
 
+@app.get("/dashboard")
+async def dashboard():
+    return FileResponse(STATIC_DIR / "dashboard.html")
+
+
 @app.get("/")
 async def root():
     return FileResponse(STATIC_DIR / "index.html")
