@@ -46,6 +46,7 @@ import native_tools
 import notifier
 import persona
 import reminders
+import routines
 import sessions
 import proactive
 import sensors
@@ -113,6 +114,8 @@ class AppState:
         default_factory=reminders.ReminderStore)
     sessions: sessions.SessionStore = field(default_factory=sessions.SessionStore)
     current_key: Optional[str] = None   # active conversation (sidebar)
+    routines_engine: routines.RoutineEngine = field(
+        default_factory=routines.RoutineEngine)   # the house's presence routines
 
     def minutes_since_user(self) -> Optional[float]:
         if self.last_user_at is None:
@@ -179,44 +182,57 @@ async def _proactive_loop() -> None:
                 STATE.sessions.append(STATE.current_key, "assistant", line)
             await _push("assistant", line, "proactive")
 
-        try:
-            decision = await asyncio.to_thread(
-                proactive.tick,
-                STATE.proactive_state(),
-                generate=STATE.generate, fast_model=STATE.fast,
-                store=STATE.store, config=STATE.config,
-            )
-        except Exception as exc:  # noqa: BLE001 - never let the loop die silently
-            print(f"[proactive] tick error: {type(exc).__name__}: {exc}", flush=True)
-            await asyncio.sleep(2)
-            continue
-        print(f"[proactive] tick spoke={decision.spoke} reason={decision.reason!r} "
-              f"E={decision.energy:.2f} score={decision.base_score:.2f} "
-              f"wait={decision.wait_next_s}s", flush=True)
-        if decision.spoke and decision.text:
-            STATE.last_proactive_at = time.time()
-            STATE.history.append({"role": "assistant", "content": decision.text,
-                                  "ts": time.time()})
-            if STATE.current_key is not None:
-                STATE.sessions.append(STATE.current_key, "assistant", decision.text)
-            await _push("assistant", decision.text, "proactive")
-        else:
-            # Idle: nothing to say -> occasionally drift (reflect on memory).
-            # Runs off the response path, never sent to the person.
+        # One shared presence read for this tick, used by both the house routines
+        # and the restlessness gate (so we don't ioreg twice).
+        pres = await asyncio.to_thread(sensors.read)
+
+        # The house's routines run BEFORE restlessness: specific, earned moments (a
+        # return, a long focus, the evening) rather than a random roll. If one speaks,
+        # it stands in for this tick's outreach.
+        spoke_routine = await _maybe_routine(pres)
+
+        wait = max(1, int(STATE.config.tick_fast / max(STATE.config.speed, 1e-9)))
+        if not spoke_routine:
             try:
-                r = await asyncio.to_thread(
-                    drift.maybe_drift, STATE.store,
-                    STATE.fast or STATE.generate, STATE.reflections,
-                    last_drift_at=STATE.last_drift_at, config=STATE.drift_config,
-                    embed=STATE.embed)
-                if r is not None:
-                    STATE.last_drift_at = time.time()
-                    print(f"[drift] reflected: {r.text[:80]}...", flush=True)
-            except Exception as exc:  # noqa: BLE001
-                print(f"[drift] error: {exc}", flush=True)
+                decision = await asyncio.to_thread(
+                    proactive.tick,
+                    STATE.proactive_state(),
+                    generate=STATE.generate, fast_model=STATE.fast,
+                    store=STATE.store, config=STATE.config, presence=pres,
+                )
+            except Exception as exc:  # noqa: BLE001 - never let the loop die silently
+                print(f"[proactive] tick error: {type(exc).__name__}: {exc}",
+                      flush=True)
+                await asyncio.sleep(2)
+                continue
+            print(f"[proactive] tick spoke={decision.spoke} reason={decision.reason!r} "
+                  f"E={decision.energy:.2f} score={decision.base_score:.2f} "
+                  f"wait={decision.wait_next_s}s", flush=True)
+            if decision.spoke and decision.text:
+                STATE.last_proactive_at = time.time()
+                STATE.history.append({"role": "assistant", "content": decision.text,
+                                      "ts": time.time()})
+                if STATE.current_key is not None:
+                    STATE.sessions.append(STATE.current_key, "assistant",
+                                          decision.text)
+                await _push("assistant", decision.text, "proactive")
+            else:
+                # Idle: nothing to say -> occasionally drift (reflect on memory).
+                # Runs off the response path, never sent to the person.
+                try:
+                    r = await asyncio.to_thread(
+                        drift.maybe_drift, STATE.store,
+                        STATE.fast or STATE.generate, STATE.reflections,
+                        last_drift_at=STATE.last_drift_at, config=STATE.drift_config,
+                        embed=STATE.embed)
+                    if r is not None:
+                        STATE.last_drift_at = time.time()
+                        print(f"[drift] reflected: {r.text[:80]}...", flush=True)
+                except Exception as exc:  # noqa: BLE001
+                    print(f"[drift] error: {exc}", flush=True)
+            wait = max(1, decision.wait_next_s)
         # Interruptible sleep: a config change or a new chat wakes us early; and we
         # never sleep past the next due reminder, so kept promises land on time.
-        wait = max(1, decision.wait_next_s)
         upcoming = [r.due_at for r in STATE.reminders.items
                     if not r.done and not r.delivered]
         if upcoming:
@@ -347,6 +363,37 @@ async def chat(body: ChatIn):
 
     return {"reply": reply, "water_state": water, "score": score,
             "fell_back": fell_back, "used_tools": used_tools}
+
+
+async def _maybe_routine(pres: sensors.Presence) -> bool:
+    """Check the house routines against the current presence; if one has earned a
+    line, compose it in the Keeper's voice (the routine's intent as context) and
+    deliver it. Returns True iff a routine spoke this tick."""
+    try:
+        routine = STATE.routines_engine.check(
+            pres, time.time(), STATE.minutes_since_user())
+    except Exception as exc:  # noqa: BLE001
+        print(f"[routine] check error: {exc}", flush=True)
+        return False
+    if routine is None:
+        return False
+    water = proactive.derive_state(STATE.minutes_since_user())
+    mem = memory.recall(STATE.store, "", k=3, embed=STATE.embed)
+    result = await asyncio.to_thread(
+        compose.compose, "proactive", water,
+        generate=STATE.generate, fast_model=STATE.fast,
+        memory=mem, context=routine.intent)
+    if result.silent or not result.text:
+        return False        # composed nothing on-voice -> let restlessness decide
+    STATE.routines_engine.fire(routine, time.time())
+    STATE.last_proactive_at = time.time()
+    STATE.history.append({"role": "assistant", "content": result.text,
+                          "ts": time.time()})
+    if STATE.current_key is not None:
+        STATE.sessions.append(STATE.current_key, "assistant", result.text)
+    await _push("assistant", result.text, "proactive")
+    print(f"[routine] {routine.key} spoke", flush=True)
+    return True
 
 
 async def _distill_async(user_msg: str, reply: str) -> None:
