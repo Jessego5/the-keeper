@@ -8,9 +8,10 @@ logo.
 macOS reality: unsigned Python can't use the modern notification API (auth is
 denied), so we shell out, best-first:
   1. Keeper.app -> a rebranded copy of terminal-notifier (built by
-     scripts/build_keeper_notifier.sh) that carries the Keeper's OWN icon and name,
-     so both the PRIMARY badge and the -contentImage thumbnail are the Keeper.
-  2. plain terminal-notifier -> Keeper thumbnail, but terminal-notifier's badge.
+     scripts/build_keeper_notifier.sh) that carries the Keeper's OWN icon and name
+     as the PRIMARY badge — no thumbnail needed, so the banner stays clean.
+  2. plain terminal-notifier -> falls back to a -contentImage thumbnail (the only
+     way to show the Keeper without the rebranded app), plus terminal-notifier's badge.
   3. osascript -> reliable, but a generic icon.
 No-op off macOS.
 """
@@ -53,10 +54,13 @@ def notify(title: str, message: str) -> None:
     tn = _binary()
     try:
         if tn:
-            subprocess.run(
-                [tn, "-title", title, "-message", message,
-                 "-contentImage", str(ICON), "-sound", "default"],
-                timeout=5, capture_output=True)
+            cmd = [tn, "-title", title, "-message", message, "-sound", "default"]
+            # Keeper.app already shows the Keeper as the PRIMARY badge, so no
+            # thumbnail is needed. Only the plain terminal-notifier fallback needs
+            # -contentImage to show the Keeper at all.
+            if tn != str(KEEPER_APP_BIN):
+                cmd += ["-contentImage", str(ICON)]
+            subprocess.run(cmd, timeout=5, capture_output=True)
         else:
             # osascript: escape double quotes for the AppleScript string.
             t = title.replace('"', "'")
@@ -71,5 +75,5 @@ def notify(title: str, message: str) -> None:
 
 if __name__ == "__main__":
     print("backend:", available())
-    notify("the keeper", "You asked me to hold this. It's time.")
+    notify("The Keeper", "You asked me to hold this. It's time.")
     print("fired — check the top-right")
