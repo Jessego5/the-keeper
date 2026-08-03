@@ -11,3 +11,4 @@ keeper_sandbox/
 DESIGN_NOTES.md
 evals/results/
 backend/notify/
+memory_store_backup_*/
