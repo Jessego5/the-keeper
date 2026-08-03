@@ -51,3 +51,58 @@ def test_maybe_drift_respects_interval(store, log):
 def test_disabled_never_drifts(store, log):
     cfg = drift.DriftConfig(enabled=False)
     assert drift.maybe_drift(store, _stub, log, last_drift_at=None, config=cfg) is None
+
+
+# --- Generative Agents reflection synthesis --- #
+
+def _synth_gen(system, user):
+    """Routes on the prompt: salient questions, then a grounded insight."""
+    if "salient high-level questions" in system:
+        return "What is she avoiding?\nWhat does she keep returning to?"
+    if "write ONE insight" in system:
+        return "[8] She keeps circling back to what she left unfinished."
+    return "a quiet note"
+
+
+@pytest.fixture
+def rich_store(tmp_path):
+    s = memory.MemoryStore(tmp_path / "f.jsonl")
+    s.add("Is a painter; stopped in March.", "identity")
+    s.add("Left a canvas unfinished.", "event")
+    s.add("Has a brother, Sam; not spoken since spring.", "identity")
+    return s
+
+
+def test_synthesize_creates_retrievable_insights(rich_store, log):
+    insights = drift.synthesize(rich_store, _synth_gen, log)
+    assert insights, "should produce at least one insight"
+    assert all(f.kind == "insight" for f in insights)
+    # stored back into the fact stream (retrievable), and logged for the dashboard
+    assert any(f.kind == "insight" for f in rich_store.facts)
+    assert log.latest().text == insights[-1].text
+
+
+def test_synthesize_dedups_identical_insights(rich_store):
+    # both questions yield the same insight text -> collapses to one
+    insights = drift.synthesize(rich_store, _synth_gen)
+    assert len(insights) == 1
+
+
+def test_synthesize_skips_when_too_few_facts(tmp_path):
+    s = memory.MemoryStore(tmp_path / "f.jsonl")
+    s.add("Only one fact so far.", "event")
+    assert drift.synthesize(s, _synth_gen) == []
+
+
+def test_insight_recalled_as_own_read(rich_store):
+    drift.synthesize(rich_store, _synth_gen)
+    out = memory.recall(rich_store, "what is she avoiding", k=6)
+    assert "come to understand" in out         # rendered as the Keeper's conclusion
+
+
+def test_maybe_drift_synthesizes_when_rich(rich_store, log):
+    import time
+    r = drift.maybe_drift(rich_store, _synth_gen, log,
+                          last_drift_at=time.time() - 4 * 3600)
+    assert r is not None
+    assert any(f.kind == "insight" for f in rich_store.facts)

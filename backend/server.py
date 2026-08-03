@@ -207,7 +207,8 @@ async def _proactive_loop() -> None:
                 r = await asyncio.to_thread(
                     drift.maybe_drift, STATE.store,
                     STATE.fast or STATE.generate, STATE.reflections,
-                    last_drift_at=STATE.last_drift_at, config=STATE.drift_config)
+                    last_drift_at=STATE.last_drift_at, config=STATE.drift_config,
+                    embed=STATE.embed)
                 if r is not None:
                     STATE.last_drift_at = time.time()
                     print(f"[drift] reflected: {r.text[:80]}...", flush=True)
