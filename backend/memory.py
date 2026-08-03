@@ -5,10 +5,17 @@ Two jobs:
     distill(messages, generate) -> facts     after a chat, extract durable facts
     recall(store, cue, k)       -> string     before a turn, surface relevant ones
 
-Storage is a plain JSONL file (memory_store/facts.jsonl) — no vector DB in v1, by
-design (REFERENCE.md: biggest time sink, least visible payoff). Recall is keyword
-overlap + recency + how often a fact has recurred. It is deliberately simple; the
-magic is not the retrieval algorithm, it is that the Keeper *has* the fact at all.
+Retrieval follows the Generative Agents memory model (Park et al., 2023,
+"Generative Agents: Interactive Simulacra of Human Behavior"): each memory is
+scored by a weighted sum of RECENCY (exponential decay since last touched),
+IMPORTANCE (a 1-10 poignancy the model assigns when the fact is formed), and
+RELEVANCE (embedding cosine to the current cue). The three are min-max normalized
+across the candidate set and summed, exactly as in the paper's retrieval function.
+Consolidation under memory pressure follows MemGPT (Packer et al., 2023): when the
+store grows past a budget, old low-importance facts are summarized and archived.
+
+Storage is a plain JSONL file (memory_store/facts.jsonl) — no vector DB; cosine is
+pure Python, fine at this scale (hundreds of facts). Swap in a vector store to grow.
 
 Lesson baked in from the first voice test: facts are stored as clean third-person
 statements ("has a brother, Sam; not spoken since spring"), never as raw meta-notes
@@ -46,19 +53,40 @@ _STOPWORDS = {
 }
 
 
+# Generative Agents retrieval weights (paper uses 1/1/1) and the hourly recency
+# decay (the paper's 0.99 per game-hour; 0.995 here for a gentler human timescale).
+_W_RECENCY = 1.0
+_W_IMPORTANCE = 1.0
+_W_RELEVANCE = 1.0
+_RECENCY_DECAY = 0.995
+
+
 @dataclass
 class Fact:
-    """One durable thing the Keeper keeps about the person."""
+    """One durable thing the Keeper keeps about the person.
+
+    `kind` is 'insight' for the Keeper's OWN synthesized understanding (from
+    reflection), which recall renders separately so it is never recited back as
+    something the person said — see recall() and drift.synthesize().
+    """
 
     text: str
-    kind: str = "event"            # identity | state | event | preference
+    kind: str = "event"            # identity | state | event | preference | insight
     created: float = field(default_factory=time.time)
     last_seen: float = field(default_factory=time.time)
     mentions: int = 1              # how many times it has resurfaced
+    importance: float = 5.0        # 1-10 poignancy (Generative Agents), model-assigned
     embedding: Optional[list[float]] = None   # semantic vector (None => keyword-only)
 
     def age_days(self, now: Optional[float] = None) -> float:
         return ((now or time.time()) - self.last_seen) / 86400.0
+
+    def recency(self, now: Optional[float] = None,
+                decay: float = _RECENCY_DECAY) -> float:
+        """Generative Agents recency: exponential decay per hour since last touched.
+        1.0 the moment it's seen, decaying toward 0 as it goes untouched."""
+        hours = ((now or time.time()) - self.last_seen) / 3600.0
+        return decay ** max(hours, 0.0)
 
     def when(self) -> str:
         return datetime.fromtimestamp(self.created, timezone.utc).date().isoformat()
@@ -89,17 +117,21 @@ class MemoryStore:
                     for f in self.facts))
 
     def add(self, text: str, kind: str = "event",
-            embed: Optional[Embedder] = None) -> Optional[Fact]:
+            embed: Optional[Embedder] = None,
+            importance: float = 5.0) -> Optional[Fact]:
         """Add a fact, or bump an existing duplicate instead of duplicating.
 
         With an embedder, dedup is SEMANTIC (cosine): "has a brother, Sam" and
         "her brother is named Sam" collapse even though their words differ — which
         keyword jaccard misses. Without one, falls back to keyword dedup.
-        Returns the Fact if stored/updated, None if it was empty.
+        `importance` is the 1-10 poignancy (Generative Agents); a resurfacing fact
+        keeps the higher of the old and new score. Returns the Fact if stored/
+        updated, None if it was empty.
         """
         text = text.strip()
         if not text:
             return None
+        importance = max(1.0, min(10.0, importance))
         vec = None
         if embed is not None:
             try:
@@ -110,18 +142,24 @@ class MemoryStore:
         if dupe is not None:
             dupe.mentions += 1
             dupe.last_seen = time.time()
+            dupe.importance = max(dupe.importance, importance)
             if dupe.embedding is None and vec is not None:
                 dupe.embedding = vec       # backfill a vector on an old fact
             self._save()
             return dupe
-        fact = Fact(text=text, kind=kind, embedding=vec)
+        fact = Fact(text=text, kind=kind, embedding=vec, importance=importance)
         self.facts.append(fact)
         self._save()
         return fact
 
-    def add_many(self, items: Iterable[tuple[str, str]],
+    def add_many(self, items: Iterable[tuple],
                  embed: Optional[Embedder] = None) -> list[Fact]:
-        out = [self.add(text, kind, embed) for text, kind in items]
+        """items: (text, kind) or (text, kind, importance) tuples."""
+        out = []
+        for it in items:
+            text, kind = it[0], it[1]
+            imp = it[2] if len(it) > 2 else 5.0
+            out.append(self.add(text, kind, embed, imp))
         return [f for f in out if f is not None]
 
     def _find_similar(self, text: str,
@@ -153,45 +191,87 @@ class MemoryStore:
 
 def recall(store: MemoryStore, cue: str = "", k: int = 5,
            now: Optional[float] = None, embed: Optional[Embedder] = None) -> str:
-    """Return up to k relevant facts rendered for the system prompt's memory slot.
+    """Return up to k relevant facts, rendered for the system prompt's memory slot.
 
-    With an embedder and a cue, recall is SEMANTIC: it embeds the cue and ranks
-    facts by cosine similarity (blended with recency/recurrence), so "tell me
-    about my sibling" surfaces "has a brother, Sam" even with no shared words.
-    Falls back to keyword overlap when there is no embedder, no cue (proactive/
-    drift), or the query can't be embedded. Empty string if the store is empty.
+    Ranking is the Generative Agents retrieval function (see rank_facts): recency +
+    importance + relevance, each min-max normalized then summed. Insights (the
+    Keeper's own synthesized understanding) are rendered under a separate heading so
+    they are never returned as something the person said. Falls back to keyword
+    overlap when there is no embedder or the cue can't be embedded. Empty string if
+    the store is empty.
     """
     if not store.facts:
         return ""
+    top = rank_facts(store.facts, cue, k=k, now=now, embed=embed)
+    if not top:
+        return ""
+    kept = [f for f in top if f.kind != "insight"]
+    insights = [f for f in top if f.kind == "insight"]
+    blocks = []
+    if kept:
+        blocks.append("\n".join(f"- {f.text}" for f in kept))
+    if insights:
+        # Rendered as the Keeper's conclusions, not as reported facts.
+        blocks.append("what you've come to understand (your own read, not their words):\n"
+                      + "\n".join(f"- {f.text}" for f in insights))
+    return "\n\n".join(blocks)
+
+
+def rank_facts(facts: list[Fact], cue: str = "", k: int = 5,
+               now: Optional[float] = None,
+               embed: Optional[Embedder] = None) -> list[Fact]:
+    """The Generative Agents retrieval function, returning the top-k Facts.
+
+    score(f) = w_rec·recency(f) + w_imp·importance(f) + w_rel·relevance(f, cue)
+
+    Each of the three components is min-max normalized to [0,1] across the candidate
+    set before weighting (as in Park et al. 2023), so no single component's raw scale
+    dominates. relevance is embedding cosine to the cue; with no embedder/cue it is
+    dropped and ranking rests on recency + importance (the proactive/drift case).
+    """
+    if not facts:
+        return []
     now = now or time.time()
 
-    # ── semantic path ──
-    if embed is not None and cue.strip() and any(f.embedding for f in store.facts):
-        cue_vec = None
+    recency = [f.recency(now) for f in facts]
+    importance = [f.importance / 10.0 for f in facts]
+
+    relevance: Optional[list[float]] = None
+    if embed is not None and cue.strip() and any(f.embedding for f in facts):
         try:
             cue_vec = embed([cue])[0]
-        except Exception:  # noqa: BLE001
+        except Exception:  # noqa: BLE001 - degrade to recency+importance
             cue_vec = None
         if cue_vec is not None:
-            scored = []
-            for f in store.facts:
-                if f.embedding is None:
-                    continue
-                sim = _cosine(cue_vec, f.embedding)
-                score = sim * 3.0 + _presence(f, now)
-                scored.append((score, f))
-            scored.sort(key=lambda x: x[0], reverse=True)
-            top = [f for _, f in scored[:k]]
-            if top:
-                return "\n".join(f"- {f.text}" for f in top)
+            relevance = [max(0.0, _cosine(cue_vec, f.embedding)) if f.embedding
+                         else 0.0 for f in facts]
+    if relevance is None and cue.strip():
+        # Keyword relevance so a cue still steers ranking without embeddings.
+        cue_toks = _tokens(cue)
+        if cue_toks:
+            relevance = [_jaccard(cue_toks, _tokens(f.text)) for f in facts]
 
-    # ── keyword / presence fallback ──
-    cue_toks = _tokens(cue)
-    ranked = sorted(store.facts, key=lambda f: _score(f, cue_toks, now), reverse=True)
-    top = [f for f in ranked if _score(f, cue_toks, now) > 0][:k]
-    if not top:
-        top = ranked[:k]
-    return "\n".join(f"- {f.text}" for f in top)
+    rec_n = _minmax(recency)
+    imp_n = _minmax(importance)
+    rel_n = _minmax(relevance) if relevance is not None else [0.0] * len(facts)
+
+    scored = []
+    for i, f in enumerate(facts):
+        score = (_W_RECENCY * rec_n[i]
+                 + _W_IMPORTANCE * imp_n[i]
+                 + _W_RELEVANCE * rel_n[i])
+        scored.append((score, i, f))
+    # tie-break by original order (stable) via the index.
+    scored.sort(key=lambda t: (t[0], -t[1]), reverse=True)
+    return [f for _, _, f in scored[:k]]
+
+
+def _minmax(xs: list[float]) -> list[float]:
+    """Min-max normalize to [0,1]; all-equal collapses to 1.0 (neutral)."""
+    lo, hi = min(xs), max(xs)
+    if hi - lo < 1e-12:
+        return [1.0 for _ in xs]
+    return [(x - lo) / (hi - lo) for x in xs]
 
 
 def _cosine(a: list[float], b: list[float]) -> float:
@@ -209,22 +289,6 @@ def _cosine(a: list[float], b: list[float]) -> float:
     return dot / ((na ** 0.5) * (nb ** 0.5))
 
 
-def _presence(f: Fact, now: float) -> float:
-    """Recency + recurrence — how 'present' a fact is, independent of the cue."""
-    recency = 1.0 / (1.0 + f.age_days(now))
-    recurrence = min(f.mentions, 5) / 5.0
-    return recency * 0.6 + recurrence * 0.4
-
-
-def _score(f: Fact, cue_toks: set[str], now: float) -> float:
-    overlap = len(cue_toks & _tokens(f.text))
-    recency = 1.0 / (1.0 + f.age_days(now))        # 1.0 today -> decays with age
-    recurrence = min(f.mentions, 5) / 5.0          # capped so it can't dominate
-    # Keyword match is the strongest signal when a cue exists; otherwise
-    # presence (recency + recurrence) carries the ranking.
-    return overlap * 3.0 + recency * 1.5 + recurrence
-
-
 # --------------------------------------------------------------------------- #
 # Distill — turn a finished conversation into durable facts.
 # --------------------------------------------------------------------------- #
@@ -236,13 +300,20 @@ about. Skip small talk, passing moods, and anything about the companion.
 
 Write each fact as ONE short third-person statement of the fact itself — the thing \
 that is true, not the act of saying it. Write "Has a brother, Sam; not spoken since \
-spring," never "Mentioned a brother." Prefix each with its kind in brackets: \
-[identity] [state] [event] [preference].
+spring," never "Mentioned a brother."
+
+Prefix each line with [kind|importance]: kind is one of identity, state, event, \
+preference; importance is 1-10 for how poignant/significant this is to the person's \
+life — 1 is mundane (their coffee order), 10 is life-defining (a loss, a diagnosis, \
+a core relationship). Example: [identity|8] Has a brother, Sam; not spoken since spring.
 
 One fact per line, no bullets, no numbering. If there is nothing worth keeping, \
 output exactly NONE."""
 
-_KIND_RE = re.compile(r"^\[(identity|state|event|preference)\]\s*", re.I)
+# Matches [kind] or [kind|importance] at the start of a line.
+_KIND_RE = re.compile(
+    r"^\[(identity|state|event|preference|insight)(?:\s*\|\s*(\d{1,2}(?:\.\d+)?))?\]\s*",
+    re.I)
 
 
 def distill(messages: list[dict], generate: Generator,
@@ -265,19 +336,20 @@ def distill(messages: list[dict], generate: Generator,
     if not raw or raw.strip().upper().strip(".!") == "NONE":
         return []
 
-    parsed: list[tuple[str, str]] = []
+    parsed: list[tuple[str, str, float]] = []
     for line in raw.splitlines():
         line = line.strip().lstrip("-*0123456789. ").strip()
         if not line:
             continue
         m = _KIND_RE.match(line)
         kind = m.group(1).lower() if m else "event"
+        imp = float(m.group(2)) if (m and m.group(2)) else 5.0
         text = _KIND_RE.sub("", line).strip()
         if text:
-            parsed.append((text, kind))
+            parsed.append((text, kind, imp))
 
     if store is None:
-        return [Fact(text=t, kind=k) for t, k in parsed]
+        return [Fact(text=t, kind=k, importance=i) for t, k, i in parsed]
     return store.add_many(parsed, embed=embed)
 
 
