@@ -27,9 +27,9 @@ cp "$ICNS" "$OUT/Contents/Resources/keeper.icns"
 rm -f "$OUT/Contents/Resources/Terminal.icns" 2>/dev/null || true
 PLIST="$OUT/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleIconFile keeper"                       "$PLIST"
-/usr/libexec/PlistBuddy -c "Set :CFBundleName the keeper"                        "$PLIST" 2>/dev/null || true
-/usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName the keeper"                 "$PLIST" 2>/dev/null || \
-  /usr/libexec/PlistBuddy -c "Add :CFBundleDisplayName string the keeper"        "$PLIST"
+/usr/libexec/PlistBuddy -c "Set :CFBundleName The Keeper"                        "$PLIST" 2>/dev/null || true
+/usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName The Keeper"                 "$PLIST" 2>/dev/null || \
+  /usr/libexec/PlistBuddy -c "Add :CFBundleDisplayName string The Keeper"        "$PLIST"
 /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier com.keeper.notifier"         "$PLIST"
 
 # 4. re-sign ad-hoc (icon/plist changed) + register with Launch Services

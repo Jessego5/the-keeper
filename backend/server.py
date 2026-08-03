@@ -158,7 +158,7 @@ async def _push(role: str, content: str, kind: str) -> None:
     for q in list(STATE.listeners):
         await q.put(payload)
     if kind == "proactive":
-        await asyncio.to_thread(notifier.notify, "the keeper", content)
+        await asyncio.to_thread(notifier.notify, "The Keeper", content)
 
 
 # --------------------------------------------------------------------------- #
