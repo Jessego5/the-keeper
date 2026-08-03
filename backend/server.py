@@ -43,6 +43,7 @@ import energy
 import memory
 import mood
 import native_tools
+import notifier
 import persona
 import reminders
 import sessions
@@ -146,11 +147,15 @@ STATE = AppState()
 
 
 async def _push(role: str, content: str, kind: str) -> None:
-    """Fan a message out to every connected SSE listener."""
+    """Fan a message out to every connected SSE listener (on-page rendering) and,
+    for unbidden lines, fire a native OS notification — which reaches you even
+    with the browser closed and carries the Keeper's own image."""
     payload = json.dumps({"role": role, "content": content, "kind": kind,
                           "ts": time.time()})
     for q in list(STATE.listeners):
         await q.put(payload)
+    if kind == "proactive":
+        await asyncio.to_thread(notifier.notify, "the keeper", content)
 
 
 # --------------------------------------------------------------------------- #

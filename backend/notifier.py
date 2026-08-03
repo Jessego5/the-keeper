@@ -1,0 +1,62 @@
+"""notifier.py — native macOS notifications, fired from the backend.
+
+Why backend-fired: it works even when the browser is CLOSED (the server is the
+one notifying, not a tab) — closing the "missed a proactive line while the tab was
+shut" gap — and it lets the Keeper's own image ride along instead of the browser's
+logo.
+
+macOS reality: unsigned Python can't use the modern notification API (auth is
+denied), so we shell out, best-first:
+  1. terminal-notifier (signed helper) with -contentImage keeper.png -> the Keeper
+     image shows as the banner thumbnail.
+  2. osascript -> reliable, but a generic icon.
+Fully replacing the notification's PRIMARY app icon would need a signed .app
+bundle; the thumbnail is the best without packaging. No-op off macOS.
+"""
+
+from __future__ import annotations
+
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+ICON = Path(__file__).resolve().parent / "static" / "keeper.png"
+_IS_MAC = sys.platform == "darwin"
+
+
+def available() -> str:
+    """Which backend will be used: 'terminal-notifier' | 'osascript' | 'none'."""
+    if not _IS_MAC:
+        return "none"
+    return "terminal-notifier" if shutil.which("terminal-notifier") else "osascript"
+
+
+def notify(title: str, message: str) -> None:
+    """Fire one native notification. Blocking but fast (~tens of ms); call via
+    asyncio.to_thread from an async loop. Never raises."""
+    if not _IS_MAC:
+        return
+    tn = shutil.which("terminal-notifier")
+    try:
+        if tn:
+            subprocess.run(
+                [tn, "-title", title, "-message", message,
+                 "-contentImage", str(ICON), "-sound", "default"],
+                timeout=5, capture_output=True)
+        else:
+            # osascript: escape double quotes for the AppleScript string.
+            t = title.replace('"', "'")
+            m = message.replace('"', "'")
+            subprocess.run(
+                ["osascript", "-e",
+                 f'display notification "{m}" with title "{t}"'],
+                timeout=5, capture_output=True)
+    except Exception as exc:  # noqa: BLE001 - a failed banner is never fatal
+        print(f"[notify] {type(exc).__name__}: {exc}", flush=True)
+
+
+if __name__ == "__main__":
+    print("backend:", available())
+    notify("the keeper", "You asked me to hold this. It's time.")
+    print("fired — check the top-right")
