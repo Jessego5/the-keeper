@@ -1,0 +1,27 @@
+{
+  "_comment": "Copy to backend/mcp.json and edit the absolute paths. mcp.json is gitignored. The manager applies a read-only filter by default; 'tools' is an explicit allowlist (only these pass), 'deny' blocks by name. uvx servers pin 'mcp<2' because the published fetch/time/git servers target the mcp 1.x API while the client uses mcp 2.x.",
+  "servers": [
+    {
+      "name": "files",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/absolute/path/to/keeper_sandbox"]
+    },
+    {
+      "name": "fetch",
+      "command": "uvx",
+      "args": ["--with", "mcp<2", "mcp-server-fetch"]
+    },
+    {
+      "name": "time",
+      "command": "uvx",
+      "args": ["--with", "mcp<2", "mcp-server-time"]
+    },
+    {
+      "name": "git",
+      "command": "uvx",
+      "args": ["--with", "mcp<2", "mcp-server-git", "--repository", "/absolute/path/to/your/repo"],
+      "read_only": true,
+      "tools": ["git_status", "git_log", "git_diff", "git_diff_staged", "git_diff_unstaged", "git_show"]
+    }
+  ]
+}

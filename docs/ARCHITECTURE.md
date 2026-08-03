@@ -112,7 +112,7 @@ the paper) but never recited back as the person's own words.
 | `routines.py` | Presence-driven house routines |
 | `reminders.py` | Reminder store + recurrence |
 | `native_tools.py` | The Keeper's own action tools (remind / list / complete) |
-| `tools.py` | MCP manager (read-only sandboxed file tools) |
+| `tools.py` | MCP manager — connects configured servers (files, fetch, time, git), applies a read-only filter + per-server allowlist |
 | `sensors.py` | Read-only macOS presence (idle, lock, frontmost app) |
 | `sessions.py` | Persistent per-conversation history (the sidebar) |
 | `channels.py` | Delivery-surface abstraction: web (SSE) + native banner + opt-in Telegram, fanned out best-effort |

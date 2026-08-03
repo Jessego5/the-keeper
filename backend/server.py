@@ -82,7 +82,16 @@ comes; that is keeping, not intruding.
 For a request that takes more than one step, work it in steps: call a tool, read
 what it returns, then call the next — e.g. list_reminders to see what you hold,
 then complete_reminder on the right one. Take the steps you need, then answer once
-in your voice."""
+in your voice.
+
+You can also read the present moment and the wider world when it helps: use the time
+tools for what day or hour it is, and the fetch tool to read a web page or article
+they point you to. If they ask about this project — the code, what you have been
+building or working on lately — use the git tools with repo_path set to "{repo}"
+(git_log for recent work, git_show to look closely at one change)."""
+
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+TOOL_ADDENDUM = TOOL_ADDENDUM.format(repo=_REPO_ROOT)
 
 RECENT_WINDOW_MIN = 240.0   # "recent" messages = last 4h, for context richness
 
