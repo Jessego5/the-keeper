@@ -84,3 +84,47 @@ def test_semantic_dedup_merges_reworded_fact(store):
     store.add("Has a brother named Sam.", "identity", embed=_fake_embed)
     dup = store.add("Her brother is named Sam.", "identity", embed=_fake_embed)
     assert len(store.facts) == 1 and dup.mentions == 2  # same topic vector -> merge
+
+
+# --- Generative Agents retrieval: recency + importance + relevance --- #
+
+def test_importance_parsed_from_distill(store):
+    def gen(system, user):
+        return "[state|9] Lost her job in March.\n[preference|2] Likes oat milk."
+    facts = memory.distill([{"role": "user", "content": "..."}], gen, store)
+    by_text = {f.text: f.importance for f in facts}
+    assert by_text["Lost her job in March."] == 9.0
+    assert by_text["Likes oat milk."] == 2.0
+
+
+def test_importance_breaks_recency_tie(store):
+    # Same recency (added together), so importance decides the ranking.
+    store.add("Ran out of oat milk.", "state", importance=1)
+    store.add("Her mother died last week.", "state", importance=10)
+    top = memory.rank_facts(store.facts, cue="", k=1)
+    assert "mother" in top[0].text
+
+
+def test_recency_decays_ranking(store):
+    import time
+    store.add("Older, equally important.", "state", importance=5)
+    store.add("Newer, equally important.", "state", importance=5)
+    store.facts[0].last_seen = time.time() - 10 * 86400   # age the first one 10 days
+    top = memory.rank_facts(store.facts, cue="", k=1)
+    assert "Newer" in top[0].text
+
+
+def test_dedup_keeps_higher_importance(store):
+    store.add("Feels stuck lately.", "state", importance=3)
+    dup = store.add("Feels stuck these days.", "state", importance=8)
+    assert dup.importance == 8.0        # resurfacing raised the poignancy
+
+
+def test_insights_rendered_under_own_heading(store):
+    store.add("Has a brother, Sam.", "identity", importance=6)
+    store.add("Keeps returning to what she left unfinished.", "insight", importance=7)
+    out = memory.recall(store, "", k=5)
+    assert "come to understand" in out          # insight framed as the Keeper's read
+    assert "your own read" in out
+    # the told fact is not under the insight heading
+    assert out.index("Sam") < out.index("come to understand")
