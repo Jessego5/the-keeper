@@ -329,10 +329,32 @@ a core relationship). Example: [identity|8] Has a brother, Sam; not spoken since
 One fact per line, no bullets, no numbering. If there is nothing worth keeping, \
 output exactly NONE."""
 
-# Matches [kind] or [kind|importance] at the start of a line.
-_KIND_RE = re.compile(
-    r"^\[(identity|state|event|preference|insight)(?:\s*\|\s*(\d{1,2}(?:\.\d+)?))?\]\s*",
-    re.I)
+_KNOWN_KINDS = {"identity", "state", "event", "preference", "insight"}
+# One leading [...] tag, whatever it holds.
+_LEADING_TAG_RE = re.compile(r"^\s*\[([^\]]*)\]\s*")
+_NUM_RE = re.compile(r"^\d{1,2}(?:\.\d+)?$")
+
+
+def _parse_prefix(line: str) -> tuple[str, float, str]:
+    """Peel EVERY leading [..] tag off a distilled line and return (kind, importance,
+    text). Robust to what the model actually emits: unknown tags ([emotion],
+    [activity]) are dropped, several tags ([activity] [state]) are all stripped, and
+    an importance number is read from a [kind|8] or a bare [8]. Nothing bracketed is
+    ever left to leak into the stored fact. Defaults: kind 'event', importance 5."""
+    kind: Optional[str] = None
+    importance: Optional[float] = None
+    while True:
+        m = _LEADING_TAG_RE.match(line)
+        if not m:
+            break
+        line = line[m.end():]
+        for part in re.split(r"[|,/]", m.group(1)):
+            part = part.strip().lower()
+            if part in _KNOWN_KINDS and kind is None:
+                kind = part
+            elif _NUM_RE.match(part) and importance is None:
+                importance = float(part)
+    return kind or "event", importance if importance is not None else 5.0, line.strip()
 
 
 def distill(messages: list[dict], generate: Generator,
@@ -360,10 +382,7 @@ def distill(messages: list[dict], generate: Generator,
         line = line.strip().lstrip("-*0123456789. ").strip()
         if not line:
             continue
-        m = _KIND_RE.match(line)
-        kind = m.group(1).lower() if m else "event"
-        imp = float(m.group(2)) if (m and m.group(2)) else 5.0
-        text = _KIND_RE.sub("", line).strip()
+        kind, imp, text = _parse_prefix(line)
         if text:
             parsed.append((text, kind, imp))
 

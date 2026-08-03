@@ -97,6 +97,25 @@ def test_importance_parsed_from_distill(store):
     assert by_text["Likes oat milk."] == 2.0
 
 
+def test_distill_strips_stray_and_multiple_tags(store):
+    # REGRESSION: the model emits unknown/multiple tags; none may leak into the text.
+    def gen(system, user):
+        return ("[emotion] Feels stuck.\n"
+                "[activity] [state] Stopped painting in March.\n"
+                "[relationship|7] Has a brother, Sam.")
+    facts = memory.distill([{"role": "user", "content": "..."}], gen, store)
+    texts = {f.text for f in facts}
+    assert "Feels stuck." in texts                       # [emotion] dropped, not leaked
+    assert "Stopped painting in March." in texts         # both tags stripped
+    assert "Has a brother, Sam." in texts
+    assert not any("[" in t for t in texts)              # nothing bracketed survives
+    kinds = {f.text: f.kind for f in facts}
+    assert kinds["Stopped painting in March."] == "state"   # first known tag wins
+    assert kinds["Feels stuck."] == "event"                 # unknown -> default
+    imp = {f.text: f.importance for f in facts}
+    assert imp["Has a brother, Sam."] == 7.0                # importance read past tag
+
+
 def test_importance_breaks_recency_tie(store):
     # Same recency (added together), so importance decides the ranking.
     store.add("Ran out of oat milk.", "state", importance=1)
