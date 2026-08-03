@@ -354,6 +354,16 @@ async def _distill_async(user_msg: str, reply: str) -> None:
              {"role": "assistant", "content": reply}]
     await asyncio.to_thread(
         memory.distill, convo, STATE.fast or STATE.generate, STATE.store, STATE.embed)
+    # Under memory pressure, compress the low-value tail (MemGPT). Cheap no-op when
+    # the store is under budget; runs off the response path.
+    try:
+        made = await asyncio.to_thread(
+            memory.consolidate, STATE.store, STATE.fast or STATE.generate,
+            embed=STATE.embed)
+        if made:
+            print(f"[memory] consolidated {len(made)} cluster(s)", flush=True)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[memory] consolidate error: {exc}", flush=True)
 
 
 @app.get("/events")

@@ -128,3 +128,38 @@ def test_insights_rendered_under_own_heading(store):
     assert "your own read" in out
     # the told fact is not under the insight heading
     assert out.index("Sam") < out.index("come to understand")
+
+
+# --- MemGPT consolidation: compress the low-value tail under memory pressure --- #
+
+def _merge_gen(system, user):
+    return "Ran errands around town over several mundane days."
+
+
+def test_consolidate_noop_under_budget(store):
+    store.add("A single small fact.", "event")
+    assert memory.consolidate(store, _merge_gen, budget=60) == []
+
+
+def test_consolidate_merges_similar_tail_and_archives(store):
+    # three low-importance, similar errands + one important recent fact
+    store.add("Went to the store for milk.", "event", importance=1)
+    store.add("Went to the store for bread.", "event", importance=1)
+    store.add("Went to the store for eggs.", "event", importance=1)
+    store.add("Her mother is in the hospital.", "state", importance=10)
+    made = memory.consolidate(store, _merge_gen, budget=3)   # over by 1 -> compress
+    assert made, "should have produced a consolidated fact"
+    texts = [f.text for f in store.facts]
+    assert "Her mother is in the hospital." in texts          # important fact kept
+    # the errands were archived out of the active set
+    assert store.archive_path.exists()
+    assert sum("store for" in t for t in texts) < 3
+
+
+def test_consolidate_leaves_insights_untouched(store):
+    for i in range(4):
+        store.add(f"Minor errand number {i}.", "event", importance=1)
+    store.add("She keeps circling back to what she left unfinished.",
+              "insight", importance=8)
+    memory.consolidate(store, _merge_gen, budget=2)
+    assert any(f.kind == "insight" for f in store.facts)      # insight never archived
