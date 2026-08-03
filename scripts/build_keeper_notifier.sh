@@ -35,7 +35,13 @@ PLIST="$OUT/Contents/Info.plist"
 # 4. re-sign ad-hoc (icon/plist changed) + register with Launch Services
 codesign --force --deep --sign - "$OUT" >/dev/null 2>&1 || true
 /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "$OUT" 2>/dev/null || true
-touch "$OUT"  # refresh icon cache
+touch "$OUT"
 
-echo "built: $OUT"
+# 5. flush the caches that serve notification badge icons by bundle id — without
+# this, macOS keeps showing the icon/name from a previous build. usernoted and
+# NotificationCenter just restart (harmless); we deliberately do NOT killall Dock.
+killall usernoted 2>/dev/null || true
+killall NotificationCenter 2>/dev/null || true
+
+echo "built: $OUT (icon + notification caches flushed)"
 echo "binary: $OUT/Contents/MacOS/terminal-notifier"
