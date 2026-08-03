@@ -7,11 +7,12 @@ logo.
 
 macOS reality: unsigned Python can't use the modern notification API (auth is
 denied), so we shell out, best-first:
-  1. terminal-notifier (signed helper) with -contentImage keeper.png -> the Keeper
-     image shows as the banner thumbnail.
-  2. osascript -> reliable, but a generic icon.
-Fully replacing the notification's PRIMARY app icon would need a signed .app
-bundle; the thumbnail is the best without packaging. No-op off macOS.
+  1. Keeper.app -> a rebranded copy of terminal-notifier (built by
+     scripts/build_keeper_notifier.sh) that carries the Keeper's OWN icon and name,
+     so both the PRIMARY badge and the -contentImage thumbnail are the Keeper.
+  2. plain terminal-notifier -> Keeper thumbnail, but terminal-notifier's badge.
+  3. osascript -> reliable, but a generic icon.
+No-op off macOS.
 """
 
 from __future__ import annotations
@@ -21,14 +22,26 @@ import subprocess
 import sys
 from pathlib import Path
 
-ICON = Path(__file__).resolve().parent / "static" / "keeper.png"
+_HERE = Path(__file__).resolve().parent
+ICON = _HERE / "static" / "keeper.png"
+KEEPER_APP_BIN = _HERE / "notify" / "Keeper.app" / "Contents" / "MacOS" / "terminal-notifier"
 _IS_MAC = sys.platform == "darwin"
 
 
+def _binary() -> str | None:
+    """The best terminal-notifier binary: the rebranded Keeper.app if built, else
+    a plain terminal-notifier on PATH, else None."""
+    if KEEPER_APP_BIN.exists():
+        return str(KEEPER_APP_BIN)
+    return shutil.which("terminal-notifier")
+
+
 def available() -> str:
-    """Which backend will be used: 'terminal-notifier' | 'osascript' | 'none'."""
+    """Which backend will be used: 'keeper.app' | 'terminal-notifier' | 'osascript' | 'none'."""
     if not _IS_MAC:
         return "none"
+    if KEEPER_APP_BIN.exists():
+        return "keeper.app"
     return "terminal-notifier" if shutil.which("terminal-notifier") else "osascript"
 
 
@@ -37,7 +50,7 @@ def notify(title: str, message: str) -> None:
     asyncio.to_thread from an async loop. Never raises."""
     if not _IS_MAC:
         return
-    tn = shutil.which("terminal-notifier")
+    tn = _binary()
     try:
         if tn:
             subprocess.run(
