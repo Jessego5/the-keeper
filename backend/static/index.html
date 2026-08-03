@@ -6,72 +6,101 @@
 <title>The Keeper</title>
 <style>
   :root {
-    --deep:    #081316;   /* the dark bottom                    */
-    --sea:     #0d2327;   /* mid water                          */
-    --surface: #14383a;   /* faint light near the surface       */
-    --foam:    #cfe0da;   /* moonlit text (the Keeper)          */
-    --foam-dim:#7ea59d;   /* the person's own lines             */
-    --tide:    #5aa39a;   /* accent, tide-mark, current         */
-    --current: #2c5254;   /* hairlines, timestamps              */
+    --deep:    #081316;
+    --sea:     #0d2327;
+    --surface: #14383a;
+    --foam:    #cfe0da;
+    --foam-dim:#7ea59d;
+    --tide:    #5aa39a;
+    --current: #2c5254;
     --serif: "Iowan Old Style", "Palatino Linotype", Palatino,
              "Book Antiqua", Georgia, "Times New Roman", serif;
   }
-
   * { box-sizing: border-box; }
-
   html, body { height: 100%; margin: 0; }
   body {
-    /* descending depth: lighter at the surface, dark as you sink */
     background: linear-gradient(180deg,
                 var(--surface) 0%, var(--sea) 38%, var(--deep) 100%);
-    color: var(--foam);
-    font-family: var(--serif);
-    -webkit-font-smoothing: antialiased;
-    overflow: hidden;
+    color: var(--foam); font-family: var(--serif);
+    -webkit-font-smoothing: antialiased; overflow: hidden;
   }
-
-  /* slow pools of light drifting like sun through water */
   #tide-glow {
     position: fixed; inset: -20%; z-index: 0; pointer-events: none;
     background:
       radial-gradient(38% 30% at 30% 22%, rgba(90,163,154,0.16), transparent 70%),
       radial-gradient(46% 34% at 74% 40%, rgba(120,200,190,0.10), transparent 72%),
       radial-gradient(40% 40% at 52% 80%, rgba(40,90,95,0.18), transparent 75%);
-    filter: blur(8px);
-    animation: drift 42s ease-in-out infinite alternate;
+    filter: blur(8px); animation: drift 42s ease-in-out infinite alternate;
   }
   @keyframes drift {
     from { transform: translate3d(-3%, -2%, 0) scale(1.05); }
     to   { transform: translate3d(4%, 3%, 0) scale(1.12); }
   }
-
-  /* depth vignette — dark toward the edges and the floor */
   body::before {
     content: ""; position: fixed; inset: 0; z-index: 0; pointer-events: none;
     background: radial-gradient(130% 100% at 50% 30%,
                 transparent 40%, rgba(3,8,10,0.85) 100%);
   }
-  /* fine grain, like silt suspended in the water */
   body::after {
     content: ""; position: fixed; inset: 0; z-index: 0; pointer-events: none;
     opacity: 0.045; mix-blend-mode: overlay;
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
   }
 
+  #app { position: relative; z-index: 1; display: flex; height: 100%; }
+
+  /* ── the drawers: conversation history ── */
+  #sidebar {
+    flex: 0 0 15rem; width: 15rem; height: 100%;
+    border-right: 1px solid var(--current);
+    background: rgba(8,19,22,0.45);
+    display: flex; flex-direction: column;
+    padding: 1.4rem 0.85rem 1rem; overflow-y: auto;
+    scrollbar-width: thin; scrollbar-color: var(--current) transparent;
+  }
+  #sidebar .side-title {
+    color: var(--tide); font-size: 0.62rem; text-transform: uppercase;
+    letter-spacing: 0.34em; text-indent: 0.34em; text-align: center;
+    opacity: 0.85; margin-bottom: 1.1rem;
+  }
+  #newconvo {
+    width: 100%; margin-bottom: 1.2rem;
+    background: rgba(20,56,58,0.35); border: 1px solid var(--current);
+    border-radius: 999px; cursor: pointer; color: var(--foam-dim);
+    font-family: var(--serif); font-style: italic; font-size: 0.82rem;
+    letter-spacing: 0.03em; padding: 0.45rem 0;
+    transition: color 0.3s, border-color 0.3s;
+  }
+  #newconvo:hover { color: var(--tide); border-color: var(--tide); }
+  #sessions { list-style: none; margin: 0; padding: 0; flex: 1; }
+  #sessions li {
+    padding: 0.5rem 0.55rem; margin-bottom: 0.15rem; border-radius: 0.4rem;
+    color: var(--foam-dim); font-size: 0.86rem; line-height: 1.35;
+    cursor: pointer; border-left: 2px solid transparent;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    transition: color 0.22s, background 0.22s, border-color 0.22s;
+  }
+  #sessions li:hover { color: var(--foam); background: rgba(20,56,58,0.3); }
+  #sessions li.active {
+    color: var(--foam); border-left-color: var(--tide);
+    background: rgba(20,56,58,0.45);
+  }
+  #sessions .empty { color: var(--current); font-style: italic;
+    font-size: 0.8rem; padding: 0.4rem 0.55rem; }
+
+  /* ── the water: the conversation ── */
+  #main { flex: 1 1 auto; height: 100%; display: flex; }
   #shell {
-    position: relative; z-index: 1;
-    max-width: 40rem; height: 100%;
+    flex: 1 1 auto; max-width: 40rem; height: 100%;
     margin: 0 auto; padding: 0 1.5rem;
     display: flex; flex-direction: column;
   }
-
   header {
     text-align: center; padding: 2rem 0 1.1rem;
     letter-spacing: 0.5em; text-indent: 0.5em;
     font-size: 0.72rem; text-transform: uppercase;
     color: var(--tide); opacity: 0.8;
   }
-  /* a slow tide-line under the title */
   header .wave {
     margin: 1rem auto 0; width: 8rem; height: 8px;
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='48' height='8'%3E%3Cpath d='M0 4 Q 12 0 24 4 T 48 4' fill='none' stroke='%232c5254' stroke-width='1'/%3E%3C/svg%3E");
@@ -84,42 +113,32 @@
     flex: 1 1 auto; overflow-y: auto; padding: 1rem 0 1.5rem;
     scrollbar-width: thin; scrollbar-color: var(--current) transparent;
   }
-  #log::-webkit-scrollbar { width: 6px; }
-  #log::-webkit-scrollbar-thumb { background: var(--current); border-radius: 3px; }
-
   #log .watermark {
     height: 100%; display: flex; align-items: center; justify-content: center;
     color: var(--current); font-style: italic; font-size: 1.05rem;
     letter-spacing: 0.04em; opacity: 0.9;
   }
-
   .line { margin: 1.35rem 0; line-height: 1.6; animation: rise 1.3s ease both; }
-  /* surface up from the deep */
   @keyframes rise {
     from { opacity: 0; transform: translateY(14px); filter: blur(2px); }
     to   { opacity: 1; transform: none; filter: none; }
   }
-
   .line.keeper .text {
     font-size: 1.28rem; color: var(--foam); letter-spacing: 0.01em;
-    text-shadow: 0 0 22px rgba(90,163,154,0.12);   /* a faint underwater glow */
+    text-shadow: 0 0 22px rgba(90,163,154,0.12);
   }
   .line.keeper.proactive .text { font-style: italic; }
   .line.keeper.proactive .text::before {
-    content: "\223F";           /* a sine-wave tide-mark for unbidden lines */
-    color: var(--tide); margin-right: 0.55rem; font-style: normal;
-    text-shadow: 0 0 10px rgba(90,163,154,0.5);
+    content: "\223F"; color: var(--tide); margin-right: 0.55rem;
+    font-style: normal; text-shadow: 0 0 10px rgba(90,163,154,0.5);
   }
-
   .line.me { text-align: right; }
   .line.me .text { font-size: 1rem; color: var(--foam-dim); font-style: italic; }
-
   .ts {
     display: block; margin-top: 0.4rem; font-size: 0.66rem;
     letter-spacing: 0.08em; color: var(--current); font-style: normal;
   }
   .line.me .ts { text-align: right; }
-
   #pending { margin: 1.35rem 0; color: var(--tide); font-size: 1.28rem; }
   #pending::after {
     content: "\223F"; animation: breathe 2.6s ease-in-out infinite;
@@ -134,17 +153,14 @@
     transition: border-color 0.4s;
   }
   #compose:focus-within { border-color: var(--tide); }
-  #compose .prompt {
-    color: var(--tide); font-size: 1rem;
-    text-shadow: 0 0 10px rgba(90,163,154,0.4);
-  }
+  #compose .prompt { color: var(--tide); font-size: 1rem;
+    text-shadow: 0 0 10px rgba(90,163,154,0.4); }
   #entry {
     flex: 1; background: transparent; border: none; outline: none;
     color: var(--foam); font-family: var(--serif); font-size: 1.05rem;
     caret-color: var(--tide); font-style: italic;
   }
   #entry::placeholder { color: var(--current); font-style: italic; }
-
   #hint { text-align: center; font-size: 0.62rem; color: var(--current);
           margin-top: 0.75rem; letter-spacing: 0.06em; min-height: 1em; }
 
@@ -152,23 +168,35 @@
     #tide-glow, header .wave { animation: none; }
     .line { animation: none; }
   }
+  @media (max-width: 640px) {
+    #sidebar { flex-basis: 9.5rem; width: 9.5rem; }
+  }
 </style>
 </head>
 <body>
   <div id="tide-glow"></div>
-  <div id="shell">
-    <header>
-      the keeper
-      <div class="wave"></div>
-    </header>
-    <div id="log"><div class="watermark">the water is still.</div></div>
-    <footer>
-      <form id="compose" autocomplete="off">
-        <span class="prompt">&#8767;</span>
-        <input id="entry" placeholder="say something to the water&hellip;" autofocus>
-      </form>
-      <div id="hint"></div>
-    </footer>
+  <div id="app">
+    <aside id="sidebar">
+      <div class="side-title">the keeper</div>
+      <button id="newconvo" title="start a new conversation">begin again</button>
+      <ul id="sessions"><li class="empty">nothing kept yet.</li></ul>
+    </aside>
+    <main id="main">
+      <div id="shell">
+        <header>
+          the keeper
+          <div class="wave"></div>
+        </header>
+        <div id="log"><div class="watermark">the water is still.</div></div>
+        <footer>
+          <form id="compose" autocomplete="off">
+            <span class="prompt">&#8767;</span>
+            <input id="entry" placeholder="say something to the water&hellip;" autofocus>
+          </form>
+          <div id="hint"></div>
+        </footer>
+      </div>
+    </main>
   </div>
 
 <script>
@@ -176,16 +204,19 @@
   const form = document.getElementById("compose");
   const entry = document.getElementById("entry");
   const hint = document.getElementById("hint");
+  const sessionsEl = document.getElementById("sessions");
   let watermark = log.querySelector(".watermark");
   let pending = null;
+  let activeKey = null;
 
   function fmtTime(ts) {
-    const d = ts ? new Date(ts * 1000) : new Date();
+    const d = ts ? new Date(typeof ts === "number" ? ts * 1000 : ts) : new Date();
     return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   }
-
-  function clearWatermark() {
-    if (watermark) { watermark.remove(); watermark = null; }
+  function clearWatermark() { if (watermark) { watermark.remove(); watermark = null; } }
+  function showWatermark() {
+    log.innerHTML = '<div class="watermark">the water is still.</div>';
+    watermark = log.querySelector(".watermark");
   }
 
   function addLine(role, text, kind, ts) {
@@ -202,7 +233,6 @@
     log.scrollTop = log.scrollHeight;
     return el;
   }
-
   function showPending() {
     clearWatermark();
     pending = document.createElement("div");
@@ -210,24 +240,64 @@
     log.appendChild(pending);
     log.scrollTop = log.scrollHeight;
   }
-  function clearPending() {
-    if (pending) { pending.remove(); pending = null; }
+  function clearPending() { if (pending) { pending.remove(); pending = null; } }
+
+  // ── history sidebar ──
+  async function loadSessions() {
+    let data;
+    try { data = await (await fetch("/sessions")).json(); }
+    catch (e) { return null; }
+    sessionsEl.innerHTML = "";
+    if (!data.sessions || !data.sessions.length) {
+      sessionsEl.innerHTML = '<li class="empty">nothing kept yet.</li>';
+    } else {
+      for (const s of data.sessions) {
+        const li = document.createElement("li");
+        li.textContent = s.title || "…";
+        li.title = s.title || "";
+        li.dataset.key = s.key;
+        if (s.key === activeKey) li.classList.add("active");
+        li.addEventListener("click", () => openSession(s.key));
+        sessionsEl.appendChild(li);
+      }
+    }
+    return data;
   }
 
+  function markActive(key) {
+    activeKey = key;
+    for (const li of sessionsEl.querySelectorAll("li"))
+      li.classList.toggle("active", li.dataset.key === key);
+  }
+
+  async function openSession(key, doSelect = true) {
+    let msgs;
+    try { msgs = (await (await fetch("/sessions/" + encodeURIComponent(key) + "/messages")).json()).messages; }
+    catch (e) { return; }
+    if (doSelect) {
+      try { await fetch("/select", { method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ session_id: key }) }); } catch (e) {}
+    }
+    showWatermark();
+    for (const m of msgs || [])
+      addLine(m.role === "user" ? "user" : "assistant", m.content, "reply", m.ts);
+    if (!msgs || !msgs.length) showWatermark();
+    markActive(key);
+    entry.focus();
+  }
+
+  // ── sending ──
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
     const msg = entry.value.trim();
     if (!msg) return;
     entry.value = "";
     addLine("user", msg, "reply");
-    if ("Notification" in window && Notification.permission === "default") {
-      Notification.requestPermission();
-    }
     showPending();
     try {
       const r = await fetch("/chat", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
+        method: "POST", headers: { "content-type": "application/json" },
         body: JSON.stringify({ message: msg }),
       });
       const data = await r.json();
@@ -237,23 +307,32 @@
       clearPending();
       addLine("assistant", "The line to the water went quiet.", "reply");
     }
+    loadSessions();   // refresh history (new thread / updated titles)
   });
 
+  document.getElementById("newconvo").addEventListener("click", async () => {
+    showWatermark();
+    try { await fetch("/new", { method: "POST" }); } catch (e) {}
+    markActive(null);
+    entry.focus();
+  });
+
+  // proactive pushes (stubbed for now on the external bridge)
   const events = new EventSource("/events");
   events.onmessage = (e) => {
     let m; try { m = JSON.parse(e.data); } catch { return; }
     if (!m.content) return;
     addLine("assistant", m.content, m.kind || "proactive", m.ts);
-    // Banner only when the person is away: the tab is hidden OR the window isn't
-    // focused (so a still-visible-but-unfocused window still notifies). When the
-    // tab is the one they're looking at, the on-page line is enough.
     const away = document.visibilityState !== "visible" || !document.hasFocus();
-    if ("Notification" in window && Notification.permission === "granted" && away) {
+    if ("Notification" in window && Notification.permission === "granted" && away)
       new Notification("the keeper", { body: m.content, silent: true });
-    }
   };
-  events.onopen = () => { hint.textContent = ""; };
-  events.onerror = () => { hint.textContent = "the water is far off…"; };
+
+  // ── init: show history; open the active thread if one exists ──
+  (async () => {
+    const data = await loadSessions();
+    if (data && data.active) { activeKey = data.active; openSession(data.active, false); }
+  })();
 </script>
 </body>
 </html>

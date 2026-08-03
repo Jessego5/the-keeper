@@ -45,6 +45,7 @@ import mood
 import native_tools
 import persona
 import reminders
+import sessions
 import proactive
 import sensors
 import tools
@@ -109,6 +110,8 @@ class AppState:
     drift_config: drift.DriftConfig = field(default_factory=drift.DriftConfig)
     reminders: reminders.ReminderStore = field(
         default_factory=reminders.ReminderStore)
+    sessions: sessions.SessionStore = field(default_factory=sessions.SessionStore)
+    current_key: Optional[str] = None   # active conversation (sidebar)
 
     def minutes_since_user(self) -> Optional[float]:
         if self.last_user_at is None:
@@ -167,6 +170,8 @@ async def _proactive_loop() -> None:
             STATE.last_proactive_at = time.time()
             STATE.history.append({"role": "assistant", "content": line,
                                   "ts": time.time()})
+            if STATE.current_key is not None:
+                STATE.sessions.append(STATE.current_key, "assistant", line)
             await _push("assistant", line, "proactive")
 
         try:
@@ -187,6 +192,8 @@ async def _proactive_loop() -> None:
             STATE.last_proactive_at = time.time()
             STATE.history.append({"role": "assistant", "content": decision.text,
                                   "ts": time.time()})
+            if STATE.current_key is not None:
+                STATE.sessions.append(STATE.current_key, "assistant", decision.text)
             await _push("assistant", decision.text, "proactive")
         else:
             # Idle: nothing to say -> occasionally drift (reflect on memory).
@@ -223,6 +230,7 @@ async def lifespan(app: FastAPI):
     STATE.mood_signal = mood.build_local_mood_signal()   # local; None -> keyword
     print(f"[mood] classifier: {'model2vec' if STATE.mood_signal else 'keyword'}",
           flush=True)
+    STATE.current_key = STATE.sessions.most_recent_key()  # resume last on start
     STATE.wake = asyncio.Event()
     # Passive-loop tools (optional). Connects only if backend/mcp.json exists.
     STATE.mcp = tools.MCPManager.from_config()
@@ -267,6 +275,9 @@ async def chat(body: ChatIn):
     STATE.last_user_at = now
     STATE.user_msg_times.append(now)
     STATE.history.append({"role": "user", "content": msg, "ts": now})
+    if STATE.current_key is None:                 # start a conversation on first msg
+        STATE.current_key = STATE.sessions.new().key
+    STATE.sessions.append(STATE.current_key, "user", msg, now)
 
     mem = memory.recall(STATE.store, msg, k=4, embed=STATE.embed)
     # current time in the context so the Keeper can turn "tomorrow 9am" -> ISO.
@@ -316,6 +327,8 @@ async def chat(body: ChatIn):
         reply, score, fell_back = ERROR_LINE, None, True
 
     STATE.history.append({"role": "assistant", "content": reply, "ts": time.time()})
+    if STATE.current_key is not None:
+        STATE.sessions.append(STATE.current_key, "assistant", reply)
     # Note: the reply is returned in the HTTP response and rendered from there;
     # SSE (/events) carries ONLY unbidden proactive lines, so nothing double-renders.
 
@@ -398,6 +411,42 @@ async def set_config(body: ConfigIn):
     if STATE.wake is not None:
         STATE.wake.set()   # re-tick now with the new settings
     return {"speed": STATE.config.speed, "cooldown_min": STATE.config.cooldown_min}
+
+
+@app.get("/sessions")
+async def list_sessions():
+    return {
+        "sessions": [{"key": s.key, "title": s.title or "…",
+                      "count": len(s.messages), "updated_at": s.updated}
+                     for s in STATE.sessions.all()],
+        "active": STATE.current_key,
+    }
+
+
+@app.get("/sessions/{key}/messages")
+async def session_messages(key: str):
+    s = STATE.sessions.get(key)
+    if s is None:
+        return {"messages": []}
+    return {"messages": [{"role": m.role, "content": m.content, "ts": m.ts}
+                         for m in s.messages]}
+
+
+class SelectIn(BaseModel):
+    session_id: str
+
+
+@app.post("/select")
+async def select_session(body: SelectIn):
+    if STATE.sessions.get(body.session_id) is not None:
+        STATE.current_key = body.session_id
+    return {"ok": True, "active": STATE.current_key}
+
+
+@app.post("/new")
+async def new_conversation():
+    STATE.current_key = None      # next message starts a fresh conversation
+    return {"ok": True}
 
 
 @app.get("/dashboard")
