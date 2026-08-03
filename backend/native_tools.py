@@ -26,17 +26,24 @@ class NativeTools:
                 "function": {
                     "name": "remind_me",
                     "description": "Store a reminder to give back to the person at "
-                                   "a future time. Convert their phrasing into an "
-                                   "ISO 8601 datetime using the current time in "
-                                   "your context.",
+                                   "a future time, optionally recurring. Convert "
+                                   "their phrasing into an ISO 8601 datetime using "
+                                   "the current time in your context; for a "
+                                   "recurring one, set repeat and let due_iso be the "
+                                   "first occurrence.",
                     "parameters": {
                         "type": "object",
                         "properties": {
                             "text": {"type": "string",
                                      "description": "what to remind them of"},
                             "due_iso": {"type": "string",
-                                        "description": "ISO 8601, e.g. "
-                                                       "2026-08-03T09:00:00"},
+                                        "description": "ISO 8601 of the (first) time, "
+                                                       "e.g. 2026-08-03T09:00:00"},
+                            "repeat": {"type": "string",
+                                       "description": "optional recurrence: 'daily', "
+                                                      "'weekly', 'weekdays', or "
+                                                      "'every N minutes/hours/days/"
+                                                      "weeks'. Omit for one-time."},
                         },
                         "required": ["text", "due_iso"],
                     },
@@ -82,15 +89,18 @@ class NativeTools:
             due = _parse_iso(args.get("due_iso", ""))
             if due is None:
                 return "(could not read the time — need an ISO datetime)"
-            r = self.store.add(args.get("text", "").strip(), due)
+            r = self.store.add(args.get("text", "").strip(), due,
+                               repeat=args.get("repeat"))
             when = datetime.fromtimestamp(due).strftime("%a %b %d, %H:%M")
-            return f"kept: \"{r.text}\" — will return it {when} (id {r.id})"
+            cadence = f", then {r.repeat}" if r.repeat else ""
+            return f"kept: \"{r.text}\" — will return it {when}{cadence} (id {r.id})"
         if name == "list_reminders":
             pend = self.store.pending()
             if not pend:
                 return "holding nothing right now."
             return "\n".join(
-                f"- {r.text}  ({datetime.fromtimestamp(r.due_at).strftime('%b %d %H:%M')}, id {r.id})"
+                f"- {r.text}  ({datetime.fromtimestamp(r.due_at).strftime('%b %d %H:%M')}"
+                f"{', ' + r.repeat if r.repeat else ''}, id {r.id})"
                 for r in pend)
         if name == "complete_reminder":
             r = self.store.complete(args.get("key", ""))
