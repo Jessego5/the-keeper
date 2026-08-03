@@ -20,7 +20,6 @@ the fact store, which persists to memory_store/facts.jsonl.
 from __future__ import annotations
 
 import asyncio
-import json
 import time
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
@@ -36,6 +35,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 
+import channels
 import compose
 import drift
 import embedder
@@ -43,7 +43,6 @@ import energy
 import memory
 import mood
 import native_tools
-import notifier
 import persona
 import reminders
 import routines
@@ -101,6 +100,7 @@ class AppState:
     current_register: Optional[str] = None   # last emotional register, for continuity
     config: proactive.ProactiveConfig = field(default_factory=proactive.ProactiveConfig)
     listeners: set[asyncio.Queue] = field(default_factory=set)
+    delivery: Optional[channels.Delivery] = None   # web + banner + telegram fan-out
     generate: compose.Generator = compose.stub_generator
     fast: Optional[compose.Generator] = None
     embed: Optional[memory.Embedder] = None   # semantic recall; None => keyword
@@ -150,15 +150,12 @@ STATE = AppState()
 
 
 async def _push(role: str, content: str, kind: str) -> None:
-    """Fan a message out to every connected SSE listener (on-page rendering) and,
-    for unbidden lines, fire a native OS notification — which reaches you even
-    with the browser closed and carries the Keeper's own image."""
-    payload = json.dumps({"role": role, "content": content, "kind": kind,
-                          "ts": time.time()})
-    for q in list(STATE.listeners):
-        await q.put(payload)
-    if kind == "proactive":
-        await asyncio.to_thread(notifier.notify, "The Keeper", content)
+    """Fan a line out to every enabled delivery channel — the open web page, a native
+    macOS banner, and (if configured) a Telegram message on your phone. See
+    channels.py; each is best-effort, so one failing never blocks the others."""
+    if STATE.delivery is None:
+        STATE.delivery = channels.build_default(STATE.listeners)
+    await STATE.delivery.push(role, content, kind)
 
 
 # --------------------------------------------------------------------------- #
@@ -254,6 +251,10 @@ async def lifespan(app: FastAPI):
           flush=True)
     STATE.current_key = STATE.sessions.most_recent_key()  # resume last on start
     STATE.wake = asyncio.Event()
+    # Delivery surfaces: web + native banner always; Telegram if a token is set.
+    STATE.delivery = channels.build_default(STATE.listeners)
+    print(f"[channels] delivering via: {', '.join(STATE.delivery.names())}",
+          flush=True)
     # Passive-loop tools (optional). Connects only if backend/mcp.json exists.
     STATE.mcp = tools.MCPManager.from_config()
     try:
@@ -475,6 +476,7 @@ async def state():
         "speed": STATE.config.speed,
         "backend": "openai" if STATE.fast is not None else "stub",
         "listeners": len(STATE.listeners),
+        "channels": STATE.delivery.names() if STATE.delivery else ["web"],
     }
 
 

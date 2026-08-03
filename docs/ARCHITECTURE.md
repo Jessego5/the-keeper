@@ -90,6 +90,11 @@ the paper) but never recited back as the person's own words.
 - **Native notifications** — backend-fired macOS banners via a rebranded `Keeper.app`
   (built by `scripts/build_keeper_notifier.sh`) so the Keeper's own icon and name are
   the primary badge; reaches you with the browser closed (`notifier`).
+- **Delivery channels** — a proactive line fans out to every enabled surface at once
+  behind one `Channel` contract (the reference agent's `infra/channels` pattern): the web page
+  (SSE), the native banner, and — opt-in with a bot token — a Telegram message on your
+  phone. Adding a surface is adding a `Channel`; the loop that decides *when* to speak
+  never changes (`channels`).
 
 ## Module map
 
@@ -110,6 +115,7 @@ the paper) but never recited back as the person's own words.
 | `tools.py` | MCP manager (read-only sandboxed file tools) |
 | `sensors.py` | Read-only macOS presence (idle, lock, frontmost app) |
 | `sessions.py` | Persistent per-conversation history (the sidebar) |
+| `channels.py` | Delivery-surface abstraction: web (SSE) + native banner + opt-in Telegram, fanned out best-effort |
 | `notifier.py` | Native macOS notifications, backend-fired |
 | `mood.py` / `mood_bench.py` | Local mood classifier (Model2Vec) + its benchmark |
 | `eval_harness.py` | Eval metrics + JSON snapshots |

@@ -1,0 +1,93 @@
+"""Tier 1 — delivery channels (channels.py). No network, no key."""
+import pytest
+import channels
+
+pytestmark = pytest.mark.unit
+
+
+class _RecordChannel:
+    """A fake channel that records what it was asked to deliver."""
+    def __init__(self, name, wants_kind="proactive"):
+        self.name = name
+        self._wants = wants_kind
+        self.delivered = []
+
+    def wants(self, kind):
+        return kind == self._wants
+
+    async def deliver(self, role, content, kind):
+        self.delivered.append((role, content, kind))
+
+
+async def test_delivery_fans_out_to_wanting_channels():
+    a = _RecordChannel("a", wants_kind="proactive")
+    b = _RecordChannel("b", wants_kind="proactive")
+    d = channels.Delivery([a, b])
+    await d.push("assistant", "the tide turns", "proactive")
+    assert a.delivered == b.delivered == [("assistant", "the tide turns", "proactive")]
+
+
+async def test_delivery_skips_channels_that_dont_want_kind():
+    only_proactive = _RecordChannel("np", wants_kind="proactive")
+    d = channels.Delivery([only_proactive])
+    await d.push("assistant", "echo", "chat")     # not a proactive kind
+    assert only_proactive.delivered == []
+
+
+async def test_one_failing_channel_never_blocks_others():
+    class Boom:
+        name = "boom"
+        def wants(self, kind): return True
+        async def deliver(self, *a): raise RuntimeError("down")
+    good = _RecordChannel("good", wants_kind="proactive")
+    d = channels.Delivery([Boom(), good])
+    await d.push("assistant", "still lands", "proactive")   # must not raise
+    assert good.delivered == [("assistant", "still lands", "proactive")]
+
+
+async def test_none_channels_are_dropped():
+    good = _RecordChannel("good")
+    d = channels.Delivery([None, good, None])
+    assert d.names() == ["good"]
+
+
+# --- native banner gating --- #
+
+def test_notifier_channel_only_wants_proactive():
+    ch = channels.NotifierChannel()
+    assert ch.wants("proactive") and not ch.wants("chat")
+
+
+# --- Telegram (opt-in, injectable sender) --- #
+
+def test_telegram_disabled_without_token(monkeypatch):
+    monkeypatch.delenv("TELEGRAM_BOT_TOKEN", raising=False)
+    monkeypatch.delenv("TELEGRAM_CHAT_ID", raising=False)
+    assert channels.TelegramChannel.from_env() is None
+
+
+def test_telegram_enabled_with_env(monkeypatch):
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "123:abc")
+    monkeypatch.setenv("TELEGRAM_CHAT_ID", "42")
+    ch = channels.TelegramChannel.from_env()
+    assert ch is not None and ch.wants("proactive")
+
+
+async def test_telegram_builds_correct_request():
+    sent = {}
+    def fake_sender(url, data):
+        sent["url"] = url
+        sent["data"] = data
+    ch = channels.TelegramChannel("123:abc", "42", sender=fake_sender)
+    await ch.deliver("assistant", "the light is on", "proactive")
+    assert sent["url"] == "https://api.telegram.org/bot123:abc/sendMessage"
+    assert sent["data"]["chat_id"] == "42"
+    assert "the light is on" in sent["data"]["text"]
+    assert channels.KEEPER_NAME in sent["data"]["text"]
+
+
+def test_build_default_has_web_and_native(monkeypatch):
+    monkeypatch.delenv("TELEGRAM_BOT_TOKEN", raising=False)
+    d = channels.build_default(set())
+    assert "web" in d.names() and "native" in d.names()
+    assert "telegram" not in d.names()          # off without a token
