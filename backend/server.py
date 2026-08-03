@@ -439,6 +439,12 @@ async def state():
     ms = ps.minutes_since_user
     en = energy.compute_energy(ms)
     score = energy.base_score(en, STATE.recent_msg_count())
+    now = time.time()
+
+    pres = await asyncio.to_thread(sensors.read)
+    pending = STATE.reminders.pending()
+    next_rem = pending[0] if pending else None
+
     return {
         "minutes_since_user_virtual": ms,
         "minutes_since_user_real": STATE.minutes_since_user(),
@@ -448,10 +454,23 @@ async def state():
         "base_score": round(score, 3),
         "speak_probability": round(energy.speak_probability(score), 3),
         "facts_kept": len(STATE.store.facts),
-        "reminders_held": len(STATE.reminders.pending()),
+        "insights_kept": sum(1 for f in STATE.store.facts if f.kind == "insight"),
+        "reminders_held": len(pending),
+        "reminders_recurring": sum(1 for r in pending if r.repeat),
+        "next_reminder": (
+            {"text": next_rem.text, "due_at": next_rem.due_at,
+             "repeat": next_rem.repeat} if next_rem else None),
         "reflections": len(STATE.reflections.items),
         "latest_reflection": (STATE.reflections.latest().text
                               if STATE.reflections.latest() else None),
+        # the house: presence + the routines watching it
+        "presence": {
+            "idle_seconds": pres.idle_seconds,
+            "screen_locked": pres.screen_locked,
+            "frontmost_app": pres.frontmost_app,
+            "summary": pres.to_context_line(),
+        },
+        "house": STATE.routines_engine.status(now),
         "embedder": "openai" if STATE.embed is not None else "keyword",
         "speed": STATE.config.speed,
         "backend": "openai" if STATE.fast is not None else "stub",

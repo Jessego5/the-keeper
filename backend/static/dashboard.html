@@ -87,9 +87,14 @@
         <div class="sub">drift notes (inner life)</div>
       </div>
       <div class="tile">
+        <div class="label">insights</div>
+        <div class="val" id="insights">—</div>
+        <div class="sub">its own conclusions (retrievable)</div>
+      </div>
+      <div class="tile">
         <div class="label">reminders held</div>
         <div class="val" id="reminders">—</div>
-        <div class="sub">things to return when due</div>
+        <div class="sub" id="reminders-sub">things to return when due</div>
       </div>
       <div class="tile">
         <div class="label">quiet for</div>
@@ -101,6 +106,15 @@
     <div class="reflection">
       <div class="label">latest reflection</div>
       <div class="text" id="reflection-text"><span class="none">the water is still.</span></div>
+    </div>
+
+    <div class="reflection">
+      <div class="label">the house</div>
+      <div class="text" id="house-presence" style="font-style:normal;margin-bottom:0.7rem;">
+        <span class="none">not sensing the room.</span></div>
+      <div class="badges" id="house-routines" style="justify-content:flex-start;"></div>
+      <div class="sub" id="house-last" style="margin-top:0.7rem;color:var(--foam-dim);
+           font-size:0.7rem;"></div>
     </div>
 
     <div class="badges">
@@ -130,7 +144,45 @@
     document.getElementById("facts").textContent = s.facts_kept ?? 0;
     document.getElementById("reflections").textContent = s.reflections ?? 0;
     document.getElementById("reminders").textContent = s.reminders_held ?? 0;
+    document.getElementById("insights").textContent = s.insights_kept ?? 0;
     document.getElementById("since").textContent = fmtMin(s.minutes_since_user_virtual);
+
+    // reminders sub-line: recurring count + the next one due
+    const rr = s.reminders_recurring ?? 0;
+    const rsub = document.getElementById("reminders-sub");
+    if (s.next_reminder) {
+      const nm = s.next_reminder;
+      rsub.textContent = (rr ? rr + " recurring · " : "") + "next: "
+        + nm.text.slice(0, 26) + (nm.repeat ? " (" + nm.repeat + ")" : "");
+    } else { rsub.textContent = "nothing held"; }
+
+    // the house: presence + the routines watching it
+    const pres = s.presence || {};
+    const hp = document.getElementById("house-presence");
+    if (pres.summary) {
+      const here = (pres.idle_seconds != null && pres.idle_seconds < 300
+                    && !pres.screen_locked) ? "here"
+                   : (pres.screen_locked ? "away (screen locked)" : "quiet");
+      hp.textContent = here + " · " + pres.summary;
+    } else { hp.innerHTML = '<span class="none">not sensing the room.</span>'; }
+
+    const house = s.house || {};
+    const hr = document.getElementById("house-routines");
+    hr.innerHTML = "";
+    (house.routines || []).forEach(k => {
+      const b = document.createElement("span");
+      b.className = "badge";
+      b.textContent = k.replace(/_/g, " ");
+      if (k === house.last_routine) { b.style.color = "var(--foam)";
+                                      b.style.borderColor = "var(--tide)"; }
+      hr.appendChild(b);
+    });
+    const bits = [];
+    if (house.active_minutes) bits.push("focused " + Math.round(house.active_minutes) + "m");
+    if (house.awaiting_return) bits.push("noticed you'd stepped away");
+    if (house.last_routine) bits.push("last routine: " + house.last_routine.replace(/_/g, " "));
+    document.getElementById("house-last").textContent = bits.join("  ·  ");
+
     const rt = document.getElementById("reflection-text");
     if (s.latest_reflection) rt.textContent = s.latest_reflection;
     else rt.innerHTML = '<span class="none">nothing kept yet — it has not drifted.</span>';
