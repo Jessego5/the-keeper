@@ -44,6 +44,10 @@ _SEMANTIC_DUP = 0.86
 STORE_DIR = Path(__file__).resolve().parent.parent / "memory_store"
 STORE_PATH = STORE_DIR / "facts.jsonl"
 
+# Consolidation (MemGPT memory pressure): compress the low-value tail once the
+# active store grows past this many facts. Archived originals are never deleted.
+_CONSOLIDATE_BUDGET = 60
+
 # Words too common to help keyword matching.
 _STOPWORDS = {
     "the", "a", "an", "and", "or", "but", "of", "to", "in", "on", "at", "for",
@@ -99,6 +103,9 @@ class Fact:
 class MemoryStore:
     def __init__(self, path: Path = STORE_PATH):
         self.path = path
+        # Archived (consolidated-away) facts live beside the active store — MemGPT's
+        # recall/archival tier: out of the working set, never lost.
+        self.archive_path = path.parent / (path.stem + "_archive.jsonl")
         self.facts: list[Fact] = []
         self._load()
 
@@ -161,6 +168,18 @@ class MemoryStore:
             imp = it[2] if len(it) > 2 else 5.0
             out.append(self.add(text, kind, embed, imp))
         return [f for f in out if f is not None]
+
+    def archive(self, facts: list[Fact]) -> None:
+        """Move facts out of the active working set into the archive file."""
+        drop = {id(f) for f in facts}
+        if not drop:
+            return
+        self.archive_path.parent.mkdir(parents=True, exist_ok=True)
+        with self.archive_path.open("a") as fh:
+            for f in facts:
+                fh.write(json.dumps(asdict(f), ensure_ascii=False) + "\n")
+        self.facts = [f for f in self.facts if id(f) not in drop]
+        self._save()
 
     def _find_similar(self, text: str,
                       vec: Optional[list[float]] = None) -> Optional[Fact]:
@@ -351,6 +370,82 @@ def distill(messages: list[dict], generate: Generator,
     if store is None:
         return [Fact(text=t, kind=k, importance=i) for t, k, i in parsed]
     return store.add_many(parsed, embed=embed)
+
+
+# --------------------------------------------------------------------------- #
+# Consolidation — MemGPT memory pressure: compress the low-value tail.
+# --------------------------------------------------------------------------- #
+
+_CONSOLIDATE_SYSTEM = """You compress a companion's old, minor memories about a \
+person to keep its long-term store tight. You are given a small cluster of related \
+facts. Merge them into ONE concise third-person fact that preserves what still \
+matters and drops the trivial. Keep it faithful — do not invent anything not present. \
+Output only the single merged fact, no preamble."""
+
+
+def consolidate(store: MemoryStore, generate: Generator, *,
+                budget: int = _CONSOLIDATE_BUDGET,
+                embed: Optional[Embedder] = None,
+                now: Optional[float] = None) -> list[Fact]:
+    """Compress the least-valuable, mutually-similar facts when over the budget.
+
+    MemGPT (Packer et al. 2023) manages memory pressure by evicting older content to
+    external storage under recursive summarization. Here: once the active store
+    exceeds `budget`, take the lowest-value tail (low importance + old + rarely
+    recurred), cluster it by similarity, and summarize each cluster of >=2 into one
+    fact — archiving the originals (never deleting). Insights (the Keeper's own
+    conclusions) are left untouched. Returns the consolidated Facts created.
+    """
+    if len(store.facts) <= budget:
+        return []
+    now = now or time.time()
+    active = [f for f in store.facts if f.kind != "insight"]
+
+    def value(f: Fact) -> float:
+        return f.importance / 10.0 + f.recency(now) + min(f.mentions, 5) / 5.0
+
+    overflow = len(store.facts) - budget
+    tail = sorted(active, key=value)[: overflow + 4]   # a small margin to find pairs
+
+    made: list[Fact] = []
+    for cluster in _cluster(tail):
+        if len(cluster) < 2:
+            continue
+        rendered = "\n".join(f"- {f.text}" for f in cluster)
+        summary = (generate(_CONSOLIDATE_SYSTEM, rendered) or "").strip()
+        if not summary:
+            continue
+        imp = max(f.importance for f in cluster)
+        seen = sum(f.mentions for f in cluster)
+        store.archive(cluster)                          # originals -> archive tier
+        merged = store.add(summary, kind=cluster[0].kind, embed=embed, importance=imp)
+        if merged is not None:
+            merged.mentions = max(merged.mentions, seen)
+            store._save()
+            made.append(merged)
+    return made
+
+
+def _cluster(facts: list[Fact]) -> list[list[Fact]]:
+    """Greedy single-link clustering of facts by similarity — embedding cosine when
+    vectors are present, else keyword jaccard. Coherent merges only."""
+    clusters: list[list[Fact]] = []
+    for f in facts:
+        placed = False
+        for cl in clusters:
+            head = cl[0]
+            if f.embedding and head.embedding:
+                sim = _cosine(f.embedding, head.embedding)
+                near = sim >= 0.55
+            else:
+                near = _jaccard(_tokens(f.text), _tokens(head.text)) >= 0.34
+            if near:
+                cl.append(f)
+                placed = True
+                break
+        if not placed:
+            clusters.append([f])
+    return clusters
 
 
 # --------------------------------------------------------------------------- #
