@@ -95,6 +95,18 @@ TOOL_ADDENDUM = TOOL_ADDENDUM.format(repo=_REPO_ROOT)
 
 RECENT_WINDOW_MIN = 240.0   # "recent" messages = last 4h, for context richness
 
+# Hard real-time circuit breaker: no matter how compressed the demo `speed` clock
+# is, the Keeper will not REACH OUT (restlessness or a routine) more than once per
+# this many seconds of REAL time. Due reminders are exempt (kept promises land on
+# time). This is the backstop against notification spam.
+MIN_REAL_REACH_GAP_S = 60.0
+
+
+def within_reach_floor(last_proactive_at, now, min_gap: float = MIN_REAL_REACH_GAP_S):
+    """True if we're still inside the real-time outreach floor and must stay silent.
+    Pure + tested — the notification-spam backstop's core decision."""
+    return last_proactive_at is not None and (now - last_proactive_at) < min_gap
+
 
 # --------------------------------------------------------------------------- #
 # App state — one user, held in memory.
@@ -193,13 +205,23 @@ async def _proactive_loop() -> None:
         # and the restlessness gate (so we don't ioreg twice).
         pres = await asyncio.to_thread(sensors.read)
 
+        # Circuit breaker: how long since the LAST real outreach. If it's under the
+        # floor, the Keeper stays silent this tick no matter what the demo clock
+        # says — capping outreach at ~once per MIN_REAL_REACH_GAP_S of real time.
+        now_real = time.time()
+        real_gap = (None if STATE.last_proactive_at is None
+                    else now_real - STATE.last_proactive_at)
+        can_reach = not within_reach_floor(STATE.last_proactive_at, now_real)
+
         # The house's routines run BEFORE restlessness: specific, earned moments (a
         # return, a long focus, the evening) rather than a random roll. If one speaks,
         # it stands in for this tick's outreach.
-        spoke_routine = await _maybe_routine(pres)
+        spoke_routine = await _maybe_routine(pres) if can_reach else False
 
         wait = max(1, int(STATE.config.tick_fast / max(STATE.config.speed, 1e-9)))
-        if not spoke_routine:
+        if spoke_routine:
+            pass
+        elif can_reach:
             try:
                 decision = await asyncio.to_thread(
                     proactive.tick,
@@ -224,20 +246,13 @@ async def _proactive_loop() -> None:
                                           decision.text)
                 await _push("assistant", decision.text, "proactive")
             else:
-                # Idle: nothing to say -> occasionally drift (reflect on memory).
-                # Runs off the response path, never sent to the person.
-                try:
-                    r = await asyncio.to_thread(
-                        drift.maybe_drift, STATE.store,
-                        STATE.fast or STATE.generate, STATE.reflections,
-                        last_drift_at=STATE.last_drift_at, config=STATE.drift_config,
-                        embed=STATE.embed)
-                    if r is not None:
-                        STATE.last_drift_at = time.time()
-                        print(f"[drift] reflected: {r.text[:80]}...", flush=True)
-                except Exception as exc:  # noqa: BLE001
-                    print(f"[drift] error: {exc}", flush=True)
+                await _maybe_drift_note()   # nothing to say -> maybe reflect
             wait = max(1, decision.wait_next_s)
+        else:
+            # Within the real-time floor: hold silence, still allow drift, and sleep
+            # until the floor lifts so a fast demo clock can't busy-spin.
+            await _maybe_drift_note()
+            wait = max(1, int(MIN_REAL_REACH_GAP_S - (real_gap or 0.0)))
         # Interruptible sleep: a config change or a new chat wakes us early; and we
         # never sleep past the next due reminder, so kept promises land on time.
         upcoming = [r.due_at for r in STATE.reminders.items
@@ -405,6 +420,20 @@ async def _maybe_routine(pres: sensors.Presence) -> bool:
     await _push("assistant", result.text, "proactive")
     print(f"[routine] {routine.key} spoke", flush=True)
     return True
+
+
+async def _maybe_drift_note() -> None:
+    """Idle background reflection (never sent to the person). Rate-limited inside."""
+    try:
+        r = await asyncio.to_thread(
+            drift.maybe_drift, STATE.store, STATE.fast or STATE.generate,
+            STATE.reflections, last_drift_at=STATE.last_drift_at,
+            config=STATE.drift_config, embed=STATE.embed)
+        if r is not None:
+            STATE.last_drift_at = time.time()
+            print(f"[drift] reflected: {r.text[:80]}...", flush=True)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[drift] error: {exc}", flush=True)
 
 
 async def _distill_async(user_msg: str, reply: str) -> None:

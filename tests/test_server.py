@@ -94,6 +94,7 @@ async def test_proactive_loop_reaches_out(client):
     # mechanism behind the notifications. (Delivery over the /events HTTP stream
     # itself is verified manually with curl; ASGITransport buffers infinite SSE.)
     server.STATE.last_user_at = time.time() - 100_000   # long silence -> restless
+    server.STATE.last_proactive_at = None               # hasn't just reached out
     server.STATE.config.respect_lock = False
     server.STATE.config.use_presence = False
     q: asyncio.Queue = asyncio.Queue()
