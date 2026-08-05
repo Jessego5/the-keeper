@@ -47,6 +47,7 @@ import persona
 import reminders
 import routines
 import sessions
+import tasks
 import proactive
 import sensors
 import tools
@@ -78,6 +79,14 @@ phrasing into an ISO datetime using the current time given in your context. Use
 list_reminders when they ask what you're holding, and complete_reminder when
 something is done. You will return a due reminder to them yourself when its time
 comes; that is keeping, not intruding.
+
+You can also take on GOALS — things they want to move toward but can't do in one
+moment ("get back to painting", "sort things out with Sam", "make the studio usable
+again"). When they express something like that, use set_goal with their own words;
+you will break it into small steps and help them through it over days, returning to
+it on your own. Use list_goals to see what you are helping with, and complete_goal
+when something is finished or they want to set it down. A goal is for tending over
+time; a reminder is for one moment — choose the one that fits.
 
 For a request that takes more than one step, work it in steps: call a tool, read
 what it returns, then call the next — e.g. list_reminders to see what you hold,
@@ -137,6 +146,7 @@ class AppState:
     drift_config: drift.DriftConfig = field(default_factory=drift.DriftConfig)
     reminders: reminders.ReminderStore = field(
         default_factory=reminders.ReminderStore)
+    goals: tasks.GoalStore = field(default_factory=tasks.GoalStore)   # agent goals
     sessions: sessions.SessionStore = field(default_factory=sessions.SessionStore)
     current_key: Optional[str] = None   # active conversation (sidebar)
     routines_engine: routines.RoutineEngine = field(
@@ -216,13 +226,16 @@ async def _proactive_loop() -> None:
                     else now_real - STATE.last_proactive_at)
         can_reach = not within_reach_floor(STATE.last_proactive_at, now_real)
 
-        # The house's routines run BEFORE restlessness: specific, earned moments (a
-        # return, a long focus, the evening) rather than a random roll. If one speaks,
-        # it stands in for this tick's outreach.
-        spoke_routine = await _maybe_routine(pres) if can_reach else False
+        # Outreach priority when it's allowed to reach out: purposeful work first
+        # (advance a due goal), then the house's routines (a return, long focus,
+        # evening), then — falling through below — restless energy. The first to
+        # speak stands in for this tick's outreach.
+        spoke = False
+        if can_reach:
+            spoke = await _maybe_advance_goal() or await _maybe_routine(pres)
 
         wait = max(1, int(STATE.config.tick_fast / max(STATE.config.speed, 1e-9)))
-        if spoke_routine:
+        if spoke:
             pass
         elif can_reach:
             try:
@@ -349,9 +362,11 @@ async def chat(body: ChatIn):
         STATE.current_register = signal
     water = STATE.current_register or voice_eval.detect_state(msg)
 
-    # Native action tools (reminders) are always available; MCP file tools join
-    # when configured. Reaching for a tool is the passive/agentic path.
-    providers = [native_tools.NativeTools(STATE.reminders)]
+    # Native action tools (reminders + goals) are always available; MCP file tools
+    # join when configured. Reaching for a tool is the passive/agentic path.
+    providers = [native_tools.NativeTools(
+        STATE.reminders, goals=STATE.goals,
+        planner_generate=STATE.fast or STATE.generate)]
     if STATE.mcp is not None and STATE.mcp.has_tools:
         providers.append(STATE.mcp)
     used_tools = bool(providers)
@@ -422,6 +437,41 @@ async def _maybe_routine(pres: sensors.Presence) -> bool:
         STATE.sessions.append(STATE.current_key, "assistant", result.text)
     await _push("assistant", result.text, "proactive")
     print(f"[routine] {routine.key} spoke", flush=True)
+    return True
+
+
+async def _maybe_advance_goal() -> bool:
+    """The agent at work: if a goal is due, take its next step — reach out in the
+    Keeper's voice to help with or invite that step, then mark it worked and schedule
+    the next check. This is what makes the Keeper *pursue* things over time. Returns
+    True iff it spoke."""
+    goal = STATE.goals.due()
+    if goal is None:
+        return False
+    step = goal.next_step()
+    if step is None:
+        return False
+    water = proactive.derive_state(STATE.minutes_since_user())
+    context = (f"You are helping them move toward a goal of theirs: \"{goal.title}\". "
+               f"Gently help with, or invite, just this next step — do not list the "
+               f"whole plan: {step.text}")
+    result = await asyncio.to_thread(
+        compose.compose, "proactive", water,
+        generate=STATE.generate, fast_model=STATE.fast,
+        memory=memory.recall(STATE.store, goal.title, k=3, embed=STATE.embed),
+        context=context)
+    if result.silent or not result.text:
+        STATE.goals.touch(goal)          # nothing on-voice now; come back later
+        return False
+    STATE.goals.advance(goal, note="raised this step with them")
+    STATE.last_proactive_at = time.time()
+    STATE.history.append({"role": "assistant", "content": result.text,
+                          "ts": time.time()})
+    if STATE.current_key is not None:
+        STATE.sessions.append(STATE.current_key, "assistant", result.text)
+    await _push("assistant", result.text, "proactive")
+    done, total = goal.progress()
+    print(f"[goal] {goal.id} advanced -> {done}/{total}: {step.text[:50]}", flush=True)
     return True
 
 
@@ -503,6 +553,11 @@ async def state():
         "insights_kept": sum(1 for f in STATE.store.facts if f.kind == "insight"),
         "reminders_held": len(pending),
         "reminders_recurring": sum(1 for r in pending if r.repeat),
+        "goals": [
+            {"title": g.title, "id": g.id,
+             "done": g.progress()[0], "total": g.progress()[1],
+             "next_step": (g.next_step().text if g.next_step() else None)}
+            for g in STATE.goals.active()],
         "next_reminder": (
             {"text": next_rem.text, "due_at": next_rem.due_at,
              "repeat": next_rem.repeat} if next_rem else None),
