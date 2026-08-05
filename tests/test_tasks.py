@@ -142,6 +142,26 @@ async def test_complete_goal(nt):
     assert nt.goals.active() == []
 
 
+async def test_advance_goal_marks_step_and_moves_on(nt):
+    await nt.call("set_goal", {"title": "get back to painting"})  # 2 steps (fake plan)
+    out = await nt.call("advance_goal", {"key": "painting", "note": "did it"})
+    assert "marked done" in out and "1/2" in out and "next:" in out
+    g = nt.goals.active()[0]
+    assert g.steps[0].done and g.steps[0].note == "did it"
+
+
+async def test_advance_goal_completes_on_last_step(nt):
+    await nt.call("set_goal", {"title": "reach Sam"})       # 2 steps
+    await nt.call("advance_goal", {"key": "reach"})
+    out = await nt.call("advance_goal", {"key": "reach"})   # last step
+    assert "completes" in out
+    assert nt.goals.active() == []                          # goal finished
+
+
+async def test_advance_goal_no_match(nt):
+    assert "no matching goal" in await nt.call("advance_goal", {"key": "nope"})
+
+
 async def test_goal_tools_graceful_without_store(tmp_path):
     # a NativeTools with reminders only (no goal store) must not crash on goal calls
     bare = native_tools.NativeTools(
