@@ -47,10 +47,10 @@ def test_complete_by_text_and_persists(tmp_path):
 
 # --- native tools (async) --- #
 
-async def test_native_tools_expose_three(store):
+async def test_native_tools_expose_reminder_tools(store):
     nt = native_tools.NativeTools(store)
     names = {t["function"]["name"] for t in nt.openai_tools()}
-    assert names == {"remind_me", "list_reminders", "complete_reminder"}
+    assert {"remind_me", "list_reminders", "complete_reminder"} <= names
 
 
 async def test_remind_me_stores_with_iso(store):

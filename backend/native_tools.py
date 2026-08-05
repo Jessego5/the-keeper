@@ -13,13 +13,20 @@ the time reasoning is the model's, which is itself a small agentic step.
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Callable, Optional
 
+import planner as planner_mod
 import reminders as reminders_mod
+import tasks as tasks_mod
 
 
 class NativeTools:
-    def __init__(self, store: reminders_mod.ReminderStore):
+    def __init__(self, store: reminders_mod.ReminderStore,
+                 goals: Optional[tasks_mod.GoalStore] = None,
+                 planner_generate: Optional[Callable] = None):
         self.store = store
+        self.goals = goals
+        self._plan_gen = planner_generate      # used to decompose a new goal
         self._defs = [
             {
                 "type": "function",
@@ -75,6 +82,52 @@ class NativeTools:
                     },
                 },
             },
+            {
+                "type": "function",
+                "function": {
+                    "name": "set_goal",
+                    "description": "Take on a GOAL to help the person move toward "
+                                   "over time — something they want to work toward "
+                                   "or get unstuck on (not a one-time reminder). You "
+                                   "will break it into small steps and help them "
+                                   "through it across days. Use their own words for "
+                                   "the goal.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "title": {"type": "string",
+                                      "description": "the goal, in their words "
+                                                     "(e.g. 'get back to painting')"},
+                        },
+                        "required": ["title"],
+                    },
+                },
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "list_goals",
+                    "description": "List the goals the Keeper is helping with and "
+                                   "how far along each is.",
+                    "parameters": {"type": "object", "properties": {}},
+                },
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "complete_goal",
+                    "description": "Mark a goal done (finished or set down), by a "
+                                   "word from its title or its id.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "key": {"type": "string",
+                                    "description": "a word from the goal, or its id"},
+                        },
+                        "required": ["key"],
+                    },
+                },
+            },
         ]
 
     def openai_tools(self) -> list[dict]:
@@ -105,6 +158,39 @@ class NativeTools:
         if name == "complete_reminder":
             r = self.store.complete(args.get("key", ""))
             return f"done: \"{r.text}\"" if r else "no matching reminder to complete."
+
+        if name == "set_goal":
+            if self.goals is None or self._plan_gen is None:
+                return "(cannot take on goals right now)"
+            title = args.get("title", "").strip()
+            if not title:
+                return "(need a goal to take on)"
+            steps = planner_mod.plan(title, self._plan_gen)
+            if not steps:
+                steps = ["Take the first small step toward it."]
+            g = self.goals.add(title, steps)
+            plan = "\n".join(f"  {i+1}. {s.text}" for i, s in enumerate(g.steps))
+            return (f"taken on: \"{g.title}\" (id {g.id}) — the plan I'll help with:\n"
+                    f"{plan}")
+        if name == "list_goals":
+            if self.goals is None:
+                return "not holding any goals."
+            act = self.goals.active()
+            if not act:
+                return "not holding any goals right now."
+            lines = []
+            for g in act:
+                done, total = g.progress()
+                nxt = g.next_step()
+                lines.append(f"- {g.title} ({done}/{total} done" +
+                             (f", next: {nxt.text}" if nxt else "") +
+                             f", id {g.id})")
+            return "\n".join(lines)
+        if name == "complete_goal":
+            if self.goals is None:
+                return "not holding any goals."
+            g = self.goals.complete(args.get("key", ""))
+            return f"set down: \"{g.title}\"" if g else "no matching goal."
         return f"(no such tool: {name})"
 
 
