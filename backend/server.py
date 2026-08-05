@@ -100,6 +100,9 @@ RECENT_WINDOW_MIN = 240.0   # "recent" messages = last 4h, for context richness
 # this many seconds of REAL time. Due reminders are exempt (kept promises land on
 # time). This is the backstop against notification spam.
 MIN_REAL_REACH_GAP_S = 60.0
+# Same idea for idle reflection: never synthesize insights more than once per this
+# many seconds of real time, so a fast demo clock can't flood the store.
+MIN_REAL_DRIFT_GAP_S = 300.0
 
 
 def within_reach_floor(last_proactive_at, now, min_gap: float = MIN_REAL_REACH_GAP_S):
@@ -423,7 +426,10 @@ async def _maybe_routine(pres: sensors.Presence) -> bool:
 
 
 async def _maybe_drift_note() -> None:
-    """Idle background reflection (never sent to the person). Rate-limited inside."""
+    """Idle background reflection (never sent to the person). Real-time capped so a
+    sped-up demo clock can't flood the store with near-duplicate insights."""
+    if within_reach_floor(STATE.last_drift_at, time.time(), MIN_REAL_DRIFT_GAP_S):
+        return
     try:
         r = await asyncio.to_thread(
             drift.maybe_drift, STATE.store, STATE.fast or STATE.generate,

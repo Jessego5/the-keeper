@@ -162,6 +162,11 @@
   #entry::placeholder { color: var(--current); font-style: italic; }
   #hint { text-align: center; font-size: 0.62rem; color: var(--current);
           margin-top: 0.75rem; letter-spacing: 0.06em; min-height: 1em; }
+  #deeplink { text-align: center; margin-top: 0.4rem; }
+  #deeplink a { font-size: 0.62rem; letter-spacing: 0.16em; text-transform: uppercase;
+                color: var(--current); text-decoration: none;
+                transition: color 0.4s ease; }
+  #deeplink a:hover { color: var(--tide); }
 
   @media (prefers-reduced-motion: reduce) {
     #tide-glow, header .wave { animation: none; }
@@ -193,6 +198,7 @@
             <input id="entry" placeholder="say something to the water&hellip;" autofocus>
           </form>
           <div id="hint"></div>
+          <div id="deeplink"><a href="/dashboard">look beneath &#8595;</a></div>
         </footer>
       </div>
     </main>
