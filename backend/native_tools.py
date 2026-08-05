@@ -115,9 +115,29 @@ class NativeTools:
             {
                 "type": "function",
                 "function": {
+                    "name": "advance_goal",
+                    "description": "Mark the CURRENT step of a goal done — when the "
+                                   "person reports they've done it, or you did it for "
+                                   "them. Moves the goal to its next step (or finishes "
+                                   "it if that was the last).",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "key": {"type": "string",
+                                    "description": "a word from the goal, or its id"},
+                            "note": {"type": "string",
+                                     "description": "optional: what was done"},
+                        },
+                        "required": ["key"],
+                    },
+                },
+            },
+            {
+                "type": "function",
+                "function": {
                     "name": "complete_goal",
-                    "description": "Mark a goal done (finished or set down), by a "
-                                   "word from its title or its id.",
+                    "description": "Mark a whole goal done (finished or set down), by "
+                                   "a word from its title or its id.",
                     "parameters": {
                         "type": "object",
                         "properties": {
@@ -186,6 +206,20 @@ class NativeTools:
                              (f", next: {nxt.text}" if nxt else "") +
                              f", id {g.id})")
             return "\n".join(lines)
+        if name == "advance_goal":
+            if self.goals is None:
+                return "not holding any goals."
+            g = self.goals.get(args.get("key", ""))
+            if g is None:
+                return "no matching goal."
+            step = self.goals.advance(g, note=args.get("note", ""))
+            if step is None:
+                return f"\"{g.title}\" has no open steps."
+            done, total = g.progress()
+            if g.status == "done":
+                return f"that completes \"{g.title}\" — all {total} steps done."
+            return (f"marked done: \"{step.text}\" ({done}/{total}). "
+                    f"next: {g.next_step().text}")
         if name == "complete_goal":
             if self.goals is None:
                 return "not holding any goals."

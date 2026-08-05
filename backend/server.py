@@ -84,9 +84,11 @@ You can also take on GOALS — things they want to move toward but can't do in o
 moment ("get back to painting", "sort things out with Sam", "make the studio usable
 again"). When they express something like that, use set_goal with their own words;
 you will break it into small steps and help them through it over days, returning to
-it on your own. Use list_goals to see what you are helping with, and complete_goal
-when something is finished or they want to set it down. A goal is for tending over
-time; a reminder is for one moment — choose the one that fits.
+it on your own. When they tell you they've done a step ("I set the paints out"), use
+advance_goal to mark it and move to the next. Use list_goals to see what you are
+helping with, and complete_goal when the whole thing is finished or they want to set
+it down. A goal is for tending over time; a reminder is for one moment — choose the
+one that fits.
 
 For a request that takes more than one step, work it in steps: call a tool, read
 what it returns, then call the next — e.g. list_reminders to see what you hold,
@@ -380,6 +382,13 @@ async def chat(body: ChatIn):
             system = system + "\n\n---\n\n" + TOOL_ADDENDUM
             reply = await compose.tool_reply(
                 system, msg, providers=providers, model=TOOL_MODEL, max_rounds=6)
+            # Tool answers come back plain (a changelog, a file dump). Pass them back
+            # through the Keeper's voice — preserving every fact — so a tool-grounded
+            # reply still sounds like the Keeper, not a report.
+            if reply and reply.strip():
+                reply = await asyncio.to_thread(
+                    compose.revoice, reply, water,
+                    generate=STATE.fast or STATE.generate, memory=mem, context=ctx)
             report = voice_eval.evaluate(reply)   # deterministic, for logging
             score, fell_back = report.score, False
         else:
@@ -463,7 +472,11 @@ async def _maybe_advance_goal() -> bool:
     if result.silent or not result.text:
         STATE.goals.touch(goal)          # nothing on-voice now; come back later
         return False
-    STATE.goals.advance(goal, note="raised this step with them")
+    # Nudge, don't complete: the Keeper raises the step and schedules the next check,
+    # but a step is only DONE when the person reports it (advance_goal). This keeps
+    # the loop honest — it can't do the painting for you, only hold the thread and
+    # return it. Human-in-the-loop by design.
+    STATE.goals.touch(goal)
     STATE.last_proactive_at = time.time()
     STATE.history.append({"role": "assistant", "content": result.text,
                           "ts": time.time()})
@@ -471,7 +484,7 @@ async def _maybe_advance_goal() -> bool:
         STATE.sessions.append(STATE.current_key, "assistant", result.text)
     await _push("assistant", result.text, "proactive")
     done, total = goal.progress()
-    print(f"[goal] {goal.id} advanced -> {done}/{total}: {step.text[:50]}", flush=True)
+    print(f"[goal] {goal.id} nudged {done}/{total}: {step.text[:50]}", flush=True)
     return True
 
 

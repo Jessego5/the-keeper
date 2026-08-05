@@ -174,6 +174,38 @@ def compose(
         score=best.score if best else None, report=best)
 
 
+_REVOICE_INSTRUCTION = """The message below is a true answer you have just worked out \
+(often from a tool — a file, your memory, the web, your own history). Re-voice it so it \
+sounds like YOU — your register, your economy — WITHOUT changing what it says.
+
+Rules, in order of importance:
+- Keep every concrete fact exactly: names, numbers, dates, quotes, file or code contents.
+- Add nothing that is not already there. Invent no events, no feelings, no claims.
+- If a line is a plain fact your voice would distort (a number, an address), keep it plain.
+- Do not turn it into a riddle; clarity first, voice second.
+
+Output only the re-voiced message — no preface, no explanation."""
+
+
+def revoice(text: str, water_state: str = persona.DEFAULT_WATER_STATE, *,
+            generate: Generator, memory: str = "", context: str = "") -> str:
+    """Rewrite a factual/tool-grounded answer in the Keeper's voice, preserving every
+    fact. Used so tool answers (git history, a file, the time) still sound like the
+    Keeper instead of a flat changelog. Falls back to the original on any failure —
+    a true-but-plain answer always beats a lost fact."""
+    text = (text or "").strip()
+    if not text:
+        return text
+    system = persona.build_system_prompt(
+        mode="passive", water_state=water_state, memory=memory, context=context)
+    system = system + "\n\n---\n\n" + _REVOICE_INSTRUCTION
+    try:
+        out = (generate(system, text) or "").strip()
+    except Exception:  # noqa: BLE001 - never lose the answer to a re-voice failure
+        return text
+    return out or text
+
+
 def _is_silence(text: str) -> bool:
     return not text or text.strip().upper().strip(".!") == SILENCE_TOKEN
 
