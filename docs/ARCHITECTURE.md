@@ -78,6 +78,26 @@ Persona guardrail: synthesized insights are stored as `kind="insight"` and rende
 under *"what you've come to understand"* — retrievable like any memory (faithful to
 the paper) but never recited back as the person's own words.
 
+## Planning: autonomous goal pursuit
+
+The pattern that makes the Keeper an *agent* rather than a reactive companion. When
+the person expresses something they want to move toward, the Keeper takes it on as a
+**Goal**, an LLM **planner** decomposes it into 2–5 concrete steps, and the proactive
+loop **works the plan over time** — advancing one step per due cycle, reaching out in
+voice to help with or invite it, then scheduling the next check. This maps to the
+canonical *Planning* agentic pattern (decompose → act → observe → repeat), on top of
+the *Tool Use* and *Memory* patterns already present.
+
+| Piece | Role | Where |
+|---|---|---|
+| Goal / Step store | persistent plan state, `due()` picks the longest-waiting active goal | `tasks.GoalStore` |
+| Planner | decomposes a goal into ordered steps | `planner.plan` |
+| Goal tools | `set_goal` / `list_goals` / `complete_goal` (chat-side) | `native_tools` |
+| Autonomous advance | works a due goal's next step as an outreach, under the circuit breaker | `server._maybe_advance_goal` |
+
+Outreach priority each tick (when the real-time breaker allows): **due goal → house
+routine → restless energy**. Purposeful work comes before mood.
+
 ## The house: agentic OS integration
 
 - **Recurring reminders** — `daily` / `weekly` / `weekdays` / `every N …`, re-armed to
@@ -110,6 +130,8 @@ the paper) but never recited back as the person's own words.
 | `energy.py` | Multi-timescale "battery" — how restless it is |
 | `proactive.py` | One proactive decision: presence + energy + roll gates |
 | `routines.py` | Presence-driven house routines |
+| `tasks.py` | Goal/Step store — persistent plan state the agent pursues over time |
+| `planner.py` | Decomposes a goal into concrete steps (the Planning pattern) |
 | `reminders.py` | Reminder store + recurrence |
 | `native_tools.py` | The Keeper's own action tools (remind / list / complete) |
 | `tools.py` | MCP manager — connects configured servers (files, fetch, time, git), applies a read-only filter + per-server allowlist |

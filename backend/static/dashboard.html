@@ -45,6 +45,14 @@
                       white-space:pre-wrap; }
   .reflection .none { color:var(--current); font-style:italic; }
 
+  .goal { margin-bottom:0.9rem; }
+  .goal:last-child { margin-bottom:0; }
+  .goal .gt { color:var(--foam); font-size:0.9rem; }
+  .goal .gp { color:var(--tide); font-size:0.6rem; letter-spacing:0.12em;
+              text-transform:uppercase; margin:0.2rem 0 0.1rem; }
+  .goal .gs { color:var(--foam-dim); font-size:0.72rem; font-style:italic;
+              margin-top:0.15rem; }
+
   .badges { display:flex; gap:0.5rem; flex-wrap:wrap; justify-content:center; }
   .badge { font-size:0.66rem; letter-spacing:0.06em; color:var(--foam-dim);
            border:1px solid var(--current); border-radius:999px;
@@ -117,6 +125,11 @@
            font-size:0.7rem;"></div>
     </div>
 
+    <div class="reflection">
+      <div class="label">what it's tending &mdash; goals</div>
+      <div id="goals"><span class="none">nothing taken on yet.</span></div>
+    </div>
+
     <div class="badges">
       <span class="badge" id="b-backend">backend —</span>
       <span class="badge" id="b-embed">memory —</span>
@@ -127,6 +140,7 @@
   </div>
 
 <script>
+  function esc(s) { const d = document.createElement("div"); d.textContent = s || ""; return d.innerHTML; }
   function pct(x) { return Math.max(0, Math.min(100, Math.round((x||0)*100))) + "%"; }
   function fmtMin(m) {
     if (m == null) return "—";
@@ -182,6 +196,26 @@
     if (house.awaiting_return) bits.push("noticed you'd stepped away");
     if (house.last_routine) bits.push("last routine: " + house.last_routine.replace(/_/g, " "));
     document.getElementById("house-last").textContent = bits.join("  ·  ");
+
+    // what it's tending — goals the agent is pursuing
+    const goals = s.goals || [];
+    const gc = document.getElementById("goals");
+    if (!goals.length) {
+      gc.innerHTML = '<span class="none">nothing taken on yet.</span>';
+    } else {
+      gc.innerHTML = "";
+      goals.forEach(g => {
+        const pct = g.total ? Math.round((g.done / g.total) * 100) : 0;
+        const el = document.createElement("div");
+        el.className = "goal";
+        el.innerHTML =
+          '<div class="gt">' + esc(g.title) + '</div>' +
+          '<div class="gp">' + g.done + ' / ' + g.total + ' steps</div>' +
+          '<div class="meter"><span style="width:' + pct + '%"></span></div>' +
+          (g.next_step ? '<div class="gs">next: ' + esc(g.next_step) + '</div>' : '');
+        gc.appendChild(el);
+      });
+    }
 
     const rt = document.getElementById("reflection-text");
     if (s.latest_reflection) rt.textContent = s.latest_reflection;
