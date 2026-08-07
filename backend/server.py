@@ -524,7 +524,7 @@ async def _execute_goal_step(goal, step, water) -> bool:
         planner_generate=STATE.fast or STATE.generate, journal=STATE.journal,
         allow_delegate=False)               # a sub-agent must not spawn sub-agents
     try:
-        res = await subagents.delegate(
+        res = await subagents.orchestrate(
             f"For their goal \"{goal.title}\", do this: {step.text}",
             STATE.fast or STATE.generate, mcp=STATE.mcp, native=sub_native)
     except Exception as exc:  # noqa: BLE001
@@ -542,10 +542,10 @@ async def _execute_goal_step(goal, step, water) -> bool:
     voiced = await asyncio.to_thread(
         compose.revoice, result, water, generate=STATE.fast or STATE.generate,
         memory=mem)
-    STATE.goals.advance(goal, note=f"[{res.profile}] {result[:130]}")   # who did it
+    STATE.goals.advance(goal, note=f"[{res.who()}] {result[:130]}")   # who did it
     await _deliver_proactive(voiced)
     done, total = goal.progress()
-    print(f"[goal] {goal.id} EXECUTED via {res.profile} {done}/{total}: "
+    print(f"[goal] {goal.id} EXECUTED via {res.who()} {done}/{total}: "
           f"{step.text[:45]}", flush=True)
     return True
 
