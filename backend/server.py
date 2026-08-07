@@ -698,8 +698,10 @@ async def state():
         "energy": round(en, 3),
         "base_score": round(score, 3),
         "speak_probability": round(energy.speak_probability(score), 3),
-        "facts_kept": len(STATE.store.facts),
-        "insights_kept": sum(1 for f in STATE.store.facts if f.kind == "insight"),
+        "facts_kept": sum(1 for f in STATE.store.facts if f.active),
+        "insights_kept": sum(1 for f in STATE.store.facts
+                             if f.kind == "insight" and f.active),
+        "changes_tracked": len(STATE.store.changes()),
         "reminders_held": len(pending),
         "reminders_recurring": sum(1 for r in pending if r.repeat),
         "goals": [

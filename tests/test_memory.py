@@ -239,6 +239,65 @@ def test_recall_reranks_when_generate_given(store):
     assert "Sam" in out
 
 
+# --- temporal / change-aware memory (Zep/Graphiti-style) --- #
+
+def _supersede_judge(system, user):
+    # judge that says a "painting again" NEW supersedes a "stopped painting" OLD
+    return "SUPERSEDES" if ("paint" in user.lower() and "again" in user.lower()) \
+        else "DISTINCT"
+
+
+def test_new_fact_supersedes_the_outdated_one(store):
+    old = store.add("Hasn't painted since March.", "state", embed=_fake_embed_paint)
+    new = store.add("Started painting again this week.", "state",
+                    embed=_fake_embed_paint, judge=_supersede_judge)
+    assert old.valid_until is not None            # the old fact was closed
+    assert not old.active
+    assert new.supersedes == old.id               # the new one records what it replaced
+    assert new.active
+
+
+def test_superseded_fact_is_not_recalled_but_kept(store):
+    store.add("Hasn't painted since March.", "state", embed=_fake_embed_paint)
+    store.add("Started painting again this week.", "state",
+              embed=_fake_embed_paint, judge=_supersede_judge)
+    out = memory.recall(store, "how is the painting going", k=5, embed=_fake_embed_paint)
+    assert "again" in out                          # the current truth surfaces
+    assert "the tide turned" in out                # the change is shown to the Keeper
+    current = out.split("what has changed")[0]     # the current-facts portion
+    assert "since March" not in current            # old fact isn't a *current* fact
+    assert len(store.facts) == 2                   # but both are still stored
+
+
+def test_distinct_fact_does_not_supersede(store):
+    store.add("Hasn't painted since March.", "state", embed=_fake_embed_paint)
+    store.add("Bought new brushes today.", "state",
+              embed=_fake_embed_paint, judge=lambda s, u: "DISTINCT")
+    assert all(f.active for f in store.facts)     # nothing superseded
+
+
+def test_changes_records_the_transition(store):
+    store.add("Hasn't painted since March.", "state", embed=_fake_embed_paint)
+    store.add("Started painting again this week.", "state",
+              embed=_fake_embed_paint, judge=_supersede_judge)
+    changes = store.changes()
+    assert len(changes) == 1
+    old, new = changes[0]
+    assert "since March" in old.text and "again" in new.text
+
+
+def _fake_embed_paint(texts):
+    # everything about painting lands in the same region (so they're "related")
+    out = []
+    for t in texts:
+        low = t.lower()
+        v = [1.0 if "paint" in low or "brush" in low else 0.0,
+             1.0 if "march" in low else 0.0,
+             0.3]
+        out.append(v)
+    return out
+
+
 def test_consolidate_leaves_insights_untouched(store):
     for i in range(4):
         store.add(f"Minor errand number {i}.", "event", importance=1)
