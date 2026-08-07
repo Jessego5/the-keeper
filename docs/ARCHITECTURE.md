@@ -155,6 +155,22 @@ low it's nudged to wrap up, then forced to a graceful final answer ("answer with
 found, note what's incomplete") — never a bare mid-thought cutoff. The reference agent's budget
 warnings + forced-cleanup.
 
+## A2A: an interoperable agent
+
+MCP lets the Keeper use tools; **A2A** (Agent-to-Agent, the Google/Linux-Foundation
+standard) lets it interoperate with other **agents**. The Keeper speaks it **both ways**:
+
+- **As a server** — it publishes an **Agent Card** at `/.well-known/agent.json` (name,
+  skills, endpoint) so any A2A client can discover it, and answers `message/send` at
+  `/a2a`, routed through a *safe* tool subset (no delegate/spawn from external callers).
+- **As a client** — the `consult_peer` tool discovers a remote agent by its card and
+  sends it a message (`a2a.consult`), so the Keeper can call other agents.
+
+Scope is an honest core subset: synchronous `message/send` with text parts — no
+streaming or push-notification task states (the distributed-task machinery a single-user
+companion doesn't need). Verified live in both directions, including a loopback where the
+Keeper's client consulted its own server. `a2a.py` is the whole protocol layer.
+
 ## The house: agentic OS integration
 
 - **Recurring reminders** — `daily` / `weekly` / `weekdays` / `every N …`, re-armed to
@@ -193,6 +209,7 @@ warnings + forced-cleanup.
 | `subagents.py` | Specialists (researcher/archivist/scribe/analyst) + router + supervisor |
 | `sandbox.py` | Fenced Python execution (code-as-action) — timeout, rlimits, isolation |
 | `background.py` | Registry for async background delegations (spawn/track/finish) |
+| `a2a.py` | Agent-to-Agent protocol — Agent Card + message/send envelope + client |
 | `reminders.py` | Reminder store + recurrence |
 | `native_tools.py` | The Keeper's own action tools (remind / list / complete) |
 | `tools.py` | MCP manager — connects configured servers (files, fetch, search, time, git), applies a read-only filter + per-server allowlist |
