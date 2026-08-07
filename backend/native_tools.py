@@ -30,7 +30,7 @@ class NativeTools:
                  planner_generate: Optional[Callable] = None,
                  journal: Optional[journal_mod.Journal] = None,
                  mcp=None, delegate_generate: Optional[Callable] = None,
-                 allow_delegate: bool = True):
+                 allow_delegate: bool = True, spawner: Optional[Callable] = None):
         self.store = store
         self.goals = goals
         self._plan_gen = planner_generate      # used to decompose a new goal
@@ -38,6 +38,7 @@ class NativeTools:
         self._mcp = mcp                        # for delegating to sub-agents
         self._delegate_gen = delegate_generate
         self._allow_delegate = allow_delegate
+        self._spawner = spawner                # async: start a background task
         self._defs = [
             {
                 "type": "function",
@@ -207,6 +208,27 @@ class NativeTools:
                 },
             },
         ]
+        if allow_delegate and spawner is not None:
+            self._defs.append({
+                "type": "function",
+                "function": {
+                    "name": "spawn_task",
+                    "description": "Set your specialists working on something LONGER in "
+                                   "the background, and bring the result back later "
+                                   "(you'll return with it on your own). Use this — not "
+                                   "delegate — when a task needs real digging that "
+                                   "shouldn't hold up the conversation. Describe it "
+                                   "fully. You will tell them you're on it now.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "task": {"type": "string",
+                                     "description": "the task, described in full"},
+                        },
+                        "required": ["task"],
+                    },
+                },
+            })
         if allow_delegate:
             self._defs.append({
                 "type": "function",
@@ -321,6 +343,14 @@ class NativeTools:
         if name == "run_python":
             res = await asyncio.to_thread(sandbox_mod.run_python, args.get("code", ""))
             return res.as_text()
+
+        if name == "spawn_task":
+            if self._spawner is None:
+                return "(cannot work in the background right now)"
+            task = args.get("task", "").strip()
+            if not task:
+                return "(need a task to work on)"
+            return await self._spawner(task)
 
         if name == "delegate":
             if self._mcp is None or self._delegate_gen is None:
