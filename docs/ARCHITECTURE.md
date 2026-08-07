@@ -73,6 +73,13 @@ Two papers, mapped to code:
 | | **Importance / poignancy** (1–10) assigned when a memory forms | `memory.distill` (inline `[kind\|N]`) |
 | | **Reflection**: salient questions → retrieve → synthesize higher-level insights, stored back as retrievable memories | `drift.synthesize` |
 | **MemGPT** (Packer et al., 2023) | **Memory pressure**: evict old, low-value content to external storage under recursive summarization | `memory.consolidate` → `*_archive.jsonl` |
+| **Hybrid retrieval** | dense (embedding cosine) + sparse (BM25) fused with **Reciprocal Rank Fusion** — the combo that tops retrieval benchmarks | `memory.rank_facts` (`_bm25`, `_rrf`) |
+| **Retrieve-then-rerank** | cast a wide net cheaply, then an LLM reranker narrows to the best k | `memory.rerank` |
+| **Zep / Graphiti** (temporal KG) | **change-aware** facts: a new fact SUPERSEDES an outdated one (LLM-judged); the old is closed but kept as history; only current facts are retrievable | `memory.Fact.valid_until` / `supersedes`, `_find_supersedable`, `changes` |
+
+Temporal note: superseding is framed as **the tide** — recall shows the Keeper "what has
+changed (was, then became)" so it speaks the turn knowingly. The water-states *are* change
+over time, so the frontier memory direction and the persona are the same idea.
 
 Persona guardrail: synthesized insights are stored as `kind="insight"` and rendered
 under *"what you've come to understand"* — retrievable like any memory (faithful to
