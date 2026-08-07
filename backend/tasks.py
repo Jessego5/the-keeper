@@ -14,6 +14,7 @@ worked, so the loop can pick the goal that has waited longest without nagging.
 from __future__ import annotations
 
 import json
+import re
 import time
 import uuid
 from dataclasses import asdict, dataclass, field
@@ -33,6 +34,21 @@ class Step:
     text: str
     done: bool = False
     note: str = ""          # what happened when it was worked (a result / a reply)
+    actor: str = "person"   # who does it: 'person' (they act) | 'keeper' (agent acts)
+
+
+# A plan step may arrive prefixed with who should do it, e.g. "[keeper] look up X".
+_ACTOR_RE = re.compile(r"^\s*\[(keeper|person|you|me)\]\s*", re.I)
+
+
+def _parse_step(raw: str) -> Optional[Step]:
+    """Turn a plan line into a Step, reading an optional [keeper]/[person] prefix.
+    'you' maps to the person; 'me' (the Keeper speaking) maps to keeper."""
+    m = _ACTOR_RE.match(raw)
+    tag = (m.group(1).lower() if m else "person")
+    actor = "keeper" if tag in ("keeper", "me") else "person"
+    text = _ACTOR_RE.sub("", raw).strip()
+    return Step(text=text, actor=actor) if text else None
 
 
 @dataclass
@@ -80,8 +96,8 @@ class GoalStore:
             json.dumps(asdict(g), ensure_ascii=False) + "\n" for g in self.goals))
 
     def add(self, title: str, steps: list[str]) -> Goal:
-        g = Goal(title=title.strip(),
-                 steps=[Step(text=s.strip()) for s in steps if s.strip()])
+        parsed = [s for s in (_parse_step(x) for x in steps) if s is not None]
+        g = Goal(title=title.strip(), steps=parsed)
         self.goals.append(g)
         self._save()
         return g
