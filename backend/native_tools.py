@@ -328,13 +328,15 @@ class NativeTools:
             task = args.get("task", "").strip()
             if not task:
                 return "(need a task to delegate)"
-            # The specialist gets native tools WITHOUT delegate — no recursion.
+            # Specialists get native tools WITHOUT delegate — no recursion.
             sub_native = NativeTools(
                 self.store, goals=self.goals, planner_generate=self._plan_gen,
                 journal=self.journal, allow_delegate=False)
-            res = await subagents_mod.delegate(
+            orch = await subagents_mod.orchestrate(
                 task, self._delegate_gen, mcp=self._mcp, native=sub_native)
-            return f"[{res.profile}] {res.result}"
+            if not orch.result:
+                return "(the specialists came back with nothing)"
+            return f"[{orch.who()}] {orch.result}"
         return f"(no such tool: {name})"
 
 
