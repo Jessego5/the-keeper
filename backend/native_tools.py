@@ -216,7 +216,7 @@ class NativeTools:
             title = args.get("title", "").strip()
             if not title:
                 return "(need a goal to take on)"
-            steps = planner_mod.plan(title, self._plan_gen)
+            steps = planner_mod.plan(title, self._plan_gen, reflect=True)
             if not steps:
                 steps = ["Take the first small step toward it."]
             g = self.goals.add(title, steps)

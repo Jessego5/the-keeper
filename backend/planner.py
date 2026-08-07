@@ -26,18 +26,53 @@ one step is fine. Output only the steps, one per line."""
 _MAX_STEPS = 5
 
 
-def plan(goal: str, generate: Generator) -> list[str]:
-    """Decompose `goal` into an ordered list of concrete steps (2-5, capped)."""
-    goal = (goal or "").strip()
-    if not goal:
-        return []
-    raw = (generate(_PLAN_SYSTEM, goal) or "").strip()
+def _plan_once(goal: str, generate: Generator, feedback: str = "") -> list[str]:
+    """One decomposition pass. `feedback` (from a critique) steers a re-plan."""
+    user = goal if not feedback else (
+        f"{goal}\n\nYour previous plan had this problem — fix it: {feedback}")
+    raw = (generate(_PLAN_SYSTEM, user) or "").strip()
     steps: list[str] = []
     for line in raw.splitlines():
         line = line.strip().lstrip("-*0123456789.) ").strip()
         if line:
             steps.append(line)
     return steps[:_MAX_STEPS]
+
+
+_CRITIQUE_SYSTEM = """You review a short plan a companion made for a person's goal. \
+Check: are the steps concrete and doable, each small enough, in a sensible order, and \
+is the FIRST one gentle and easy to start? If the plan is already good, reply with \
+exactly GOOD and nothing else. Otherwise reply with ONE short line naming the single \
+most important thing to fix."""
+
+
+def critique_plan(goal: str, steps: list[str], generate: Generator) -> str:
+    """Evaluate a plan; returns 'GOOD' if fine, else one line of specific feedback."""
+    if not steps:
+        return "the plan is empty"
+    rendered = "\n".join(f"- {s}" for s in steps)
+    return (generate(_CRITIQUE_SYSTEM, f"Goal: {goal}\nPlan:\n{rendered}") or "").strip()
+
+
+def plan(goal: str, generate: Generator, reflect: bool = False,
+         max_rounds: int = 2) -> list[str]:
+    """Decompose `goal` into 2-5 concrete steps. With reflect=True, run the
+    evaluator-optimizer loop: draft → critique → revise (up to max_rounds), so a weak
+    first plan gets fixed before it's committed."""
+    goal = (goal or "").strip()
+    if not goal:
+        return []
+    steps = _plan_once(goal, generate)
+    if not reflect:
+        return steps
+    for _ in range(max(0, max_rounds - 1)):
+        verdict = critique_plan(goal, steps, generate)
+        if not verdict or verdict.upper().strip(".!").startswith("GOOD"):
+            break
+        revised = _plan_once(goal, generate, feedback=verdict)
+        if revised:
+            steps = revised
+    return steps
 
 
 _ADVANCE_SYSTEM = """You are a companion helping a person through one step of a plan. \
