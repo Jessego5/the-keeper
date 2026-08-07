@@ -107,6 +107,7 @@ def test_reads_as_done():
 
 # --- goal tools via NativeTools (async) --- #
 
+import journal as journal_mod
 import native_tools
 import reminders as reminders_mod
 
@@ -119,7 +120,9 @@ def _plan_gen(system, user):
 def nt(tmp_path):
     rem = reminders_mod.ReminderStore(tmp_path / "r.jsonl")
     goals = tasks.GoalStore(tmp_path / "g.jsonl")
-    return native_tools.NativeTools(rem, goals=goals, planner_generate=_plan_gen)
+    jrnl = journal_mod.Journal(tmp_path / "kept.jsonl")
+    return native_tools.NativeTools(rem, goals=goals, planner_generate=_plan_gen,
+                                    journal=jrnl)
 
 
 async def test_set_goal_plans_and_stores(nt):

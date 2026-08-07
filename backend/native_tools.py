@@ -15,6 +15,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Callable, Optional
 
+import journal as journal_mod
 import planner as planner_mod
 import reminders as reminders_mod
 import tasks as tasks_mod
@@ -23,10 +24,12 @@ import tasks as tasks_mod
 class NativeTools:
     def __init__(self, store: reminders_mod.ReminderStore,
                  goals: Optional[tasks_mod.GoalStore] = None,
-                 planner_generate: Optional[Callable] = None):
+                 planner_generate: Optional[Callable] = None,
+                 journal: Optional[journal_mod.Journal] = None):
         self.store = store
         self.goals = goals
         self._plan_gen = planner_generate      # used to decompose a new goal
+        self.journal = journal
         self._defs = [
             {
                 "type": "function",
@@ -148,6 +151,34 @@ class NativeTools:
                     },
                 },
             },
+            {
+                "type": "function",
+                "function": {
+                    "name": "keep_note",
+                    "description": "Write a note into your journal — the one thing you "
+                                   "can keep in writing. Use it when they ask you to "
+                                   "hold a thought, or when you want to record "
+                                   "something you found or worked out. Append-only; it "
+                                   "never overwrites.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "text": {"type": "string",
+                                     "description": "the note to keep"},
+                        },
+                        "required": ["text"],
+                    },
+                },
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "read_journal",
+                    "description": "Read back the recent notes you've kept in your "
+                                   "journal.",
+                    "parameters": {"type": "object", "properties": {}},
+                },
+            },
         ]
 
     def openai_tools(self) -> list[dict]:
@@ -225,6 +256,19 @@ class NativeTools:
                 return "not holding any goals."
             g = self.goals.complete(args.get("key", ""))
             return f"set down: \"{g.title}\"" if g else "no matching goal."
+
+        if name == "keep_note":
+            if self.journal is None:
+                return "(no journal to keep it in)"
+            e = self.journal.keep(args.get("text", ""))
+            return f"kept in the journal: \"{e.text}\"" if e else "(nothing to keep)"
+        if name == "read_journal":
+            if self.journal is None:
+                return "(no journal)"
+            recent = self.journal.recent()
+            if not recent:
+                return "the journal is empty."
+            return "\n".join(f"- ({e.when()}) {e.text}" for e in recent)
         return f"(no such tool: {name})"
 
 
