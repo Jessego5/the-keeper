@@ -25,6 +25,23 @@ def test_distinct_facts_not_merged(store):
     assert len(store.facts) == 2
 
 
+def test_irrelevant_cue_surfaces_nothing(store):
+    # REGRESSION: a vague request that matches nothing must NOT pull back a random
+    # fact the model then recites. (The "help me write things down" miss.)
+    store.add("The tide brought back what you gave the water in spring.", "event")
+    store.add("Stopped painting in March.", "state")
+    out = memory.recall(store, "help me write things down", k=3)
+    assert out == ""                       # nothing relevant -> inject nothing
+
+
+def test_high_importance_fact_stays_ambient(store):
+    # the big things stay in mind even when the cue doesn't match them
+    store.add("Her mother is in the hospital.", "state", importance=10)
+    store.add("Likes oat milk.", "preference", importance=2)
+    out = memory.recall(store, "what should I cook tonight", k=3)
+    assert "mother" in out and "oat milk" not in out
+
+
 def test_empty_cue_returns_present_facts(store):
     store.add("A.", "event")
     store.add("B.", "event")
@@ -234,7 +251,7 @@ def test_recall_reranks_when_generate_given(store):
             if "Sam" in line:
                 return line.split(".")[0].strip()   # that fact's number
         return "0"
-    out = memory.recall(store, "did I reach my brother", k=2,
+    out = memory.recall(store, "did I get back to Sam", k=2,
                         rerank_generate=gen)
     assert "Sam" in out
 

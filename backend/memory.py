@@ -74,6 +74,11 @@ _W_RECENCY = 1.0
 _W_IMPORTANCE = 1.0
 _W_RELEVANCE = 1.0
 _RECENCY_DECAY = 0.995
+# Relevance gate: on a cued turn, a fact must clear this dense-cosine floor (or share a
+# word, or be this important) to be surfaced — so a vague request in a sparse store
+# doesn't pull back an unrelated memory the model then recites.
+_REL_FLOOR = 0.25
+_AMBIENT_IMPORTANCE = 8.0
 
 
 @dataclass
@@ -320,7 +325,7 @@ def recall(store: MemoryStore, cue: str = "", k: int = 5,
         return ""
     do_rerank = rerank_generate is not None and bool(cue.strip())
     top = rank_facts(store.facts, cue, k=(k * 3 if do_rerank else k),
-                     now=now, embed=embed)
+                     now=now, embed=embed, gate=True)   # gate the user-facing path
     if not top:
         return ""
     if do_rerank and len(top) > k:
@@ -349,7 +354,7 @@ def recall(store: MemoryStore, cue: str = "", k: int = 5,
 
 def rank_facts(facts: list[Fact], cue: str = "", k: int = 5,
                now: Optional[float] = None,
-               embed: Optional[Embedder] = None) -> list[Fact]:
+               embed: Optional[Embedder] = None, gate: bool = False) -> list[Fact]:
     """The Generative Agents retrieval function, returning the top-k Facts.
 
     score(f) = w_rec·recency(f) + w_imp·importance(f) + w_rel·relevance(f, cue)
@@ -402,8 +407,22 @@ def rank_facts(facts: list[Fact], cue: str = "", k: int = 5,
     imp_n = _minmax(importance)
     rel_n = _minmax(relevance) if relevance is not None else [0.0] * len(facts)
 
+    # Relevance gate (cued turns only): a fact must be actually relevant — a dense hit,
+    # a shared word, or high importance — to surface. Stops reciting an unrelated memory
+    # when nothing matches. With no cue (proactive/drift) the gate is off: presence rules.
+    gated = gate and cue.strip() and (dense is not None or sparse is not None)
+
+    def passes(i: int, f: Fact) -> bool:
+        if not gated:
+            return True
+        return ((dense[i] if dense is not None else 0.0) >= _REL_FLOOR
+                or (sparse[i] if sparse is not None else 0.0) > 0.0
+                or f.importance >= _AMBIENT_IMPORTANCE)
+
     scored = []
     for i, f in enumerate(facts):
+        if not passes(i, f):
+            continue
         score = (_W_RECENCY * rec_n[i]
                  + _W_IMPORTANCE * imp_n[i]
                  + _W_RELEVANCE * rel_n[i])
@@ -491,6 +510,11 @@ about. Skip small talk, passing moods, and anything about the companion.
 Write each fact as ONE short third-person statement of the fact itself — the thing \
 that is true, not the act of saying it. Write "Has a brother, Sam; not spoken since \
 spring," never "Mentioned a brother."
+
+NEVER capture the companion's OWN words — its metaphors, its tide/water imagery, its \
+reflections or comfort ("the tide brought back what you gave the water") — as facts. \
+Those are the companion speaking, not facts about the person. Store only concrete, \
+literal facts about the PERSON.
 
 Prefix each line with [kind|importance]: kind is one of identity, state, event, \
 preference; importance is 1-10 for how poignant/significant this is to the person's \
