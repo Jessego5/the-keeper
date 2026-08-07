@@ -16,6 +16,7 @@ import asyncio
 from datetime import datetime
 from typing import Callable, Optional
 
+import a2a as a2a_mod
 import journal as journal_mod
 import planner as planner_mod
 import reminders as reminders_mod
@@ -233,6 +234,27 @@ class NativeTools:
             self._defs.append({
                 "type": "function",
                 "function": {
+                    "name": "consult_peer",
+                    "description": "Consult another AGENT over the A2A protocol: given "
+                                   "its base URL, discover it (its agent card) and send "
+                                   "it a message, then speak from its reply. Use when a "
+                                   "task is better suited to a different agent the "
+                                   "person points you to.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "url": {"type": "string",
+                                    "description": "the peer agent's base URL"},
+                            "task": {"type": "string",
+                                     "description": "what to ask it"},
+                        },
+                        "required": ["url", "task"],
+                    },
+                },
+            })
+            self._defs.append({
+                "type": "function",
+                "function": {
                     "name": "delegate",
                     "description": "Hand an involved task to one of your specialists "
                                    "and get back what they found or made. Use it when "
@@ -351,6 +373,13 @@ class NativeTools:
             if not task:
                 return "(need a task to work on)"
             return await self._spawner(task)
+
+        if name == "consult_peer":
+            url = args.get("url", "").strip()
+            task = args.get("task", "").strip()
+            if not url or not task:
+                return "(need a peer URL and a task)"
+            return await a2a_mod.consult(url, task)
 
         if name == "delegate":
             if self._mcp is None or self._delegate_gen is None:
