@@ -373,7 +373,10 @@ async def chat(body: ChatIn):
         STATE.current_key = STATE.sessions.new().key
     STATE.sessions.append(STATE.current_key, "user", msg, now)
 
-    mem = memory.recall(STATE.store, msg, k=4, embed=STATE.embed)
+    # Retrieve-then-rerank on the user-facing path: hybrid casts wide, the fast model
+    # reranks to the best few. (Background paths use plain hybrid — no per-turn cost.)
+    mem = memory.recall(STATE.store, msg, k=4, embed=STATE.embed,
+                        rerank_generate=STATE.fast)
     # current time in the context so the Keeper can turn "tomorrow 9am" -> ISO.
     ctx = (sensors.read().to_context_line()
            + f"; current time {datetime.now().isoformat(timespec='minutes')}")

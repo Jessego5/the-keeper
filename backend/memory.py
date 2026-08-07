@@ -209,22 +209,64 @@ class MemoryStore:
 # Recall — surface the facts that matter for this turn.
 # --------------------------------------------------------------------------- #
 
+_RERANK_SYSTEM = """You re-rank a person's remembered facts by how RELEVANT each is to \
+a cue, for a companion deciding what to keep in mind. Given the cue and a numbered list \
+of facts, output the numbers of the most relevant ones, best first, comma-separated \
+(e.g. 3,1,5). Judge relevance to the cue only — not how recent or important the fact \
+is. Output only numbers."""
+
+
+def rerank(cue: str, facts: list, generate: Generator, k: int = 5) -> list:
+    """Re-order candidate facts by an LLM's relevance judgement, returning the top-k.
+    The retrieve-then-rerank pattern: hybrid retrieval casts a wide net cheaply, this
+    narrows it with a stronger judgement. Falls back to the given order on any failure."""
+    if len(facts) <= 1:
+        return facts[:k]
+    listing = "\n".join(f"{i}. {f.text}" for i, f in enumerate(facts))
+    try:
+        raw = generate(_RERANK_SYSTEM, f"Cue: {cue}\n\nFacts:\n{listing}") or ""
+    except Exception:  # noqa: BLE001
+        return facts[:k]
+    picked: list[int] = []
+    seen: set[int] = set()
+    for m in re.findall(r"\d+", raw):
+        i = int(m)
+        if 0 <= i < len(facts) and i not in seen:
+            seen.add(i)
+            picked.append(i)
+        if len(picked) >= k:
+            break
+    for i in range(len(facts)):          # top up from the given order if under-filled
+        if len(picked) >= k:
+            break
+        if i not in seen:
+            picked.append(i)
+    return [facts[i] for i in picked[:k]]
+
+
 def recall(store: MemoryStore, cue: str = "", k: int = 5,
-           now: Optional[float] = None, embed: Optional[Embedder] = None) -> str:
+           now: Optional[float] = None, embed: Optional[Embedder] = None,
+           rerank_generate: Optional[Generator] = None) -> str:
     """Return up to k relevant facts, rendered for the system prompt's memory slot.
 
-    Ranking is the Generative Agents retrieval function (see rank_facts): recency +
-    importance + relevance, each min-max normalized then summed. Insights (the
-    Keeper's own synthesized understanding) are rendered under a separate heading so
-    they are never returned as something the person said. Falls back to keyword
-    overlap when there is no embedder or the cue can't be embedded. Empty string if
-    the store is empty.
+    Ranking is the Generative Agents retrieval function (see rank_facts) with HYBRID
+    relevance. When `rerank_generate` is given, it's retrieve-then-rerank: hybrid
+    retrieval casts a wider net (3k), then an LLM reranker narrows to the best k — the
+    combo that tops retrieval benchmarks. Insights are rendered under a separate
+    heading so they're never returned as something the person said. Empty if the store
+    is empty.
     """
     if not store.facts:
         return ""
-    top = rank_facts(store.facts, cue, k=k, now=now, embed=embed)
+    do_rerank = rerank_generate is not None and bool(cue.strip())
+    top = rank_facts(store.facts, cue, k=(k * 3 if do_rerank else k),
+                     now=now, embed=embed)
     if not top:
         return ""
+    if do_rerank and len(top) > k:
+        top = rerank(cue, top, rerank_generate, k)
+    else:
+        top = top[:k]
     kept = [f for f in top if f.kind != "insight"]
     insights = [f for f in top if f.kind == "insight"]
     blocks = []
