@@ -125,11 +125,21 @@ snippet executed in a fenced subprocess (isolated mode, wall-clock timeout, CPU+
 rlimits, throwaway cwd, capped output). It stops runaways and accidents, not malicious
 code — stated plainly in the module. The reference agent's `shell.py`, scoped to Python.
 
-`subagents.route` (a tiny LLM router) picks the specialist; `subagents.run` gives it a
-scoped tool view (`_FilteredMCP`) and runs its loop; `delegate` is the supervisor entry
-point. Exposed two ways: a **`delegate` tool** the main Keeper calls in chat, and the
-**goal executor**, which routes every `[keeper]` step through a specialist. Recursion is
-blocked — a sub-agent can't spawn sub-agents.
+**Orchestrator-workers** (`subagents.orchestrate`) is the deep path — not just routing:
+
+1. **Decompose** — a lead-agent prompt splits the task into 1–4 independent subtasks.
+2. **Fan out (parallel)** — each subtask is routed to a specialist and the workers run
+   **concurrently** (`asyncio.gather`), each with its own scoped tool view (`_FilteredMCP`).
+3. **Synthesize** — a lead step combines the workers' findings into one answer.
+
+It degrades to a single specialist when the task doesn't split. `OrchestrationResult`
+carries the worker trace (`who()`, `trace()`). Exposed two ways: the **`delegate` tool**
+the Keeper calls in chat, and the **goal executor**, which orchestrates every `[keeper]`
+step. Recursion is blocked — a sub-agent can't spawn sub-agents. (`route` + `run` remain
+the single-worker primitives underneath.)
+
+Verified live: *"find a price, then compute the weekly cost"* fanned out to **researcher
++ analyst** in parallel and synthesized their results.
 
 ## The house: agentic OS integration
 
