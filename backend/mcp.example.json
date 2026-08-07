@@ -12,6 +12,11 @@
       "args": ["--with", "mcp<2", "mcp-server-fetch"]
     },
     {
+      "name": "search",
+      "command": "uvx",
+      "args": ["--with", "mcp<2", "duckduckgo-mcp-server"]
+    },
+    {
       "name": "time",
       "command": "uvx",
       "args": ["--with", "mcp<2", "mcp-server-time"]

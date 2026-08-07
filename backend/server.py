@@ -40,6 +40,7 @@ import compose
 import drift
 import embedder
 import energy
+import journal as journal_mod
 import memory
 import mood
 import native_tools
@@ -89,6 +90,10 @@ advance_goal to mark it and move to the next. Use list_goals to see what you are
 helping with, and complete_goal when the whole thing is finished or they want to set
 it down. A goal is for tending over time; a reminder is for one moment — choose the
 one that fits.
+
+You keep a JOURNAL — the one thing you can write. Use keep_note to hold a thought they
+ask you to keep, or to record something you found or worked out; use read_journal to
+look back. It is append-only: writing never erases.
 
 For a request that takes more than one step, work it in steps: call a tool, read
 what it returns, then call the next — e.g. list_reminders to see what you hold,
@@ -149,6 +154,7 @@ class AppState:
     reminders: reminders.ReminderStore = field(
         default_factory=reminders.ReminderStore)
     goals: tasks.GoalStore = field(default_factory=tasks.GoalStore)   # agent goals
+    journal: journal_mod.Journal = field(default_factory=journal_mod.Journal)
     sessions: sessions.SessionStore = field(default_factory=sessions.SessionStore)
     current_key: Optional[str] = None   # active conversation (sidebar)
     routines_engine: routines.RoutineEngine = field(
@@ -368,7 +374,7 @@ async def chat(body: ChatIn):
     # join when configured. Reaching for a tool is the passive/agentic path.
     providers = [native_tools.NativeTools(
         STATE.reminders, goals=STATE.goals,
-        planner_generate=STATE.fast or STATE.generate)]
+        planner_generate=STATE.fast or STATE.generate, journal=STATE.journal)]
     if STATE.mcp is not None and STATE.mcp.has_tools:
         providers.append(STATE.mcp)
     used_tools = bool(providers)
