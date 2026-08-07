@@ -48,6 +48,7 @@ import persona
 import reminders
 import routines
 import sessions
+import subagents
 import tasks
 import proactive
 import sensors
@@ -94,6 +95,12 @@ one that fits.
 You keep a JOURNAL — the one thing you can write. Use keep_note to hold a thought they
 ask you to keep, or to record something you found or worked out; use read_journal to
 look back. It is append-only: writing never erases.
+
+You also have SPECIALISTS you can hand a bigger task to with delegate: a researcher
+(looks things up on the web and synthesizes), an archivist (digs through their own
+files, notes, and history), and a scribe (drafts a message or note). When a task needs
+real digging or drafting rather than a single quick tool call, delegate it in one
+sentence and speak from what they bring back.
 
 For a request that takes more than one step, work it in steps: call a tool, read
 what it returns, then call the next — e.g. list_reminders to see what you hold,
@@ -370,11 +377,13 @@ async def chat(body: ChatIn):
         STATE.current_register = signal
     water = STATE.current_register or voice_eval.detect_state(msg)
 
-    # Native action tools (reminders + goals) are always available; MCP file tools
-    # join when configured. Reaching for a tool is the passive/agentic path.
+    # Native action tools (reminders + goals + journal + delegate) are always
+    # available; MCP tools join when configured. Reaching for a tool — or handing a
+    # task to a specialist sub-agent — is the passive/agentic path.
     providers = [native_tools.NativeTools(
         STATE.reminders, goals=STATE.goals,
-        planner_generate=STATE.fast or STATE.generate, journal=STATE.journal)]
+        planner_generate=STATE.fast or STATE.generate, journal=STATE.journal,
+        mcp=STATE.mcp, delegate_generate=STATE.fast or STATE.generate)]
     if STATE.mcp is not None and STATE.mcp.has_tools:
         providers.append(STATE.mcp)
     used_tools = bool(providers)
@@ -502,44 +511,37 @@ async def _nudge_goal_step(goal, step, water) -> bool:
 
 
 async def _execute_goal_step(goal, step, water) -> bool:
-    """A [keeper] step: DO it with tools (ReAct), then tell them what was found. This
-    is the agent acting on the person's behalf. On honest failure the step is handed
-    back to them (re-labelled person) so it gets nudged next time instead."""
-    providers = [native_tools.NativeTools(
+    """A [keeper] step: hand it to a specialist SUB-AGENT (multi-agent), which runs its
+    own tool loop and returns a result; the Keeper then speaks it. On empty/failed work
+    the step is handed back to the person (re-labelled) so it gets nudged next time."""
+    sub_native = native_tools.NativeTools(
         STATE.reminders, goals=STATE.goals,
-        planner_generate=STATE.fast or STATE.generate, journal=STATE.journal)]
-    if STATE.mcp is not None and STATE.mcp.has_tools:
-        providers.append(STATE.mcp)
-    mem = memory.recall(STATE.store, goal.title, k=3, embed=STATE.embed)
-    system = persona.build_system_prompt(
-        "passive", water, memory=mem,
-        context=f"You are quietly working toward their goal: \"{goal.title}\".")
-    system = system + "\n\n---\n\n" + TOOL_ADDENDUM
-    user = (f"Do this step of their goal yourself, now, using your tools: "
-            f"\"{step.text}\". If a tool can truly do it, do it — then tell them in "
-            f"one or two sentences, in your voice, what you did or found. If you "
-            f"genuinely cannot do it with a tool, reply with exactly CANNOT.")
+        planner_generate=STATE.fast or STATE.generate, journal=STATE.journal,
+        allow_delegate=False)               # a sub-agent must not spawn sub-agents
     try:
-        result = await compose.tool_reply(
-            system, user, providers=providers, model=TOOL_MODEL, max_rounds=6)
+        res = await subagents.delegate(
+            f"For their goal \"{goal.title}\", do this: {step.text}",
+            STATE.fast or STATE.generate, mcp=STATE.mcp, native=sub_native)
     except Exception as exc:  # noqa: BLE001
         print(f"[goal] execute error: {exc}", flush=True)
         STATE.goals.touch(goal)
         return False
-    result = (result or "").strip()
-    if not result or result.upper().strip(".!") == "CANNOT":
+    result = (res.result or "").strip()
+    if not result:
         step.actor = "person"            # hand it back — nudge them next time
         STATE.goals.touch(goal)
-        print(f"[goal] {goal.id} could not self-do, handed back: {step.text[:40]}",
-              flush=True)
+        print(f"[goal] {goal.id} sub-agent found nothing, handed back: "
+              f"{step.text[:40]}", flush=True)
         return False
+    mem = memory.recall(STATE.store, goal.title, k=3, embed=STATE.embed)
     voiced = await asyncio.to_thread(
         compose.revoice, result, water, generate=STATE.fast or STATE.generate,
         memory=mem)
-    STATE.goals.advance(goal, note=f"[keeper] {result[:140]}")   # the agent did it
+    STATE.goals.advance(goal, note=f"[{res.profile}] {result[:130]}")   # who did it
     await _deliver_proactive(voiced)
     done, total = goal.progress()
-    print(f"[goal] {goal.id} EXECUTED {done}/{total}: {step.text[:50]}", flush=True)
+    print(f"[goal] {goal.id} EXECUTED via {res.profile} {done}/{total}: "
+          f"{step.text[:45]}", flush=True)
     return True
 
 

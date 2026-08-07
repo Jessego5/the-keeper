@@ -18,6 +18,7 @@ from typing import Callable, Optional
 import journal as journal_mod
 import planner as planner_mod
 import reminders as reminders_mod
+import subagents as subagents_mod
 import tasks as tasks_mod
 
 
@@ -25,11 +26,16 @@ class NativeTools:
     def __init__(self, store: reminders_mod.ReminderStore,
                  goals: Optional[tasks_mod.GoalStore] = None,
                  planner_generate: Optional[Callable] = None,
-                 journal: Optional[journal_mod.Journal] = None):
+                 journal: Optional[journal_mod.Journal] = None,
+                 mcp=None, delegate_generate: Optional[Callable] = None,
+                 allow_delegate: bool = True):
         self.store = store
         self.goals = goals
         self._plan_gen = planner_generate      # used to decompose a new goal
         self.journal = journal
+        self._mcp = mcp                        # for delegating to sub-agents
+        self._delegate_gen = delegate_generate
+        self._allow_delegate = allow_delegate
         self._defs = [
             {
                 "type": "function",
@@ -180,6 +186,27 @@ class NativeTools:
                 },
             },
         ]
+        if allow_delegate:
+            self._defs.append({
+                "type": "function",
+                "function": {
+                    "name": "delegate",
+                    "description": "Hand an involved task to one of your specialists "
+                                   "and get back what they found or made. Use it when "
+                                   "a task needs real digging or drafting: researching "
+                                   "something on the web, searching through their own "
+                                   "files/notes/history, or drafting a message or "
+                                   "note. Describe the task fully in one sentence.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "task": {"type": "string",
+                                     "description": "the task, described in full"},
+                        },
+                        "required": ["task"],
+                    },
+                },
+            })
 
     def openai_tools(self) -> list[dict]:
         return self._defs
@@ -269,6 +296,20 @@ class NativeTools:
             if not recent:
                 return "the journal is empty."
             return "\n".join(f"- ({e.when()}) {e.text}" for e in recent)
+
+        if name == "delegate":
+            if self._mcp is None or self._delegate_gen is None:
+                return "(cannot delegate right now)"
+            task = args.get("task", "").strip()
+            if not task:
+                return "(need a task to delegate)"
+            # The specialist gets native tools WITHOUT delegate — no recursion.
+            sub_native = NativeTools(
+                self.store, goals=self.goals, planner_generate=self._plan_gen,
+                journal=self.journal, allow_delegate=False)
+            res = await subagents_mod.delegate(
+                task, self._delegate_gen, mcp=self._mcp, native=sub_native)
+            return f"[{res.profile}] {res.result}"
         return f"(no such tool: {name})"
 
 
