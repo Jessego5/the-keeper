@@ -94,6 +94,42 @@ def test_plan_empty_goal():
     assert planner.plan("", lambda s, u: "whatever") == []
 
 
+def _reflect_gen(system, user):
+    """A model that first drafts a bad (too-big) plan, and on critique says so, then
+    re-plans into small steps."""
+    if "review a short plan" in system:                 # critique pass
+        return ("Break the first step down"
+                if "one giant step" in user.lower() else "GOOD")
+    if "fix it:" in user:                               # re-plan with feedback
+        return "Tiny step one\nTiny step two\nTiny step three"
+    return "One giant step to do everything"            # first draft
+
+
+def test_plan_reflect_revises_a_weak_plan():
+    steps = planner.plan("get organized", _reflect_gen, reflect=True)
+    assert steps == ["Tiny step one", "Tiny step two", "Tiny step three"]
+
+
+def test_plan_reflect_keeps_a_good_plan():
+    def good_gen(system, user):
+        return "GOOD" if "review a short plan" in system else "Step one\nStep two"
+    steps = planner.plan("simple goal", good_gen, reflect=True)
+    assert steps == ["Step one", "Step two"]            # critique said GOOD, no revise
+
+
+def test_critique_plan_reports_empty():
+    assert "empty" in planner.critique_plan("g", [], lambda s, u: "GOOD")
+
+
+def test_plan_without_reflect_is_single_pass():
+    calls = []
+    def gen(system, user):
+        calls.append(system)
+        return "a\nb"
+    planner.plan("g", gen, reflect=False)
+    assert len(calls) == 1                              # no critique/revise calls
+
+
 def test_advance_prompt_includes_goal_and_step():
     system, user = planner.advance_prompt("reach Sam", "send a short message")
     assert "reach Sam" in user and "send a short message" in user
