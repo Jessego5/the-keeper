@@ -29,6 +29,7 @@ import json
 import math
 import re
 import time
+import uuid
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -41,6 +42,15 @@ Embedder = Callable[[list[str]], list[list[float]]]
 
 # Above this cosine, two facts are "the same thing said differently" (semantic dedup).
 _SEMANTIC_DUP = 0.86
+# Related-but-not-duplicate band: a candidate for SUPERSESSION (the judge decides).
+# Floor kept low — real embeddings put "same topic, opposite state" pairs around
+# 0.5; the LLM judge, not the cosine, is the real gate against false positives.
+_SUPERSEDE_LOW = 0.45
+
+_SUPERSEDE_SYSTEM = """Two facts about the same person, OLD and NEW. Does the NEW fact \
+UPDATE or REPLACE the OLD one — same subject, but a changed situation or state (e.g. \
+OLD 'hasn't painted since March', NEW 'started painting again')? If NEW supersedes OLD, \
+answer SUPERSEDES. If it's a separate, still-true fact, answer DISTINCT. One word only."""
 
 STORE_DIR = Path(__file__).resolve().parent.parent / "memory_store"
 STORE_PATH = STORE_DIR / "facts.jsonl"
@@ -82,6 +92,14 @@ class Fact:
     mentions: int = 1              # how many times it has resurfaced
     importance: float = 5.0        # 1-10 poignancy (Generative Agents), model-assigned
     embedding: Optional[list[float]] = None   # semantic vector (None => keyword-only)
+    # Temporal (Zep/Graphiti-style): a fact is valid until something SUPERSEDES it.
+    id: str = field(default_factory=lambda: uuid.uuid4().hex[:8])
+    valid_until: Optional[float] = None        # None => still true; else when it changed
+    supersedes: Optional[str] = None           # id of the fact this one replaced
+
+    @property
+    def active(self) -> bool:
+        return self.valid_until is None
 
     def age_days(self, now: Optional[float] = None) -> float:
         return ((now or time.time()) - self.last_seen) / 86400.0
@@ -126,15 +144,16 @@ class MemoryStore:
 
     def add(self, text: str, kind: str = "event",
             embed: Optional[Embedder] = None,
-            importance: float = 5.0) -> Optional[Fact]:
-        """Add a fact, or bump an existing duplicate instead of duplicating.
+            importance: float = 5.0,
+            judge: Optional[Generator] = None) -> Optional[Fact]:
+        """Add a fact, bumping a duplicate or SUPERSEDING an outdated one.
 
         With an embedder, dedup is SEMANTIC (cosine): "has a brother, Sam" and
-        "her brother is named Sam" collapse even though their words differ — which
-        keyword jaccard misses. Without one, falls back to keyword dedup.
-        `importance` is the 1-10 poignancy (Generative Agents); a resurfacing fact
-        keeps the higher of the old and new score. Returns the Fact if stored/
-        updated, None if it was empty.
+        "her brother is named Sam" collapse. A related-but-changed fact ("hasn't
+        painted since March" -> "started painting again") is not a duplicate — with a
+        `judge`, it SUPERSEDES the old one: the old fact is closed (valid_until set,
+        kept as history) and the new one records what it replaced. `importance` is the
+        1-10 poignancy; a resurfacing fact keeps the higher score. Returns the Fact.
         """
         text = text.strip()
         if not text:
@@ -156,19 +175,60 @@ class MemoryStore:
             self._save()
             return dupe
         fact = Fact(text=text, kind=kind, embedding=vec, importance=importance)
+        if judge is not None and vec is not None and kind != "insight":
+            old = self._find_supersedable(vec, text, judge)
+            if old is not None:
+                old.valid_until = time.time()      # the tide goes out on the old
+                fact.supersedes = old.id           # the new keeps what it replaced
         self.facts.append(fact)
         self._save()
         return fact
 
     def add_many(self, items: Iterable[tuple],
-                 embed: Optional[Embedder] = None) -> list[Fact]:
+                 embed: Optional[Embedder] = None,
+                 judge: Optional[Generator] = None) -> list[Fact]:
         """items: (text, kind) or (text, kind, importance) tuples."""
         out = []
         for it in items:
             text, kind = it[0], it[1]
             imp = it[2] if len(it) > 2 else 5.0
-            out.append(self.add(text, kind, embed, imp))
+            out.append(self.add(text, kind, embed, imp, judge=judge))
         return [f for f in out if f is not None]
+
+    def _find_supersedable(self, vec: list[float], text: str,
+                           judge: Generator) -> Optional[Fact]:
+        """The closest ACTIVE fact in the related-but-not-duplicate band that the judge
+        confirms the new fact updates. None if there isn't one."""
+        best, best_sim = None, 0.0
+        for f in self.facts:
+            if not f.active or f.embedding is None or f.kind == "insight":
+                continue
+            sim = _cosine(vec, f.embedding)
+            if _SUPERSEDE_LOW <= sim < _SEMANTIC_DUP and sim > best_sim:
+                best, best_sim = f, sim
+        if best is None:
+            return None
+        try:
+            verdict = judge(_SUPERSEDE_SYSTEM, f"OLD: {best.text}\nNEW: {text}") or ""
+        except Exception:  # noqa: BLE001
+            return None
+        return best if "SUPERSEDE" in verdict.upper() else None
+
+    def changes(self, within_s: Optional[float] = None,
+                now: Optional[float] = None) -> list:
+        """(old, new) pairs where a newer fact superseded an older one — the record of
+        how the person has changed. Most recent first; optionally limited to a window."""
+        now = now or time.time()
+        by_id = {f.id: f for f in self.facts}
+        out = []
+        for f in self.facts:
+            old = by_id.get(f.supersedes) if f.supersedes else None
+            if old is None:
+                continue
+            if within_s is None or (old.valid_until and now - old.valid_until <= within_s):
+                out.append((old, f))
+        out.sort(key=lambda p: p[0].valid_until or 0, reverse=True)
+        return out
 
     def archive(self, facts: list[Fact]) -> None:
         """Move facts out of the active working set into the archive file."""
@@ -276,6 +336,14 @@ def recall(store: MemoryStore, cue: str = "", k: int = 5,
         # Rendered as the Keeper's conclusions, not as reported facts.
         blocks.append("what you've come to understand (your own read, not their words):\n"
                       + "\n".join(f"- {f.text}" for f in insights))
+    # Temporal awareness: if a surfaced fact replaced an older one, show the Keeper the
+    # turn so it can speak the change knowingly (the tide going out and returning).
+    by_id = {f.id: f for f in store.facts}
+    changed = [(by_id[f.supersedes].text, f.text)
+               for f in kept if f.supersedes and f.supersedes in by_id]
+    if changed:
+        blocks.append("what has changed (the tide turned — was, then became):\n"
+                      + "\n".join(f"- was: {o}  →  now: {n}" for o, n in changed))
     return "\n\n".join(blocks)
 
 
@@ -293,6 +361,8 @@ def rank_facts(facts: list[Fact], cue: str = "", k: int = 5,
     with no cue it's dropped and ranking rests on recency + importance (the
     proactive/drift case).
     """
+    # Only CURRENT facts are retrievable; superseded ones are history (kept, not surfaced).
+    facts = [f for f in facts if getattr(f, "valid_until", None) is None]
     if not facts:
         return []
     now = now or time.time()
@@ -489,7 +559,8 @@ def distill(messages: list[dict], generate: Generator,
 
     if store is None:
         return [Fact(text=t, kind=k, importance=i) for t, k, i in parsed]
-    return store.add_many(parsed, embed=embed)
+    # The same model judges supersession (has this changed?) as it stores.
+    return store.add_many(parsed, embed=embed, judge=generate)
 
 
 # --------------------------------------------------------------------------- #
