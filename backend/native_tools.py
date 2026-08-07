@@ -12,12 +12,14 @@ the time reasoning is the model's, which is itself a small agentic step.
 
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime
 from typing import Callable, Optional
 
 import journal as journal_mod
 import planner as planner_mod
 import reminders as reminders_mod
+import sandbox as sandbox_mod
 import subagents as subagents_mod
 import tasks as tasks_mod
 
@@ -185,6 +187,25 @@ class NativeTools:
                     "parameters": {"type": "object", "properties": {}},
                 },
             },
+            {
+                "type": "function",
+                "function": {
+                    "name": "run_python",
+                    "description": "Run a short Python snippet to work something out — "
+                                   "a calculation, a date/time computation, parsing or "
+                                   "transforming data, anything a fixed tool can't do. "
+                                   "PRINT the answer. Runs fenced (timeout, no lasting "
+                                   "effects). Use for figuring, not for side effects.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "code": {"type": "string",
+                                     "description": "Python; print() what you want back"},
+                        },
+                        "required": ["code"],
+                    },
+                },
+            },
         ]
         if allow_delegate:
             self._defs.append({
@@ -296,6 +317,10 @@ class NativeTools:
             if not recent:
                 return "the journal is empty."
             return "\n".join(f"- ({e.when()}) {e.text}" for e in recent)
+
+        if name == "run_python":
+            res = await asyncio.to_thread(sandbox_mod.run_python, args.get("code", ""))
+            return res.as_text()
 
         if name == "delegate":
             if self._mcp is None or self._delegate_gen is None:
