@@ -141,6 +141,20 @@ the single-worker primitives underneath.)
 Verified live: *"find a price, then compute the weekly cost"* fanned out to **researcher
 + analyst** in parallel and synthesized their results.
 
+**Two delegation modes:**
+- **Synchronous** (`delegate` tool / goal executor) — the Keeper waits with you and
+  answers in the same turn. Best for quick work.
+- **Asynchronous** (`spawn_task` tool → `background.py`) — for LONGER work: the Keeper
+  says it's on it, runs the orchestration in the background (`asyncio.create_task`), and
+  delivers the result *later* through the proactive channels (chat + native banner), like
+  a kept promise. `/state.working_on` shows what's in flight. This is the reference agent's
+  SpawnTool + Poller model — fire-and-forget, report on completion.
+
+**Graceful step budgets** (`compose.tool_reply`): as a worker's tool-round budget runs
+low it's nudged to wrap up, then forced to a graceful final answer ("answer with what you
+found, note what's incomplete") — never a bare mid-thought cutoff. The reference agent's budget
+warnings + forced-cleanup.
+
 ## The house: agentic OS integration
 
 - **Recurring reminders** — `daily` / `weekly` / `weekdays` / `every N …`, re-armed to
@@ -178,6 +192,7 @@ Verified live: *"find a price, then compute the weekly cost"* fanned out to **re
 | `journal.py` | The Keeper's one WRITE capability — append-only kept notes |
 | `subagents.py` | Specialists (researcher/archivist/scribe/analyst) + router + supervisor |
 | `sandbox.py` | Fenced Python execution (code-as-action) — timeout, rlimits, isolation |
+| `background.py` | Registry for async background delegations (spawn/track/finish) |
 | `reminders.py` | Reminder store + recurrence |
 | `native_tools.py` | The Keeper's own action tools (remind / list / complete) |
 | `tools.py` | MCP manager — connects configured servers (files, fetch, search, time, git), applies a read-only filter + per-server allowlist |
