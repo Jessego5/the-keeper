@@ -291,7 +291,7 @@ async def tool_reply(
         {"role": "user", "content": user or "."},
     ]
 
-    for _ in range(max_rounds):
+    for i in range(max_rounds):
         resp = await aclient.chat.completions.create(
             model=model, messages=messages, max_tokens=max_tokens,
             tools=tools or None,
@@ -319,11 +319,23 @@ async def tool_reply(
                    if provider is not None else f"(no such tool: {tc.function.name})")
             messages.append({"role": "tool", "tool_call_id": tc.id,
                             "content": out[:4000]})
+        # Step budget running low — nudge it to wrap up on its own before the wall.
+        if i == max_rounds - 2:
+            messages.append({"role": "system", "content": _BUDGET_WARN})
 
-    # Ran out of rounds — force a final answer with tools off.
+    # Ran out of rounds — force a GRACEFUL final answer with tools off, so a worker
+    # is never cut off mid-thought with nothing to show (the reference agent's forced-cleanup).
+    messages.append({"role": "system", "content": _BUDGET_DONE})
     resp = await aclient.chat.completions.create(
         model=model, messages=messages, max_tokens=max_tokens)
     return resp.choices[0].message.content or ""
+
+
+_BUDGET_WARN = ("You are almost out of tool steps. If you can answer from what you "
+                "already have, do it now instead of calling more tools.")
+_BUDGET_DONE = ("Your tool steps are used up. Answer now with what you found — your "
+                "best result, noting briefly if something stayed incomplete. Do not "
+                "call tools; do not apologize at length.")
 
 
 def make_generator() -> tuple[Generator, Optional[Generator]]:

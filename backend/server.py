@@ -35,6 +35,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 
+import background as background_mod
 import channels
 import compose
 import drift
@@ -107,6 +108,12 @@ things out by running code). When a task needs real digging, drafting, or comput
 rather than a single quick tool call, delegate it in one sentence and speak from what
 they bring back.
 
+Two ways to set the specialists working: delegate waits with the person and answers in
+the same breath — use it for quick tasks. spawn_task sends them off on something LONGER
+and brings the result back later, on your own, without holding up the conversation —
+use it when they ask you to look into something involved. With spawn_task, tell them
+you're on it; you'll return with what you find when it's ready.
+
 For a request that takes more than one step, work it in steps: call a tool, read
 what it returns, then call the next — e.g. list_reminders to see what you hold,
 then complete_reminder on the right one. Take the steps you need, then answer once
@@ -167,6 +174,8 @@ class AppState:
         default_factory=reminders.ReminderStore)
     goals: tasks.GoalStore = field(default_factory=tasks.GoalStore)   # agent goals
     journal: journal_mod.Journal = field(default_factory=journal_mod.Journal)
+    background: background_mod.BackgroundTasks = field(
+        default_factory=background_mod.BackgroundTasks)   # long async delegations
     sessions: sessions.SessionStore = field(default_factory=sessions.SessionStore)
     current_key: Optional[str] = None   # active conversation (sidebar)
     routines_engine: routines.RoutineEngine = field(
@@ -388,7 +397,8 @@ async def chat(body: ChatIn):
     providers = [native_tools.NativeTools(
         STATE.reminders, goals=STATE.goals,
         planner_generate=STATE.fast or STATE.generate, journal=STATE.journal,
-        mcp=STATE.mcp, delegate_generate=STATE.fast or STATE.generate)]
+        mcp=STATE.mcp, delegate_generate=STATE.fast or STATE.generate,
+        spawner=_spawn_background)]
     if STATE.mcp is not None and STATE.mcp.has_tools:
         providers.append(STATE.mcp)
     used_tools = bool(providers)
@@ -550,6 +560,44 @@ async def _execute_goal_step(goal, step, water) -> bool:
     return True
 
 
+async def _spawn_background(description: str) -> str:
+    """Kick off a long delegation in the background and return immediately. The result
+    is brought back later by _run_background, through the proactive channels."""
+    bg = STATE.background.add(description)
+    asyncio.create_task(_run_background(bg.id, description))
+    print(f"[bg] {bg.id} started: {description[:60]}", flush=True)
+    return (f"started working on it in the background (id {bg.id}) — tell them you're "
+            f"on it and will come back with what you find")
+
+
+async def _run_background(bg_id: str, description: str) -> None:
+    """Run a background delegation to completion, then deliver the result later — as
+    an unbidden line + native banner, like a kept promise (bypasses the restlessness
+    floor, since the person asked for this)."""
+    sub_native = native_tools.NativeTools(
+        STATE.reminders, goals=STATE.goals,
+        planner_generate=STATE.fast or STATE.generate, journal=STATE.journal,
+        allow_delegate=False)
+    try:
+        orch = await subagents.orchestrate(
+            description, STATE.fast or STATE.generate, mcp=STATE.mcp, native=sub_native)
+        result = (orch.result or "").strip()
+    except Exception as exc:  # noqa: BLE001
+        STATE.background.finish(bg_id, f"(failed: {exc})", ok=False)
+        print(f"[bg] {bg_id} failed: {exc}", flush=True)
+        return
+    STATE.background.finish(bg_id, result or "(found nothing)", ok=bool(result))
+    if not result:
+        return
+    water = proactive.derive_state(STATE.minutes_since_user())
+    voiced = await asyncio.to_thread(
+        compose.revoice,
+        f"You asked me to look into this: {description}\n\nHere is what I found: {result}",
+        water, generate=STATE.fast or STATE.generate)
+    await _deliver_proactive(voiced)
+    print(f"[bg] {bg_id} delivered", flush=True)
+
+
 async def _maybe_drift_note() -> None:
     """Idle background reflection (never sent to the person). Real-time capped so a
     sped-up demo clock can't flood the store with near-duplicate insights."""
@@ -648,6 +696,8 @@ async def state():
             "summary": pres.to_context_line(),
         },
         "house": STATE.routines_engine.status(now),
+        "working_on": [{"id": t.id, "description": t.description}
+                       for t in STATE.background.running()],
         "embedder": "openai" if STATE.embed is not None else "keyword",
         "speed": STATE.config.speed,
         "backend": "openai" if STATE.fast is not None else "stub",
