@@ -18,7 +18,7 @@ so routing and running are testable offline.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable, Optional
+from typing import Callable
 
 import compose
 
@@ -55,6 +55,14 @@ PROFILES: dict[str, SubAgentProfile] = {
         blurb="drafts text — a message, a note, a short plan",
         role="You are the Keeper's scribe. Draft exactly the text asked for, plainly "
              "and warmly, ready to use. Keep it in the journal only if asked.",
+        servers=(), use_native=True),
+    "analyst": SubAgentProfile(
+        name="analyst",
+        blurb="works things out by running code — calculations, dates, data crunching",
+        role="You are the Keeper's analyst. Work the answer out by WRITING AND RUNNING "
+             "Python with run_python (print the result), then report the answer in one "
+             "or two plain sentences. Reach for code whenever a real computation, date "
+             "math, or data transformation would settle it precisely.",
         servers=(), use_native=True),
 }
 
