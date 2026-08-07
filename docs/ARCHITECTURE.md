@@ -118,6 +118,12 @@ pattern kept legible: three roles, not a fleet framework.
 | researcher | looks things up on the web, synthesizes | search, fetch |
 | archivist | digs through the person's files/notes/history | files, git, time, journal |
 | scribe | drafts a message, note, or short plan | journal |
+| analyst | works answers out by writing + running code | run_python (sandbox) |
+
+**Code-as-action** (`sandbox.py`): the Keeper — and the analyst — can `run_python`, a
+snippet executed in a fenced subprocess (isolated mode, wall-clock timeout, CPU+memory
+rlimits, throwaway cwd, capped output). It stops runaways and accidents, not malicious
+code — stated plainly in the module. The reference agent's `shell.py`, scoped to Python.
 
 `subagents.route` (a tiny LLM router) picks the specialist; `subagents.run` gives it a
 scoped tool view (`_FilteredMCP`) and runs its loop; `delegate` is the supervisor entry
@@ -160,7 +166,8 @@ blocked — a sub-agent can't spawn sub-agents.
 | `tasks.py` | Goal/Step store — persistent plan state; steps labelled keeper/person |
 | `planner.py` | Decomposes + labels a goal's steps; reflection (evaluator-optimizer) |
 | `journal.py` | The Keeper's one WRITE capability — append-only kept notes |
-| `subagents.py` | Specialists (researcher/archivist/scribe) + router + supervisor (multi-agent) |
+| `subagents.py` | Specialists (researcher/archivist/scribe/analyst) + router + supervisor |
+| `sandbox.py` | Fenced Python execution (code-as-action) — timeout, rlimits, isolation |
 | `reminders.py` | Reminder store + recurrence |
 | `native_tools.py` | The Keeper's own action tools (remind / list / complete) |
 | `tools.py` | MCP manager — connects configured servers (files, fetch, search, time, git), applies a read-only filter + per-server allowlist |
