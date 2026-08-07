@@ -51,6 +51,35 @@ async def test_chat_returns_a_reply(client):
     assert r.json()["reply"]
 
 
+async def test_a2a_agent_card_served(client):
+    r = await client.get("/.well-known/agent.json")
+    assert r.status_code == 200
+    card = r.json()
+    assert card["name"] == "The Keeper" and card["url"].endswith("/a2a")
+
+
+async def test_a2a_message_send(client, monkeypatch):
+    # stub the model-backed answer so the endpoint test is deterministic
+    async def fake_answer(text):
+        return f"kept: {text}"
+    monkeypatch.setattr(server, "_answer_as_keeper", fake_answer)
+    req = {"jsonrpc": "2.0", "id": "1", "method": "message/send",
+           "params": {"message": {"role": "user",
+                                  "parts": [{"kind": "text", "text": "who are you?"}]}}}
+    r = await client.post("/a2a", json=req)
+    assert r.status_code == 200
+    body = r.json()
+    assert body["id"] == "1"
+    import a2a
+    assert a2a.text_of(body["result"]) == "kept: who are you?"
+
+
+async def test_a2a_rejects_unknown_method(client):
+    r = await client.post("/a2a", json={"jsonrpc": "2.0", "id": "9",
+                                        "method": "tasks/cancel", "params": {}})
+    assert r.json()["error"]["code"] == -32601
+
+
 async def test_chat_survives_model_failure(client):
     # If the model call blows up (outage, rate limit), /chat must degrade to a
     # graceful in-voice line, not throw a raw 500 at the person.

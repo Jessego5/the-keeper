@@ -28,13 +28,14 @@ from typing import Optional
 
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 
+import a2a
 import background as background_mod
 import channels
 import compose
@@ -560,6 +561,28 @@ async def _execute_goal_step(goal, step, water) -> bool:
     return True
 
 
+async def _answer_as_keeper(text: str) -> str:
+    """Answer an incoming message (e.g. from a peer agent over A2A) as the Keeper, with
+    its tools — but a SAFE subset: no delegate/spawn, so a peer can't spawn work."""
+    water = STATE.current_register or voice_eval.detect_state(text)
+    mem = memory.recall(STATE.store, text, k=4, embed=STATE.embed)
+    system = persona.build_system_prompt("passive", water, memory=mem)
+    system = system + "\n\n---\n\n" + TOOL_ADDENDUM
+    providers = [native_tools.NativeTools(
+        STATE.reminders, goals=STATE.goals,
+        planner_generate=STATE.fast or STATE.generate, journal=STATE.journal,
+        allow_delegate=False)]
+    if STATE.mcp is not None and STATE.mcp.has_tools:
+        providers.append(STATE.mcp)
+    try:
+        reply = await compose.tool_reply(
+            system, text, providers=providers, model=TOOL_MODEL, max_rounds=6)
+    except Exception as exc:  # noqa: BLE001
+        return f"(the water is unsettled: {exc})"
+    return await asyncio.to_thread(
+        compose.revoice, reply, water, generate=STATE.fast or STATE.generate, memory=mem)
+
+
 async def _spawn_background(description: str) -> str:
     """Kick off a long delegation in the background and return immediately. The result
     is brought back later by _run_background, through the proactive channels."""
@@ -757,6 +780,34 @@ async def select_session(body: SelectIn):
 async def new_conversation():
     STATE.current_key = None      # next message starts a fresh conversation
     return {"ok": True}
+
+
+# --------------------------------------------------------------------------- #
+# A2A — the Keeper as an agent other agents can discover and consult.
+# --------------------------------------------------------------------------- #
+
+@app.get(a2a.WELL_KNOWN)
+async def agent_card(req: Request):
+    """The Keeper's A2A Agent Card — how a peer agent discovers what it can do."""
+    return a2a.build_agent_card(str(req.base_url))
+
+
+@app.post("/a2a")
+async def a2a_endpoint(req: Request):
+    """Handle an A2A message/send: a peer sends a message, the Keeper answers."""
+    try:
+        body = await req.json()
+    except Exception:  # noqa: BLE001
+        return a2a.rpc_error(None, -32700, "parse error")
+    req_id = body.get("id")
+    if body.get("method") != "message/send":
+        return a2a.rpc_error(req_id, -32601,
+                             f"unsupported method: {body.get('method')}")
+    text = a2a.text_of((body.get("params") or {}).get("message") or {})
+    if not text:
+        return a2a.rpc_error(req_id, -32602, "empty message")
+    reply = await _answer_as_keeper(text)
+    return a2a.rpc_result(req_id, a2a.make_message(reply, role="agent"))
 
 
 @app.get("/dashboard")
