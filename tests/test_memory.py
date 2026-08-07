@@ -203,6 +203,42 @@ def test_hybrid_recall_finds_exact_name_via_bm25(store):
     assert "ultramarine" in out
 
 
+def test_rerank_reorders_by_model_choice():
+    facts = [memory.Fact(text="A"), memory.Fact(text="B"),
+             memory.Fact(text="C"), memory.Fact(text="D")]
+    gen = lambda s, u: "2, 0"                       # model picks C then A
+    out = memory.rerank("cue", facts, gen, k=2)
+    assert [f.text for f in out] == ["C", "A"]
+
+
+def test_rerank_tops_up_when_model_underfills():
+    facts = [memory.Fact(text=t) for t in "ABCD"]
+    gen = lambda s, u: "1"                          # model names only one
+    out = memory.rerank("cue", facts, gen, k=3)
+    assert out[0].text == "B" and len(out) == 3     # rest filled from given order
+
+
+def test_rerank_falls_back_on_error():
+    facts = [memory.Fact(text=t) for t in "AB"]
+    def boom(s, u): raise RuntimeError("down")
+    assert [f.text for f in memory.rerank("cue", facts, boom, k=2)] == ["A", "B"]
+
+
+def test_recall_reranks_when_generate_given(store):
+    for t in ["walked by the water", "bought ultramarine", "called Sam",
+              "the studio is cold", "turned thirty"]:
+        store.add(t, "event")
+    # a reranker that always surfaces the Sam fact first (by its listed index)
+    def gen(system, user):
+        for line in user.splitlines():
+            if "Sam" in line:
+                return line.split(".")[0].strip()   # that fact's number
+        return "0"
+    out = memory.recall(store, "did I reach my brother", k=2,
+                        rerank_generate=gen)
+    assert "Sam" in out
+
+
 def test_consolidate_leaves_insights_untouched(store):
     for i in range(4):
         store.add(f"Minor errand number {i}.", "event", importance=1)
