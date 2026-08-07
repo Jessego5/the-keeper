@@ -19,6 +19,28 @@ def test_add_and_next_step(store):
     assert g.progress() == (0, 2)
 
 
+def test_steps_default_to_person(store):
+    g = store.add("goal", ["do a thing"])
+    assert g.steps[0].actor == "person"
+
+
+def test_add_parses_actor_labels(store):
+    g = store.add("reconnect with Sam", [
+        "[keeper] Look up when we last spoke",
+        "[person] Call Sam",
+        "[me] Draft a short message",      # 'me' (the Keeper) -> keeper
+        "[you] Send it",                   # 'you' (the person) -> person
+    ])
+    actors = [(s.actor, s.text) for s in g.steps]
+    assert actors == [
+        ("keeper", "Look up when we last spoke"),
+        ("person", "Call Sam"),
+        ("keeper", "Draft a short message"),
+        ("person", "Send it"),
+    ]
+    assert "[" not in g.steps[0].text        # the label never leaks into the text
+
+
 def test_advance_completes_steps_then_goal(store):
     g = store.add("reach Sam", ["draft a message", "send it"])
     s1 = store.advance(g, note="drafted it")

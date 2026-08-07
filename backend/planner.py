@@ -17,11 +17,20 @@ from typing import Callable
 Generator = Callable[[str, str], str]
 
 _PLAN_SYSTEM = """You help a companion break a person's goal into a SHORT plan it can \
-help them move through over days. Given the goal, output 2 to 5 small, concrete steps \
-— each ONE doable thing, in order, phrased plainly (e.g. "Set out the paints where \
-they can see them", "Send Sam a short message"). No sub-lists, no numbering, no \
-preamble. Prefer gentle first steps. If the goal is already a single clear action, \
-one step is fine. Output only the steps, one per line."""
+help them move through over days. Output 2 to 5 small, concrete steps — each ONE \
+doable thing, in order, phrased plainly. No sub-lists, no numbering, no preamble. \
+Prefer a gentle first step.
+
+Prefix EACH step with who does it:
+  [keeper] — the companion can do this itself with its tools: look something up on the \
+web, read the person's files/journal, check the time, look at their project history, \
+draft a message, or keep a note.
+  [person] — only the person can do it (a physical or personal act: set out paints, \
+make a phone call, go somewhere, decide something).
+Be honest — only mark [keeper] when a tool could truly do it. Example:
+  [keeper] Look up the gallery's phone number
+  [person] Call the gallery
+Output only the labelled steps, one per line."""
 
 _MAX_STEPS = 5
 

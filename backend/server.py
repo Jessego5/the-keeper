@@ -456,10 +456,9 @@ async def _maybe_routine(pres: sensors.Presence) -> bool:
 
 
 async def _maybe_advance_goal() -> bool:
-    """The agent at work: if a goal is due, take its next step — reach out in the
-    Keeper's voice to help with or invite that step, then mark it worked and schedule
-    the next check. This is what makes the Keeper *pursue* things over time. Returns
-    True iff it spoke."""
+    """The agent at work: if a goal is due, take its next step. A [keeper] step it
+    EXECUTES itself with its tools (ReAct); a [person] step it NUDGES, then waits for
+    them to report it done. Returns True iff it reached out this tick."""
     goal = STATE.goals.due()
     if goal is None:
         return False
@@ -467,6 +466,23 @@ async def _maybe_advance_goal() -> bool:
     if step is None:
         return False
     water = proactive.derive_state(STATE.minutes_since_user())
+    if step.actor == "keeper":
+        return await _execute_goal_step(goal, step, water)
+    return await _nudge_goal_step(goal, step, water)
+
+
+async def _deliver_proactive(text: str) -> None:
+    """Record + fan out one unbidden line (history, session, all channels)."""
+    STATE.last_proactive_at = time.time()
+    STATE.history.append({"role": "assistant", "content": text, "ts": time.time()})
+    if STATE.current_key is not None:
+        STATE.sessions.append(STATE.current_key, "assistant", text)
+    await _push("assistant", text, "proactive")
+
+
+async def _nudge_goal_step(goal, step, water) -> bool:
+    """A [person] step: help with or invite it, but DON'T complete it — a person step
+    is only done when they report it (advance_goal). Holds the thread, returns it."""
     context = (f"You are helping them move toward a goal of theirs: \"{goal.title}\". "
                f"Gently help with, or invite, just this next step — do not list the "
                f"whole plan: {step.text}")
@@ -476,21 +492,54 @@ async def _maybe_advance_goal() -> bool:
         memory=memory.recall(STATE.store, goal.title, k=3, embed=STATE.embed),
         context=context)
     if result.silent or not result.text:
-        STATE.goals.touch(goal)          # nothing on-voice now; come back later
+        STATE.goals.touch(goal)
         return False
-    # Nudge, don't complete: the Keeper raises the step and schedules the next check,
-    # but a step is only DONE when the person reports it (advance_goal). This keeps
-    # the loop honest — it can't do the painting for you, only hold the thread and
-    # return it. Human-in-the-loop by design.
-    STATE.goals.touch(goal)
-    STATE.last_proactive_at = time.time()
-    STATE.history.append({"role": "assistant", "content": result.text,
-                          "ts": time.time()})
-    if STATE.current_key is not None:
-        STATE.sessions.append(STATE.current_key, "assistant", result.text)
-    await _push("assistant", result.text, "proactive")
+    STATE.goals.touch(goal)              # nudge, don't complete
+    await _deliver_proactive(result.text)
     done, total = goal.progress()
     print(f"[goal] {goal.id} nudged {done}/{total}: {step.text[:50]}", flush=True)
+    return True
+
+
+async def _execute_goal_step(goal, step, water) -> bool:
+    """A [keeper] step: DO it with tools (ReAct), then tell them what was found. This
+    is the agent acting on the person's behalf. On honest failure the step is handed
+    back to them (re-labelled person) so it gets nudged next time instead."""
+    providers = [native_tools.NativeTools(
+        STATE.reminders, goals=STATE.goals,
+        planner_generate=STATE.fast or STATE.generate, journal=STATE.journal)]
+    if STATE.mcp is not None and STATE.mcp.has_tools:
+        providers.append(STATE.mcp)
+    mem = memory.recall(STATE.store, goal.title, k=3, embed=STATE.embed)
+    system = persona.build_system_prompt(
+        "passive", water, memory=mem,
+        context=f"You are quietly working toward their goal: \"{goal.title}\".")
+    system = system + "\n\n---\n\n" + TOOL_ADDENDUM
+    user = (f"Do this step of their goal yourself, now, using your tools: "
+            f"\"{step.text}\". If a tool can truly do it, do it — then tell them in "
+            f"one or two sentences, in your voice, what you did or found. If you "
+            f"genuinely cannot do it with a tool, reply with exactly CANNOT.")
+    try:
+        result = await compose.tool_reply(
+            system, user, providers=providers, model=TOOL_MODEL, max_rounds=6)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[goal] execute error: {exc}", flush=True)
+        STATE.goals.touch(goal)
+        return False
+    result = (result or "").strip()
+    if not result or result.upper().strip(".!") == "CANNOT":
+        step.actor = "person"            # hand it back — nudge them next time
+        STATE.goals.touch(goal)
+        print(f"[goal] {goal.id} could not self-do, handed back: {step.text[:40]}",
+              flush=True)
+        return False
+    voiced = await asyncio.to_thread(
+        compose.revoice, result, water, generate=STATE.fast or STATE.generate,
+        memory=mem)
+    STATE.goals.advance(goal, note=f"[keeper] {result[:140]}")   # the agent did it
+    await _deliver_proactive(voiced)
+    done, total = goal.progress()
+    print(f"[goal] {goal.id} EXECUTED {done}/{total}: {step.text[:50]}", flush=True)
     return True
 
 
@@ -575,7 +624,8 @@ async def state():
         "goals": [
             {"title": g.title, "id": g.id,
              "done": g.progress()[0], "total": g.progress()[1],
-             "next_step": (g.next_step().text if g.next_step() else None)}
+             "next_step": (g.next_step().text if g.next_step() else None),
+             "next_actor": (g.next_step().actor if g.next_step() else None)}
             for g in STATE.goals.active()],
         "next_reminder": (
             {"text": next_rem.text, "due_at": next_rem.due_at,
