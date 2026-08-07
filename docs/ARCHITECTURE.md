@@ -90,10 +90,18 @@ the *Tool Use* and *Memory* patterns already present.
 
 | Piece | Role | Where |
 |---|---|---|
-| Goal / Step store | persistent plan state, `due()` picks the longest-waiting active goal | `tasks.GoalStore` |
-| Planner | decomposes a goal into ordered steps | `planner.plan` |
-| Goal tools | `set_goal` / `list_goals` / `complete_goal` (chat-side) | `native_tools` |
-| Autonomous advance | works a due goal's next step as an outreach, under the circuit breaker | `server._maybe_advance_goal` |
+| Goal / Step store | persistent plan state; each step is `[keeper]` or `[person]` | `tasks.GoalStore` |
+| Planner | decomposes a goal into steps AND labels who does each | `planner.plan` |
+| **Reflection** | evaluator-optimizer: critique the plan, re-plan if weak | `planner.critique_plan` |
+| Goal tools | `set_goal` / `advance_goal` / `list_goals` / `complete_goal` | `native_tools` |
+| Autonomous advance | dispatches a due goal's next step, under the circuit breaker | `server._maybe_advance_goal` |
+| **Execute (ReAct)** | a `[keeper]` step: DO it with tools, observe, advance the goal itself | `server._execute_goal_step` |
+| Nudge | a `[person]` step: help/invite it; done only when they report it | `server._nudge_goal_step` |
+
+The agent-vs-human split is the core: a `[keeper]` step (look something up, read a file,
+draft, keep a note) the Keeper **executes itself** via `tool_reply` — real ReAct: call a
+tool, observe, advance — and delivers the result re-voiced. A `[person]` step it nudges
+and waits for `advance_goal`. On honest failure a keeper step is handed back to the person.
 
 Outreach priority each tick (when the real-time breaker allows): **due goal → house
 routine → restless energy**. Purposeful work comes before mood.
@@ -130,11 +138,12 @@ routine → restless energy**. Purposeful work comes before mood.
 | `energy.py` | Multi-timescale "battery" — how restless it is |
 | `proactive.py` | One proactive decision: presence + energy + roll gates |
 | `routines.py` | Presence-driven house routines |
-| `tasks.py` | Goal/Step store — persistent plan state the agent pursues over time |
-| `planner.py` | Decomposes a goal into concrete steps (the Planning pattern) |
+| `tasks.py` | Goal/Step store — persistent plan state; steps labelled keeper/person |
+| `planner.py` | Decomposes + labels a goal's steps; reflection (evaluator-optimizer) |
+| `journal.py` | The Keeper's one WRITE capability — append-only kept notes |
 | `reminders.py` | Reminder store + recurrence |
 | `native_tools.py` | The Keeper's own action tools (remind / list / complete) |
-| `tools.py` | MCP manager — connects configured servers (files, fetch, time, git), applies a read-only filter + per-server allowlist |
+| `tools.py` | MCP manager — connects configured servers (files, fetch, search, time, git), applies a read-only filter + per-server allowlist |
 | `sensors.py` | Read-only macOS presence (idle, lock, frontmost app) |
 | `sessions.py` | Persistent per-conversation history (the sidebar) |
 | `channels.py` | Delivery-surface abstraction: web (SSE) + native banner + opt-in Telegram, fanned out best-effort |
