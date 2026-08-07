@@ -26,6 +26,7 @@ Keeper returns them as keeping, never recites them as a record.
 from __future__ import annotations
 
 import json
+import math
 import re
 import time
 from dataclasses import asdict, dataclass, field
@@ -244,9 +245,11 @@ def rank_facts(facts: list[Fact], cue: str = "", k: int = 5,
     score(f) = w_rec·recency(f) + w_imp·importance(f) + w_rel·relevance(f, cue)
 
     Each of the three components is min-max normalized to [0,1] across the candidate
-    set before weighting (as in Park et al. 2023), so no single component's raw scale
-    dominates. relevance is embedding cosine to the cue; with no embedder/cue it is
-    dropped and ranking rests on recency + importance (the proactive/drift case).
+    set before weighting (as in Park et al. 2023). `relevance` is HYBRID: dense
+    (embedding cosine) and sparse (BM25) signals fused with Reciprocal Rank Fusion —
+    the combo that dominates retrieval benchmarks. With no embedder it's BM25-only;
+    with no cue it's dropped and ranking rests on recency + importance (the
+    proactive/drift case).
     """
     if not facts:
         return []
@@ -255,20 +258,33 @@ def rank_facts(facts: list[Fact], cue: str = "", k: int = 5,
     recency = [f.recency(now) for f in facts]
     importance = [f.importance / 10.0 for f in facts]
 
-    relevance: Optional[list[float]] = None
+    # HYBRID relevance: a DENSE signal (embedding cosine) and a SPARSE signal (BM25),
+    # fused with Reciprocal Rank Fusion — the combo that dominates retrieval benchmarks
+    # (lexical catches exact terms/names dense recall misses; dense catches paraphrase).
+    dense: Optional[list[float]] = None
     if embed is not None and cue.strip() and any(f.embedding for f in facts):
         try:
             cue_vec = embed([cue])[0]
-        except Exception:  # noqa: BLE001 - degrade to recency+importance
+        except Exception:  # noqa: BLE001 - degrade to sparse-only
             cue_vec = None
         if cue_vec is not None:
-            relevance = [max(0.0, _cosine(cue_vec, f.embedding)) if f.embedding
-                         else 0.0 for f in facts]
-    if relevance is None and cue.strip():
-        # Keyword relevance so a cue still steers ranking without embeddings.
+            dense = [max(0.0, _cosine(cue_vec, f.embedding)) if f.embedding
+                     else 0.0 for f in facts]
+    sparse: Optional[list[float]] = None
+    if cue.strip():
         cue_toks = _tokens(cue)
         if cue_toks:
-            relevance = [_jaccard(cue_toks, _tokens(f.text)) for f in facts]
+            sparse = _bm25(cue_toks, facts)
+
+    # Fuse only signals that actually discriminate — a flat (all-equal) ranker carries
+    # no information and would just dilute a strong one through RRF.
+    signals = [s for s in (dense, sparse) if s is not None and max(s) - min(s) > 1e-12]
+    if len(signals) == 2:
+        relevance = _rrf(dense, sparse)          # hybrid
+    elif len(signals) == 1:
+        relevance = signals[0]
+    else:
+        relevance = dense if dense is not None else sparse   # both flat / none
 
     rec_n = _minmax(recency)
     imp_n = _minmax(importance)
@@ -291,6 +307,49 @@ def _minmax(xs: list[float]) -> list[float]:
     if hi - lo < 1e-12:
         return [1.0 for _ in xs]
     return [(x - lo) / (hi - lo) for x in xs]
+
+
+def _bm25(cue_toks: set[str], facts: list[Fact],
+          k1: float = 1.5, b: float = 0.75) -> list[float]:
+    """Okapi BM25 lexical score of each fact against the query terms. Pure Python,
+    computed over the (small) fact corpus each call — the sparse half of hybrid."""
+    docs = [_token_list(f.text) for f in facts]
+    n = len(docs)
+    if n == 0:
+        return []
+    avgdl = sum(len(d) for d in docs) / n or 1.0
+    df: dict[str, int] = {}
+    for d in docs:
+        for t in set(d):
+            df[t] = df.get(t, 0) + 1
+    scores = []
+    for d in docs:
+        dl = len(d) or 1
+        tf: dict[str, int] = {}
+        for t in d:
+            tf[t] = tf.get(t, 0) + 1
+        s = 0.0
+        for q in cue_toks:
+            if q not in tf:
+                continue
+            idf = math.log(1 + (n - df.get(q, 0) + 0.5) / (df.get(q, 0) + 0.5))
+            freq = tf[q]
+            s += idf * (freq * (k1 + 1)) / (freq + k1 * (1 - b + b * dl / avgdl))
+        scores.append(s)
+    return scores
+
+
+def _rrf(*rankings: list[float], k: int = 60) -> list[float]:
+    """Reciprocal Rank Fusion of several score lists over the same items: convert each
+    to ranks (best = 1) and sum 1/(k+rank). Robust fusion that ignores raw score
+    scales — the standard way to combine dense + sparse retrieval."""
+    n = len(rankings[0])
+    fused = [0.0] * n
+    for scores in rankings:
+        order = sorted(range(n), key=lambda i: scores[i], reverse=True)
+        for rank, i in enumerate(order, start=1):
+            fused[i] += 1.0 / (k + rank)
+    return fused
 
 
 def _cosine(a: list[float], b: list[float]) -> float:
@@ -472,8 +531,13 @@ def _cluster(facts: list[Fact]) -> list[list[Fact]]:
 # --------------------------------------------------------------------------- #
 
 def _tokens(text: str) -> set[str]:
+    return set(_token_list(text))
+
+
+def _token_list(text: str) -> list[str]:
+    """Content tokens WITH repeats (BM25 needs term frequencies)."""
     words = re.findall(r"[a-z0-9]+", text.lower())
-    return {w for w in words if w not in _STOPWORDS and len(w) > 2}
+    return [w for w in words if w not in _STOPWORDS and len(w) > 2]
 
 
 def _jaccard(a: set[str], b: set[str]) -> float:

@@ -175,6 +175,34 @@ def test_consolidate_merges_similar_tail_and_archives(store):
     assert sum("store for" in t for t in texts) < 3
 
 
+def test_bm25_ranks_exact_term_matches():
+    store_facts = [
+        memory.Fact(text="Bought a tube of ultramarine paint."),
+        memory.Fact(text="Went to the store for groceries."),
+        memory.Fact(text="The weather has been grey and cold."),
+    ]
+    scores = memory._bm25({"ultramarine"}, store_facts)
+    assert scores[0] > scores[1] and scores[0] > scores[2]   # the exact match wins
+
+
+def test_rrf_fuses_two_rankings():
+    # item 0 tops list A, item 2 tops list B; fusion should rank them both up
+    a = [0.9, 0.1, 0.2]
+    b = [0.1, 0.2, 0.9]
+    fused = memory._rrf(a, b)
+    assert fused[0] > fused[1] and fused[2] > fused[1]   # 0 and 2 beat the middle
+
+
+def test_hybrid_recall_finds_exact_name_via_bm25(store):
+    # a rare exact term ("ultramarine") should surface via the sparse half even
+    # without embeddings (BM25-only hybrid path)
+    store.add("Bought a tube of ultramarine paint.", "event")
+    store.add("Has been feeling low and grey.", "state")
+    store.add("Went for a walk by the water.", "event")
+    out = memory.recall(store, "where did the ultramarine go", k=1)
+    assert "ultramarine" in out
+
+
 def test_consolidate_leaves_insights_untouched(store):
     for i in range(4):
         store.add(f"Minor errand number {i}.", "event", importance=1)
