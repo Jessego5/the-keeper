@@ -106,6 +106,25 @@ and waits for `advance_goal`. On honest failure a keeper step is handed back to 
 Outreach priority each tick (when the real-time breaker allows): **due goal → house
 routine → restless energy**. Purposeful work comes before mood.
 
+## Multi-agent: sub-agents + supervisor
+
+For a task too involved for one tool call, the Keeper delegates to a **sub-agent** — a
+focused specialist that runs its *own* tool loop with only the tools it needs, then
+returns a result the Keeper speaks from. This is the reference agent's supervisor + sub-agent
+pattern kept legible: three roles, not a fleet framework.
+
+| Specialist | Does | Tools it gets |
+|---|---|---|
+| researcher | looks things up on the web, synthesizes | search, fetch |
+| archivist | digs through the person's files/notes/history | files, git, time, journal |
+| scribe | drafts a message, note, or short plan | journal |
+
+`subagents.route` (a tiny LLM router) picks the specialist; `subagents.run` gives it a
+scoped tool view (`_FilteredMCP`) and runs its loop; `delegate` is the supervisor entry
+point. Exposed two ways: a **`delegate` tool** the main Keeper calls in chat, and the
+**goal executor**, which routes every `[keeper]` step through a specialist. Recursion is
+blocked — a sub-agent can't spawn sub-agents.
+
 ## The house: agentic OS integration
 
 - **Recurring reminders** — `daily` / `weekly` / `weekdays` / `every N …`, re-armed to
@@ -141,6 +160,7 @@ routine → restless energy**. Purposeful work comes before mood.
 | `tasks.py` | Goal/Step store — persistent plan state; steps labelled keeper/person |
 | `planner.py` | Decomposes + labels a goal's steps; reflection (evaluator-optimizer) |
 | `journal.py` | The Keeper's one WRITE capability — append-only kept notes |
+| `subagents.py` | Specialists (researcher/archivist/scribe) + router + supervisor (multi-agent) |
 | `reminders.py` | Reminder store + recurrence |
 | `native_tools.py` | The Keeper's own action tools (remind / list / complete) |
 | `tools.py` | MCP manager — connects configured servers (files, fetch, search, time, git), applies a read-only filter + per-server allowlist |
