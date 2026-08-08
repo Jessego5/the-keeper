@@ -51,6 +51,18 @@ async def test_chat_returns_a_reply(client):
     assert r.json()["reply"]
 
 
+async def test_trace_records_a_turn(client):
+    await client.post("/chat", json={"message": "hello there keeper"})
+    r = await client.get("/trace")
+    assert r.status_code == 200
+    traces = r.json()
+    assert traces, "a turn should have been traced"
+    t = traces[0]
+    assert t["cue"] == "hello there keeper"
+    assert "memory_injected" in t and "tools_called" in t and "reply" in t
+    assert t["path"] in ("tool", "compose")
+
+
 async def test_a2a_agent_card_served(client):
     r = await client.get("/.well-known/agent.json")
     assert r.status_code == 200

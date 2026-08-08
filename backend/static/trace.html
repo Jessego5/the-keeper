@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Keeper — trace</title>
+<style>
+  :root {
+    --deep:#081316; --sea:#0d2327; --surface:#14383a; --foam:#cfe0da;
+    --foam-dim:#7ea59d; --tide:#5aa39a; --current:#2c5254; --amber:#d9a45b;
+    --mono:"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+    --serif:"Iowan Old Style",Palatino,Georgia,serif;
+  }
+  * { box-sizing:border-box; }
+  html,body { margin:0; height:100%; }
+  body { background:linear-gradient(180deg,var(--surface),var(--sea) 40%,var(--deep));
+         color:var(--foam); font-family:var(--mono); font-size:12.5px;
+         padding:2rem 1.2rem; }
+  .wrap { max-width:52rem; margin:0 auto; }
+  h1 { font-family:var(--serif); text-align:center; font-size:0.72rem;
+       text-transform:uppercase; letter-spacing:0.5em; color:var(--tide);
+       font-weight:normal; margin:0 0 0.4rem; }
+  .sub { text-align:center; color:var(--current); font-size:0.66rem; margin-bottom:1.6rem; }
+  a { color:var(--tide); text-decoration:none; }
+
+  .turn { background:rgba(20,56,58,0.25); border:1px solid var(--current);
+          border-radius:0.55rem; padding:0.9rem 1.05rem; margin-bottom:1rem; }
+  .cue { font-family:var(--serif); font-size:1.02rem; color:var(--foam);
+         margin-bottom:0.1rem; }
+  .meta { color:var(--foam-dim); font-size:0.66rem; margin-bottom:0.7rem;
+          display:flex; gap:0.9rem; flex-wrap:wrap; }
+  .tag { color:var(--tide); }
+  .row { margin:0.5rem 0; }
+  .label { color:var(--foam-dim); font-size:0.6rem; text-transform:uppercase;
+           letter-spacing:0.13em; margin-bottom:0.22rem; }
+  .box { background:rgba(8,19,22,0.5); border:1px solid var(--current);
+         border-radius:0.4rem; padding:0.5rem 0.65rem; white-space:pre-wrap;
+         line-height:1.5; overflow-x:auto; }
+  .empty { color:var(--current); font-style:italic; }
+  .mem { border-left:2px solid var(--tide); }
+  .tool { border-left:2px solid var(--amber); margin-bottom:0.35rem; }
+  .tool .tn { color:var(--amber); }
+  .reply { border-left:2px solid var(--foam-dim); font-family:var(--serif);
+           font-size:1rem; color:var(--foam); }
+  .flag { color:var(--amber); }
+  .foot { text-align:center; color:var(--current); font-size:0.62rem; margin-top:1rem; }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>the keeper — trace</h1>
+    <div class="sub">why it said what it said · newest first · refreshes every 2s ·
+      <a href="/dashboard">dashboard</a> · <a href="/">the water</a></div>
+    <div id="turns"><div class="empty">no turns yet — say something in the chat.</div></div>
+    <div class="foot">the last 25 turns are kept in memory</div>
+  </div>
+<script>
+  function esc(s){const d=document.createElement("div");d.textContent=s==null?"":String(s);return d.innerHTML;}
+  function fmtTime(ts){ if(!ts) return ""; const d=new Date(ts*1000);
+    return d.toLocaleTimeString([], {hour:"2-digit",minute:"2-digit",second:"2-digit"}); }
+
+  function tool(t){
+    const args = Object.keys(t.args||{}).length ? " " + esc(JSON.stringify(t.args)) : "";
+    return '<div class="box tool"><span class="tn">'+esc(t.tool)+'</span>'+args+
+           '\n→ '+esc(t.result)+'</div>';
+  }
+
+  function turn(t){
+    const flags = [];
+    if (t.fell_back) flags.push('<span class="flag">fell back</span>');
+    const tools = (t.tools_called||[]).length
+      ? (t.tools_called||[]).map(tool).join("")
+      : '<div class="box empty">no tools called ('+esc(t.path)+' path)</div>';
+    const mem = (t.memory_injected||"").trim()
+      ? '<div class="box mem">'+esc(t.memory_injected)+'</div>'
+      : '<div class="box empty">nothing injected — no relevant memory</div>';
+    return '<div class="turn">'
+      + '<div class="cue">'+esc(t.cue)+'</div>'
+      + '<div class="meta"><span>'+fmtTime(t.ts)+'</span>'
+        + '<span class="tag">register: '+esc(t.water_state)+'</span>'
+        + '<span>mood: '+esc(t.mood_signal||"—")+'</span>'
+        + '<span>path: '+esc(t.path)+'</span>'
+        + (t.score!=null?'<span>voice: '+esc(t.score)+'</span>':'')
+        + (flags.length?'<span>'+flags.join(" ")+'</span>':'')
+      + '</div>'
+      + '<div class="row"><div class="label">memory injected (what it recalled)</div>'+mem+'</div>'
+      + '<div class="row"><div class="label">tools called</div>'+tools+'</div>'
+      + '<div class="row"><div class="label">reply</div><div class="box reply">'+esc(t.reply)+'</div></div>'
+      + '</div>';
+  }
+
+  async function tick(){
+    let data; try { data = await (await fetch("/trace")).json(); } catch(e){ return; }
+    const el = document.getElementById("turns");
+    if (!data.length){ el.innerHTML = '<div class="empty">no turns yet — say something in the chat.</div>'; return; }
+    el.innerHTML = data.map(turn).join("");
+  }
+  tick(); setInterval(tick, 2000);
+</script>
+</body>
+</html>
