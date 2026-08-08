@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+from collections import deque
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -162,6 +163,7 @@ class AppState:
     config: proactive.ProactiveConfig = field(default_factory=proactive.ProactiveConfig)
     listeners: set[asyncio.Queue] = field(default_factory=set)
     delivery: Optional[channels.Delivery] = None   # web + banner + telegram fan-out
+    traces: deque = field(default_factory=lambda: deque(maxlen=25))  # per-turn debug
     generate: compose.Generator = compose.stub_generator
     fast: Optional[compose.Generator] = None
     embed: Optional[memory.Embedder] = None   # semantic recall; None => keyword
@@ -406,6 +408,7 @@ async def chat(body: ChatIn):
     if STATE.mcp is not None and STATE.mcp.has_tools:
         providers.append(STATE.mcp)
     used_tools = bool(providers)
+    tool_trace: list = []
     try:
         if used_tools:
             # Tool path: the Keeper may reach for tools, then answer. A
@@ -415,7 +418,8 @@ async def chat(body: ChatIn):
                 "passive", water, memory=mem, context=ctx)
             system = system + "\n\n---\n\n" + TOOL_ADDENDUM
             reply = await compose.tool_reply(
-                system, msg, providers=providers, model=TOOL_MODEL, max_rounds=6)
+                system, msg, providers=providers, model=TOOL_MODEL, max_rounds=6,
+                trace=tool_trace)
             # Tool answers come back plain (a changelog, a file dump). Pass them back
             # through the Keeper's voice — preserving every fact — so a tool-grounded
             # reply still sounds like the Keeper, not a report.
@@ -440,6 +444,21 @@ async def chat(body: ChatIn):
         STATE.sessions.append(STATE.current_key, "assistant", reply)
     # Note: the reply is returned in the HTTP response and rendered from there;
     # SSE (/events) carries ONLY unbidden proactive lines, so nothing double-renders.
+
+    # Per-turn TRACE — the whole point is answering "why did it say that?" fast: what
+    # memory was injected, the register, which tools fired, the reply. Ring-buffered.
+    STATE.traces.appendleft({
+        "ts": now,
+        "cue": msg,
+        "water_state": water,
+        "mood_signal": signal,
+        "memory_injected": mem,
+        "path": "tool" if used_tools else "compose",
+        "tools_called": tool_trace,
+        "reply": reply,
+        "score": round(score, 3) if isinstance(score, (int, float)) else None,
+        "fell_back": fell_back,
+    })
 
     # Distill this exchange into the drawers, off the response path — but not a
     # failed turn, which carries no real reply to learn from.
@@ -813,6 +832,17 @@ async def a2a_endpoint(req: Request):
         return a2a.rpc_error(req_id, -32602, "empty message")
     reply = await _answer_as_keeper(text)
     return a2a.rpc_result(req_id, a2a.make_message(reply, role="agent"))
+
+
+@app.get("/trace")
+async def trace():
+    """The last turns' decisions — memory injected, register, tools fired, reply."""
+    return list(STATE.traces)
+
+
+@app.get("/trace-view")
+async def trace_view():
+    return FileResponse(STATIC_DIR / "trace.html")
 
 
 @app.get("/dashboard")

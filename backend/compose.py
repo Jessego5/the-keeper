@@ -262,6 +262,7 @@ async def tool_reply(
     model: str = "gpt-4o",
     max_rounds: int = 4,
     max_tokens: int = 400,
+    trace: Optional[list] = None,
 ) -> str:
     """Passive-only: let the Keeper use tools, then answer in voice.
 
@@ -317,6 +318,9 @@ async def tool_reply(
             provider = route.get(tc.function.name)
             out = (await provider.call(tc.function.name, args)
                    if provider is not None else f"(no such tool: {tc.function.name})")
+            if trace is not None:      # observability: what the Keeper actually did
+                trace.append({"tool": tc.function.name, "args": args,
+                              "result": out[:160]})
             messages.append({"role": "tool", "tool_call_id": tc.id,
                             "content": out[:4000]})
         # Step budget running low — nudge it to wrap up on its own before the wall.
