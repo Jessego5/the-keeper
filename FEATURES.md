@@ -1,4 +1,4 @@
-# The Keeper — every feature, and how to try it
+ # The Keeper — every feature, and how to try it
 
 A complete, checkable inventory. Tick each as you go. Most are a chat message or a
 terminal command; a few (marked ⏳ *needs setup/patience*) are harder to trigger live —
@@ -7,6 +7,33 @@ those note the trick. Two tabs open: **chat** <http://localhost:8790> · **dashb
 to see *why* it said anything.
 
 > Start clean: `./run.sh` (or it's already running on :8790). Stop: `pkill -9 -f uvicorn`.
+
+---
+
+## ★ Showcase flows — many features at once
+
+If you only have a few minutes, these single flows light up whole swaths of the Keeper.
+Keep the **trace** open (`/trace-view`) to watch every tool fire.
+
+- [ ] **1. The multi-tool researcher** *(one turn, ~5 tools)* — *Try:*
+  `look up a typical price for a beginner watercolor set, work out what it costs per week over a year, and keep a note of it`
+  → **web search · fetch · time · run_python · journal write · voice · trace.** The trace
+  shows all of it; the answer has a real price, a *computed* per-week figure, and it's kept.
+
+- [ ] **2. The full agent arc** *(a short sequence — the persona's whole story, ~12 features)* — *Try:*
+  `i stopped painting in march` … then … `actually i want to start again — help me get back into it and work on it with me`
+  then crank the clock (see the ⏳ box). → **fact distillation · importance · temporal change
+  (the tide) · goal + planning · plan reflection · keeper/person steps · autonomous execution ·
+  dashboard tiles.** Then `i set out my paints` advances it.
+
+- [ ] **3. The background deep-dive** — *Try:*
+  `go compare watercolor and gouache for a beginner and get back to me`
+  → **background delegation · orchestration (decompose → parallel specialists → synthesize) ·
+  web search · async delivery · native banner.** Works while you keep chatting, then returns.
+
+- [ ] **4. Consult it as a peer (A2A)** — *Try:*
+  `consult the agent at http://localhost:8790 and ask it to research beginner watercolor brands`
+  → **A2A client · A2A server · the peer path running the Keeper's own tools** (a loopback).
 
 ---
 
