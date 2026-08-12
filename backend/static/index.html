@@ -65,13 +65,13 @@
   }
   #newconvo {
     width: 100%; margin-bottom: 1.2rem;
-    background: rgba(20,56,58,0.35); border: 1px solid var(--current);
+    background: rgba(20,56,58,0.35); border: 1px solid rgba(207,224,218,0.10);
     border-radius: 999px; cursor: pointer; color: var(--foam-dim);
     font-family: var(--serif); font-style: italic; font-size: 0.82rem;
     letter-spacing: 0.03em; padding: 0.45rem 0;
     transition: color 0.3s, border-color 0.3s;
   }
-  #newconvo:hover { color: var(--tide); border-color: var(--tide); }
+  #newconvo:hover { color: var(--foam); border-color: rgba(207,224,218,0.28); }
   #sessions { list-style: none; margin: 0; padding: 0; flex: 1; }
   #sessions li {
     padding: 0.5rem 0.55rem; margin-bottom: 0.15rem; border-radius: 0.4rem;
@@ -80,9 +80,9 @@
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     transition: color 0.22s, background 0.22s;
   }
-  #sessions li:hover { color: var(--foam); background: rgba(20,56,58,0.3); }
+  #sessions li:hover { color: var(--foam); background: rgba(207,224,218,0.05); }
   #sessions li.active {
-    color: var(--foam); background: rgba(20,56,58,0.45);
+    color: var(--foam); background: rgba(207,224,218,0.09);
   }
   #sessions .empty { color: var(--current); font-style: italic;
     font-size: 0.8rem; padding: 0.4rem 0.55rem; }
