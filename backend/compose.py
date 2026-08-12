@@ -217,7 +217,7 @@ def _is_silence(text: str) -> bool:
 def openai_generator(
     model: str = "gpt-4o",
     fast: str = "gpt-4o-mini",
-    max_tokens: int = 256,
+    max_tokens: int = 600,     # room for re-voiced tool answers; short lines stay short
 ) -> tuple[Generator, Generator]:
     """Build (generate, fast_model) backed by the OpenAI API.
 
