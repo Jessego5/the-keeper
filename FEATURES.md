@@ -39,7 +39,7 @@ Keep the **trace** open (`/trace-view`) to watch every tool fire.
 
 ## A. Conversation & voice
 - [ ] **Oceanic voice** — answers in the Keeper's spare, watery register. *Try:* `i've been feeling stuck lately`
-- [ ] **Truthfulness** — a plain question gets a real answer, not metaphor. *Try:* `what temperature does water boil at?`
+- [ ] **Truthfulness** — a plain question gets a real a nswer, not metaphor. *Try:* `what temperature does water boil at?`
 - [ ] **Emotional register (water-states)** — frozen / tidal / turn, chosen from your words. *Try:* `i feel numb and far away` (frozen) vs `i had a good day today` (tidal). See `register` in the trace.
 - [ ] **Register continuity** — a neutral follow-up inherits the register, doesn't reset. *Try:* say something sad, then `what should i do` — it stays with the cold.
 - [ ] **Mood sensing (two-layer)** — keyword lexicon + local Model2Vec classifier for implicit mood. *Try:* `i don't know why i even bother` → `mood` shows in the trace.
@@ -57,7 +57,7 @@ Keep the **trace** open (`/trace-view`) to watch every tool fire.
 - [ ] **Consolidation (MemGPT)** ⏳ — over ~60 facts, old low-value ones are summarized + archived. *Hard to hit by hand; verified by tests. Ask me to seed facts if you want to see it.*
 
 ## C. Tools (MCP + native)
-- [ ] **Read your files** (MCP, sandboxed) — *Try:* `what's on my list?` (reads `keeper_sandbox/list.txt`)
+- [ ] **Read your files** (MCP, sandboxed) — *Try:* `look in my files and tell me what's on my to-do list` (reads `keeper_sandbox/list.txt`). *Avoid a bare "what's on my list?" — that's ambiguous with the reminders "list."*
 - [ ] **Web search** (MCP) — *Try:* `search the web for beginner watercolor brands`
 - [ ] **Fetch a page** (MCP) — *Try:* `read https://example.com and tell me what it's for`
 - [ ] **Git history** (MCP) — *Try:* `what have i been building on this project lately?`
