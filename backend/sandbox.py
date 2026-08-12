@@ -16,6 +16,7 @@ right-sized for a single-user companion running its own helper code.
 
 from __future__ import annotations
 
+import ast
 import os
 import subprocess
 import sys
@@ -66,11 +67,32 @@ def _apply_limits() -> None:  # pragma: no cover - runs in the child process
         pass
 
 
+def _autoprint(code: str) -> str:
+    """If the last top-level statement is a bare expression, print its value — so
+    REPL-style code the model naturally writes ('cost_per_week' on the last line, like
+    Jupyter) actually returns something, instead of running silently. A trailing `print`
+    or an assignment is left alone."""
+    try:
+        tree = ast.parse(code)
+    except SyntaxError:
+        return code
+    if not tree.body or not isinstance(tree.body[-1], ast.Expr):
+        return code
+    last = tree.body[-1]
+    tree.body[-1] = ast.Assign(
+        targets=[ast.Name(id="__v", ctx=ast.Store())], value=last.value)
+    tree.body.append(
+        ast.parse("if __v is not None:\n    print(__v)").body[0])
+    ast.fix_missing_locations(tree)
+    return ast.unparse(tree)
+
+
 def run_python(code: str, timeout: int = _DEFAULT_TIMEOUT) -> Result:
     """Run `code` in a fenced subprocess and capture its output. Never raises."""
     code = (code or "").strip()
     if not code:
         return Result(False, "", "(no code)")
+    code = _autoprint(code)      # REPL-style last-expression echo
     with tempfile.TemporaryDirectory() as tmp:
         try:
             proc = subprocess.run(
