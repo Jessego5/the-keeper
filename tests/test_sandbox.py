@@ -17,6 +17,26 @@ def test_computation():
     assert r.stdout.strip() == "5050"
 
 
+def test_bare_expression_is_auto_printed():
+    # REPL-style: a bare expression on the last line returns its value (no print())
+    assert sandbox.run_python("2 + 2").stdout.strip() == "4"
+
+
+def test_auto_print_uses_computed_variable():
+    r = sandbox.run_python("cost = 35\nweeks = 52\ncost / weeks")
+    assert r.stdout.strip().startswith("0.673")   # the miss from the trace, fixed
+
+
+def test_explicit_print_not_doubled():
+    # a trailing print() call is left alone — its value (None) isn't re-printed
+    assert sandbox.run_python("print(6 * 7)").stdout.strip() == "42"
+
+
+def test_trailing_assignment_stays_silent():
+    # an assignment isn't an expression -> nothing to auto-print
+    assert sandbox.run_python("x = 5").as_text() == "(ran, no output)"
+
+
 def test_error_is_captured_not_raised():
     r = sandbox.run_python("print(1/0)")
     assert not r.ok
