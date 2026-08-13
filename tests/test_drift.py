@@ -53,6 +53,23 @@ def test_disabled_never_drifts(store, log):
     assert drift.maybe_drift(store, _stub, log, last_drift_at=None, config=cfg) is None
 
 
+def test_no_drift_on_empty_store(tmp_path, log):
+    # REGRESSION: an empty store must NOT make the idle mind invent a person.
+    empty = memory.MemoryStore(tmp_path / "empty.jsonl")
+    def boom(system, user):
+        raise AssertionError("model was called on an empty store")
+    assert drift.maybe_drift(empty, boom, log, last_drift_at=None) is None
+    assert log.items == []                       # nothing logged either
+
+
+def test_reflect_empty_store_does_not_generate(tmp_path):
+    empty = memory.MemoryStore(tmp_path / "e.jsonl")
+    def boom(system, user):
+        raise AssertionError("model called with empty memory")
+    r = drift.reflect(empty, boom)               # must not call the model
+    assert "Nothing kept yet" in r.text
+
+
 # --- Generative Agents reflection synthesis --- #
 
 def _synth_gen(system, user):
