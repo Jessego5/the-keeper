@@ -81,6 +81,11 @@ def reflect(store: memory.MemoryStore, generate: compose.Generator,
             log: Optional[ReflectionLog] = None) -> Reflection:
     """Reflect on current memory and produce a private note (and log it)."""
     mem = memory.recall(store, "", k=10)   # what's most present
+    if not mem.strip():                    # empty store -> don't invent a person
+        r = Reflection(text="The water is still. Nothing kept yet.")
+        if log is not None:
+            log.add(r)
+        return r
     result = compose.compose("drift", generate=generate, memory=mem)
     note = (result.text or "").strip() or "Nothing has changed. I keep what I have."
     r = Reflection(text=note)
@@ -167,6 +172,10 @@ def maybe_drift(store: memory.MemoryStore, generate: compose.Generator,
     to a single voice-y reflect() note when there is too little to synthesize. Returns
     the latest Reflection made, or None if it didn't drift."""
     if not config.enabled:
+        return None
+    # Nothing kept yet -> nothing to reflect on. Never let the idle mind invent a
+    # person from an empty store (it will happily hallucinate a whole history).
+    if not any(f.active for f in store.facts):
         return None
     now = now or time.time()
     if last_drift_at is not None:
