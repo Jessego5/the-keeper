@@ -502,6 +502,39 @@ def _cosine(a: list[float], b: list[float]) -> float:
 # Distill — turn a finished conversation into durable facts.
 # --------------------------------------------------------------------------- #
 
+# The Keeper's OWN water-poetry sometimes gets mis-captured as a fact about the person
+# ("The tide brought back what you gave the water in spring"). The distill prompt asks
+# the model to skip these; this is the deterministic backstop. A curated subset of
+# voice_eval's vocabulary — the DISTINCTLY watery nouns, minus the double-meaning words
+# ("still", "keep", "hold", "draw") that also appear in ordinary facts.
+_WATER_WORDS = {
+    "tide", "tides", "water", "waters", "shore", "salt", "thaw", "frost", "ice",
+    "freeze", "frozen",
+}
+_MOTIF_SUBJECTS = (
+    "the tide", "the water", "the waters", "the cold", "the ice", "the frost",
+    "the current", "the deep", "the shore", "the salt", "the thaw", "the freeze",
+    "the season", "the break", "the turn", "the pull", "the long cold",
+)
+
+
+def _is_junk_fact(text: str) -> bool:
+    """True if a distilled 'fact' is really the Keeper's own water-poetry, not a concrete
+    fact about the person. Two signatures: a water-motif SUBJECT (the voice speaking), or
+    motif-heavy prose with no concrete anchor (a number or a name)."""
+    low = text.strip().lower()
+    if not low:
+        return True
+    if any(low.startswith(s) for s in _MOTIF_SUBJECTS):
+        return True
+    motif_hits = sum(1 for w in re.findall(r"[a-z]+", low) if w in _WATER_WORDS)
+    if motif_hits >= 2:
+        has_digit = any(c.isdigit() for c in text)
+        has_name = any(t[:1].isupper() for t in text.split()[1:])   # a proper noun
+        if not has_digit and not has_name:
+            return True
+    return False
+
 _DISTILL_SYSTEM = """You extract durable facts about a person from a conversation, \
 for a companion's long-term memory. Output ONLY facts worth keeping for months: \
 who they are, their situation, relationships, ongoing struggles, things they care \
@@ -578,7 +611,7 @@ def distill(messages: list[dict], generate: Generator,
         if not line:
             continue
         kind, imp, text = _parse_prefix(line)
-        if text:
+        if text and not _is_junk_fact(text):     # drop the Keeper's own water-poetry
             parsed.append((text, kind, imp))
 
     if store is None:
