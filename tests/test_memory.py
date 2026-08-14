@@ -114,6 +114,40 @@ def test_importance_parsed_from_distill(store):
     assert by_text["Likes oat milk."] == 2.0
 
 
+def test_junk_fact_filter_kills_water_poetry():
+    junk = [
+        "The tide brought back what you gave the water in spring.",
+        "The water is still.",
+        "The long cold holds now.",
+        "The tide draws out and the salt remains.",
+    ]
+    for t in junk:
+        assert memory._is_junk_fact(t), f"should be junk: {t!r}"
+
+
+def test_junk_fact_filter_spares_real_facts():
+    real = [
+        "Has a brother, Sam; not spoken since spring.",   # name anchor
+        "Stopped painting in March.",                     # month anchor
+        "Turns 30 next month.",                           # number anchor
+        "Still holds a grudge against his old boss.",     # 'still' is not a water word
+        "Lives by the water in Maine.",                   # 1 water word + a place name
+        "Feels stuck and can't get started.",             # no motif at all
+    ]
+    for t in real:
+        assert not memory._is_junk_fact(t), f"should be kept: {t!r}"
+
+
+def test_distill_drops_junk_poetry(store):
+    def gen(system, user):
+        return ("[event] The tide brought back what you gave the water in spring.\n"
+                "[identity|7] Has a brother, Sam.")
+    facts = memory.distill([{"role": "user", "content": "..."}], gen, store)
+    texts = [f.text for f in facts]
+    assert "Has a brother, Sam." in texts
+    assert not any("tide" in t.lower() for t in texts)    # the poetry was dropped
+
+
 def test_distill_strips_stray_and_multiple_tags(store):
     # REGRESSION: the model emits unknown/multiple tags; none may leak into the text.
     def gen(system, user):
