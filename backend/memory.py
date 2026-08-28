@@ -52,6 +52,24 @@ UPDATE or REPLACE the OLD one — same subject, but a changed situation or state
 OLD 'hasn't painted since March', NEW 'started painting again')? If NEW supersedes OLD, \
 answer SUPERSEDES. If it's a separate, still-true fact, answer DISTINCT. One word only."""
 
+
+def _reads_as_supersedes(verdict: str) -> bool:
+    """Did the judge say SUPERSEDES? Deliberately loose about spelling.
+
+    The judge is a cheap model answering in free text, and it misspells its own
+    verdict often enough to matter — "SUPERSCEDES" turned up in roughly one call in
+    three, and an exact `"SUPERSEDE" in verdict` test reads that as DISTINCT, so a
+    real change is silently dropped. DISTINCT is the safe default: it is checked
+    first, and anything unrecognised falls through to it.
+    """
+    v = (verdict or "").strip().upper()
+    if "DISTINCT" in v:
+        return False
+    # Any token starting SUPER…: SUPERSEDES, SUPERSCEDES, SUPERCEDES (the last is
+    # the commonest misspelling in English generally, so expect it).
+    return any(t.startswith("SUPER") for t in re.findall(r"[A-Z]+", v))
+
+
 STORE_DIR = Path(__file__).resolve().parent.parent / "memory_store"
 STORE_PATH = STORE_DIR / "facts.jsonl"
 
@@ -215,9 +233,14 @@ class MemoryStore:
             return None
         try:
             verdict = judge(_SUPERSEDE_SYSTEM, f"OLD: {best.text}\nNEW: {text}") or ""
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            # A transient failure (a 429, a timeout) must not look like DISTINCT
+            # without a word: the change is lost and the store keeps contradicting
+            # itself. Still non-fatal — storing the new fact matters more.
+            print(f"[memory] supersede judge failed: {type(exc).__name__}: {exc}",
+                  flush=True)
             return None
-        return best if "SUPERSEDE" in verdict.upper() else None
+        return best if _reads_as_supersedes(verdict) else None
 
     def changes(self, within_s: Optional[float] = None,
                 now: Optional[float] = None) -> list:
@@ -539,6 +562,12 @@ _DISTILL_SYSTEM = """You extract durable facts about a person from a conversatio
 for a companion's long-term memory. Output ONLY facts worth keeping for months: \
 who they are, their situation, relationships, ongoing struggles, things they care \
 about. Skip small talk, passing moods, and anything about the companion.
+
+A CHANGE in an ongoing thread of their life is durable and must be kept, even when \
+it is said briefly and in passing: taking something up or stopping it, a practice \
+they've dropped, a relationship shifting, a move, a job ending. "Stopped painting \
+in March" is exactly the kind of fact to keep. A "passing mood" means how they feel \
+in this moment ("tired today"), not something in their life that changed.
 
 Write each fact as ONE short third-person statement of the fact itself — the thing \
 that is true, not the act of saying it. Write "Has a brother, Sam; not spoken since \

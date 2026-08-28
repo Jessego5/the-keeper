@@ -292,6 +292,24 @@ def test_recall_reranks_when_generate_given(store):
 
 # --- temporal / change-aware memory (Zep/Graphiti-style) --- #
 
+def test_verdict_parse_survives_the_judges_own_misspelling():
+    """Regression: the judge is a cheap model writing free text, and it returns
+    "SUPERSCEDES" often enough to matter (~1 call in 3, seen live). The old exact
+    `"SUPERSEDE" in verdict` test read that as DISTINCT and silently dropped a real
+    change, leaving the store to contradict itself in recall."""
+    for spelling in ("SUPERSEDES", "SUPERSCEDES", "SUPERCEDES", "supersedes",
+                     "  SUPERSEDES.  "):
+        assert memory._reads_as_supersedes(spelling), spelling
+
+
+def test_verdict_parse_defaults_to_distinct():
+    """DISTINCT is the safe answer: it wins outright, and anything unrecognised
+    (empty, a refusal, a stray sentence) falls through to it rather than fabricating
+    a change that was never confirmed."""
+    for verdict in ("DISTINCT", "distinct", "", "   ", "maybe", "I cannot tell"):
+        assert not memory._reads_as_supersedes(verdict), verdict
+
+
 def _supersede_judge(system, user):
     # judge that says a "painting again" NEW supersedes a "stopped painting" OLD
     return "SUPERSEDES" if ("paint" in user.lower() and "again" in user.lower()) \
