@@ -82,6 +82,29 @@ def test_get_by_id_and_title(store):
     assert store.get("nonexistent") is None
 
 
+def test_get_matches_a_shared_word_stem(store):
+    # Regression: the model keys off the PERSON's words, not the goal's. "i set out
+    # my paints" arrives as key="paints" against "get back to painting"; a plain
+    # substring match missed it and the step was silently never advanced.
+    g = store.add("get back to painting", ["set out the paints"])
+    assert store.get("paints") is g
+    assert store.get("painted") is g
+
+
+def test_get_ignores_filler_words(store):
+    # a stem match must not let "get back to ..." be found by its scaffolding
+    store.add("get back to painting", ["x"])
+    assert store.get("back") is None
+    assert store.get("get") is None
+
+
+def test_get_prefers_an_active_goal_over_a_finished_one(store):
+    store.add("painting", ["x"])
+    store.complete("painting")
+    current = store.add("start painting again", ["y"])
+    assert store.get("paints") is current
+
+
 def test_persistence_round_trip(tmp_path):
     p = tmp_path / "goals.jsonl"
     s1 = tasks.GoalStore(p)
@@ -221,6 +244,17 @@ async def test_advance_goal_completes_on_last_step(nt):
 
 async def test_advance_goal_no_match(nt):
     assert "no matching goal" in await nt.call("advance_goal", {"key": "nope"})
+
+
+async def test_advance_goal_matches_the_persons_own_words(nt):
+    # Regression, seen live: "i set out my paints" reached advance_goal as
+    # key="paints" against the goal "get back to painting" and returned
+    # "no matching goal." — the goal never advanced and nothing surfaced the miss.
+    await nt.call("set_goal", {"title": "get back to painting"})
+    out = await nt.call("advance_goal", {"key": "paints", "note": "set them out"})
+    assert "no matching goal" not in out
+    assert "marked done" in out
+    assert nt.goals.active()[0].steps[0].done
 
 
 async def test_goal_tools_graceful_without_store(tmp_path):
