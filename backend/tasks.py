@@ -40,6 +40,28 @@ class Step:
 # A plan step may arrive prefixed with who should do it, e.g. "[keeper] look up X".
 _ACTOR_RE = re.compile(r"^\s*\[(keeper|person|you|me)\]\s*", re.I)
 
+# Words too common to identify a goal by — "get back to painting" must not be found
+# by the key "back".
+_STOPWORDS = {"the", "and", "for", "with", "that", "this", "get", "back", "out",
+              "into", "again", "some", "any", "one", "you", "your", "our", "his",
+              "her", "their", "them", "about", "from", "over", "make", "made"}
+
+
+def _stems(text: str) -> set[str]:
+    """The content words of `text`, crudely stemmed so 'paints' and 'painting' meet
+    at 'paint'. Not a real stemmer — it only has to survive the plural/gerund gap
+    between how a person reports progress and how their goal was titled."""
+    out = set()
+    for word in re.findall(r"[a-z]+", text.lower()):
+        if len(word) < 3 or word in _STOPWORDS:
+            continue
+        for suf in ("ing", "ed", "es", "s"):
+            if word.endswith(suf) and len(word) - len(suf) >= 3:
+                word = word[: -len(suf)]
+                break
+        out.add(word)
+    return out
+
 
 def _parse_step(raw: str) -> Optional[Step]:
     """Turn a plan line into a Step, reading an optional [keeper]/[person] prefix.
@@ -106,12 +128,27 @@ class GoalStore:
         return [g for g in self.goals if g.status == "active"]
 
     def get(self, key: str) -> Optional[Goal]:
-        """By id, or by a case-insensitive substring of the title."""
+        """By id, by a case-insensitive substring of the title, or by a shared word
+        stem. The stem pass matters: the model keys off the person's words, not the
+        goal's, so "i set out my paints" arrives as key="paints" against a goal
+        titled "get back to painting" — a substring match misses it and the step is
+        silently never advanced. Active goals win over ones already set down."""
         key_low = key.lower()
         for g in self.goals:
-            if g.id == key or key_low in g.title.lower():
+            if g.id == key:
                 return g
-        return None
+        # No content words means nothing to identify a goal BY: a bare "back" or
+        # "it" would otherwise substring-match "get back to painting" and advance
+        # the wrong thing.
+        stems = _stems(key_low)
+        if not stems:
+            return None
+        found = [g for g in self.goals if key_low in g.title.lower()]
+        if not found:
+            found = [g for g in self.goals if stems & _stems(g.title.lower())]
+        if not found:
+            return None
+        return next((g for g in found if g.status == "active"), found[0])
 
     def due(self, now: Optional[float] = None) -> Optional[Goal]:
         """The active, unfinished goal most overdue to be worked, or None."""
