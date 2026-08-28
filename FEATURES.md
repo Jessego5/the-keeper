@@ -72,7 +72,7 @@ Keep the **trace** open (`/trace-view`) to watch every tool fire.
 - [ ] **keeper vs person steps** — labels who does each. *See:* `next_actor` in `/state` goals.
 - [ ] **Autonomous step execution (ReAct)** ⏳ — it *does* its own steps with tools. *Trigger:* crank speed (§F); watch the terminal for `[goal] … EXECUTED via …`.
 - [ ] **Nudges your steps** ⏳ — invites you to do person-steps. `[goal] … nudged …`
-- [ ] **Report progress** — *Try:* after a goal exists, `i set out my paints` → the panel advances.
+- [ ] **Report progress** — *Try:* after a goal exists, `i set out my paints` → the panel advances. *(It marks the goal's CURRENT step done, whatever that step is — the real plan is model-written, so its early steps may say nothing about paints. Check `next_step` in `/state` to see what moved.)*
 - [ ] **Complete / set down a goal** — *Try:* `i'm setting the painting goal aside for now`
 
 ## E. Multi-agent (specialists)
