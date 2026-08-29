@@ -1,69 +1,364 @@
 {
-  "description": "Hand-labeled dataset for the Keeper's register (mood) classifier. Registers are an original construct (frozen = stuck/low/cold, tidal = moving/returning/better, turn = the rare strong lift, neutral = no mood signal -> abstain). Labels are subjective and authored by one person; treat as a directional benchmark, not ground truth. Held-out 'test' split is never used to tune thresholds. Optional external validation: map a public emotion set (e.g. dair-ai/emotion: sadness/fear -> frozen, joy/love -> tidal) for volume.",
-  "registers": ["frozen", "tidal", "turn", "neutral"],
-  "tags": ["explicit", "implicit", "negation", "neutral"],
+  "description": "Hand-labeled dataset for the Keeper's register (mood) classifier. Registers are an original construct (frozen = stuck/low/cold, tidal = moving/returning/better, turn = the rare strong lift, neutral = no mood signal -> abstain). Labels are subjective and authored by one person; treat as a directional benchmark, not ground truth. Held-out 'test' split is never used to tune thresholds. Optional external validation: map a public emotion set (e.g. dair-ai/emotion: sadness/fear -> frozen, joy/love -> tidal) for volume. Neutral coverage extended with the app's own documented tool phrasings (FEATURES.md 'Try:' lines): the original set had short generic queries but none of the search / fetch / file / git / run_python / journal shapes that dominate real traffic.",
+  "registers": [
+    "frozen",
+    "tidal",
+    "turn",
+    "neutral"
+  ],
+  "tags": [
+    "explicit",
+    "implicit",
+    "negation",
+    "neutral"
+  ],
   "train": [
-    {"text": "i am sad", "register": "frozen", "tag": "explicit"},
-    {"text": "i feel completely stuck", "register": "frozen", "tag": "explicit"},
-    {"text": "everything is so heavy lately", "register": "frozen", "tag": "explicit"},
-    {"text": "i'm exhausted and low", "register": "frozen", "tag": "explicit"},
-    {"text": "i feel hopeless about all of it", "register": "frozen", "tag": "explicit"},
-    {"text": "i don't know why i even bother anymore", "register": "frozen", "tag": "implicit"},
-    {"text": "what's the point of any of this", "register": "frozen", "tag": "implicit"},
-    {"text": "i can't get out of bed today", "register": "frozen", "tag": "implicit"},
-    {"text": "nothing feels worth doing", "register": "frozen", "tag": "implicit"},
-    {"text": "the days all blur together and i don't move", "register": "frozen", "tag": "implicit"},
-    {"text": "i keep meaning to start and never do", "register": "frozen", "tag": "implicit"},
-    {"text": "i haven't left the house in a week", "register": "frozen", "tag": "implicit"},
-    {"text": "i feel a bit better today", "register": "tidal", "tag": "explicit"},
-    {"text": "things are finally looking up", "register": "tidal", "tag": "explicit"},
-    {"text": "i'm feeling more like myself again", "register": "tidal", "tag": "explicit"},
-    {"text": "i had a really good day", "register": "tidal", "tag": "explicit"},
-    {"text": "i finally went back to the studio", "register": "tidal", "tag": "implicit"},
-    {"text": "took a long walk and it actually helped", "register": "tidal", "tag": "implicit"},
-    {"text": "picked up the brush again this morning", "register": "tidal", "tag": "implicit"},
-    {"text": "i called an old friend and we laughed for hours", "register": "tidal", "tag": "implicit"},
-    {"text": "i cooked a real meal for the first time in weeks", "register": "tidal", "tag": "implicit"},
-    {"text": "i've been getting out more", "register": "tidal", "tag": "implicit"},
-    {"text": "i think it's finally lifting", "register": "turn", "tag": "explicit"},
-    {"text": "something shifted in me today", "register": "turn", "tag": "explicit"},
-    {"text": "the hardest part might be behind me", "register": "turn", "tag": "implicit"},
-    {"text": "i can feel the fog starting to clear", "register": "turn", "tag": "implicit"},
-    {"text": "what should i do", "register": "neutral", "tag": "neutral"},
-    {"text": "what's on my list", "register": "neutral", "tag": "neutral"},
-    {"text": "what time is it", "register": "neutral", "tag": "neutral"},
-    {"text": "tell me a fact about the ocean", "register": "neutral", "tag": "neutral"},
-    {"text": "can you help me plan tomorrow", "register": "neutral", "tag": "neutral"},
-    {"text": "remind me to call the dentist", "register": "neutral", "tag": "neutral"},
-    {"text": "what's the weather like", "register": "neutral", "tag": "neutral"},
-    {"text": "i'm not sad anymore", "register": "tidal", "tag": "negation"},
-    {"text": "i don't feel stuck today", "register": "tidal", "tag": "negation"},
-    {"text": "i'm not doing great honestly", "register": "frozen", "tag": "negation"},
-    {"text": "i thought i'd feel better but i don't", "register": "frozen", "tag": "negation"},
-    {"text": "i'm not as low as i was", "register": "tidal", "tag": "negation"},
-    {"text": "it's not that i'm sad, i just feel nothing", "register": "frozen", "tag": "negation"},
-    {"text": "i'm okay, better than i was really", "register": "tidal", "tag": "implicit"}
+    {
+      "text": "i am sad",
+      "register": "frozen",
+      "tag": "explicit"
+    },
+    {
+      "text": "i feel completely stuck",
+      "register": "frozen",
+      "tag": "explicit"
+    },
+    {
+      "text": "everything is so heavy lately",
+      "register": "frozen",
+      "tag": "explicit"
+    },
+    {
+      "text": "i'm exhausted and low",
+      "register": "frozen",
+      "tag": "explicit"
+    },
+    {
+      "text": "i feel hopeless about all of it",
+      "register": "frozen",
+      "tag": "explicit"
+    },
+    {
+      "text": "i don't know why i even bother anymore",
+      "register": "frozen",
+      "tag": "implicit"
+    },
+    {
+      "text": "what's the point of any of this",
+      "register": "frozen",
+      "tag": "implicit"
+    },
+    {
+      "text": "i can't get out of bed today",
+      "register": "frozen",
+      "tag": "implicit"
+    },
+    {
+      "text": "nothing feels worth doing",
+      "register": "frozen",
+      "tag": "implicit"
+    },
+    {
+      "text": "the days all blur together and i don't move",
+      "register": "frozen",
+      "tag": "implicit"
+    },
+    {
+      "text": "i keep meaning to start and never do",
+      "register": "frozen",
+      "tag": "implicit"
+    },
+    {
+      "text": "i haven't left the house in a week",
+      "register": "frozen",
+      "tag": "implicit"
+    },
+    {
+      "text": "i feel a bit better today",
+      "register": "tidal",
+      "tag": "explicit"
+    },
+    {
+      "text": "things are finally looking up",
+      "register": "tidal",
+      "tag": "explicit"
+    },
+    {
+      "text": "i'm feeling more like myself again",
+      "register": "tidal",
+      "tag": "explicit"
+    },
+    {
+      "text": "i had a really good day",
+      "register": "tidal",
+      "tag": "explicit"
+    },
+    {
+      "text": "i finally went back to the studio",
+      "register": "tidal",
+      "tag": "implicit"
+    },
+    {
+      "text": "took a long walk and it actually helped",
+      "register": "tidal",
+      "tag": "implicit"
+    },
+    {
+      "text": "picked up the brush again this morning",
+      "register": "tidal",
+      "tag": "implicit"
+    },
+    {
+      "text": "i called an old friend and we laughed for hours",
+      "register": "tidal",
+      "tag": "implicit"
+    },
+    {
+      "text": "i cooked a real meal for the first time in weeks",
+      "register": "tidal",
+      "tag": "implicit"
+    },
+    {
+      "text": "i've been getting out more",
+      "register": "tidal",
+      "tag": "implicit"
+    },
+    {
+      "text": "i think it's finally lifting",
+      "register": "turn",
+      "tag": "explicit"
+    },
+    {
+      "text": "something shifted in me today",
+      "register": "turn",
+      "tag": "explicit"
+    },
+    {
+      "text": "the hardest part might be behind me",
+      "register": "turn",
+      "tag": "implicit"
+    },
+    {
+      "text": "i can feel the fog starting to clear",
+      "register": "turn",
+      "tag": "implicit"
+    },
+    {
+      "text": "what should i do",
+      "register": "neutral",
+      "tag": "neutral"
+    },
+    {
+      "text": "what's on my list",
+      "register": "neutral",
+      "tag": "neutral"
+    },
+    {
+      "text": "what time is it",
+      "register": "neutral",
+      "tag": "neutral"
+    },
+    {
+      "text": "tell me a fact about the ocean",
+      "register": "neutral",
+      "tag": "neutral"
+    },
+    {
+      "text": "can you help me plan tomorrow",
+      "register": "neutral",
+      "tag": "neutral"
+    },
+    {
+      "text": "remind me to call the dentist",
+      "register": "neutral",
+      "tag": "neutral"
+    },
+    {
+      "text": "what's the weather like",
+      "register": "neutral",
+      "tag": "neutral"
+    },
+    {
+      "text": "i'm not sad anymore",
+      "register": "tidal",
+      "tag": "negation"
+    },
+    {
+      "text": "i don't feel stuck today",
+      "register": "tidal",
+      "tag": "negation"
+    },
+    {
+      "text": "i'm not doing great honestly",
+      "register": "frozen",
+      "tag": "negation"
+    },
+    {
+      "text": "i thought i'd feel better but i don't",
+      "register": "frozen",
+      "tag": "negation"
+    },
+    {
+      "text": "i'm not as low as i was",
+      "register": "tidal",
+      "tag": "negation"
+    },
+    {
+      "text": "it's not that i'm sad, i just feel nothing",
+      "register": "frozen",
+      "tag": "negation"
+    },
+    {
+      "text": "i'm okay, better than i was really",
+      "register": "tidal",
+      "tag": "implicit"
+    },
+    {
+      "text": "search the web for beginner watercolor brands",
+      "register": "neutral",
+      "tag": "neutral"
+    },
+    {
+      "text": "read https://example.com and tell me what it's for",
+      "register": "neutral",
+      "tag": "neutral"
+    },
+    {
+      "text": "look in my files and tell me what's on my to-do list",
+      "register": "neutral",
+      "tag": "neutral"
+    },
+    {
+      "text": "what have i been building on this project lately?",
+      "register": "neutral",
+      "tag": "neutral"
+    },
+    {
+      "text": "if i save $45 a week, how much over 3 years? work it out exactly",
+      "register": "neutral",
+      "tag": "neutral"
+    }
   ],
   "test": [
-    {"text": "i feel numb and heavy", "register": "frozen", "tag": "explicit"},
-    {"text": "i'm so drained i can barely think", "register": "frozen", "tag": "explicit"},
-    {"text": "i just stare at the ceiling for hours", "register": "frozen", "tag": "implicit"},
-    {"text": "i can't seem to make myself care about anything", "register": "frozen", "tag": "implicit"},
-    {"text": "every morning feels like a wall i can't climb", "register": "frozen", "tag": "implicit"},
-    {"text": "i left the dishes for a week again", "register": "frozen", "tag": "implicit"},
-    {"text": "i feel lighter than i have in a while", "register": "tidal", "tag": "explicit"},
-    {"text": "today was actually alright", "register": "tidal", "tag": "explicit"},
-    {"text": "i signed up for a pottery class", "register": "tidal", "tag": "implicit"},
-    {"text": "i went for a run and it felt good", "register": "tidal", "tag": "implicit"},
-    {"text": "i finally answered his messages", "register": "tidal", "tag": "implicit"},
-    {"text": "for the first time in months i felt hope", "register": "turn", "tag": "explicit"},
-    {"text": "the ice feels like it's finally breaking", "register": "turn", "tag": "implicit"},
-    {"text": "how does this feature work", "register": "neutral", "tag": "neutral"},
-    {"text": "summarize this article for me", "register": "neutral", "tag": "neutral"},
-    {"text": "what's 12 times 8", "register": "neutral", "tag": "neutral"},
-    {"text": "add milk to the shopping list", "register": "neutral", "tag": "neutral"},
-    {"text": "i'm not miserable, just tired of trying", "register": "frozen", "tag": "negation"},
-    {"text": "i wouldn't say i'm happy but i'm steadier", "register": "tidal", "tag": "negation"},
-    {"text": "i don't hate everything today", "register": "tidal", "tag": "negation"}
+    {
+      "text": "i feel numb and heavy",
+      "register": "frozen",
+      "tag": "explicit"
+    },
+    {
+      "text": "i'm so drained i can barely think",
+      "register": "frozen",
+      "tag": "explicit"
+    },
+    {
+      "text": "i just stare at the ceiling for hours",
+      "register": "frozen",
+      "tag": "implicit"
+    },
+    {
+      "text": "i can't seem to make myself care about anything",
+      "register": "frozen",
+      "tag": "implicit"
+    },
+    {
+      "text": "every morning feels like a wall i can't climb",
+      "register": "frozen",
+      "tag": "implicit"
+    },
+    {
+      "text": "i left the dishes for a week again",
+      "register": "frozen",
+      "tag": "implicit"
+    },
+    {
+      "text": "i feel lighter than i have in a while",
+      "register": "tidal",
+      "tag": "explicit"
+    },
+    {
+      "text": "today was actually alright",
+      "register": "tidal",
+      "tag": "explicit"
+    },
+    {
+      "text": "i signed up for a pottery class",
+      "register": "tidal",
+      "tag": "implicit"
+    },
+    {
+      "text": "i went for a run and it felt good",
+      "register": "tidal",
+      "tag": "implicit"
+    },
+    {
+      "text": "i finally answered his messages",
+      "register": "tidal",
+      "tag": "implicit"
+    },
+    {
+      "text": "for the first time in months i felt hope",
+      "register": "turn",
+      "tag": "explicit"
+    },
+    {
+      "text": "the ice feels like it's finally breaking",
+      "register": "turn",
+      "tag": "implicit"
+    },
+    {
+      "text": "how does this feature work",
+      "register": "neutral",
+      "tag": "neutral"
+    },
+    {
+      "text": "summarize this article for me",
+      "register": "neutral",
+      "tag": "neutral"
+    },
+    {
+      "text": "what's 12 times 8",
+      "register": "neutral",
+      "tag": "neutral"
+    },
+    {
+      "text": "add milk to the shopping list",
+      "register": "neutral",
+      "tag": "neutral"
+    },
+    {
+      "text": "i'm not miserable, just tired of trying",
+      "register": "frozen",
+      "tag": "negation"
+    },
+    {
+      "text": "i wouldn't say i'm happy but i'm steadier",
+      "register": "tidal",
+      "tag": "negation"
+    },
+    {
+      "text": "i don't hate everything today",
+      "register": "tidal",
+      "tag": "negation"
+    },
+    {
+      "text": "can you look up watercolor brands",
+      "register": "neutral",
+      "tag": "neutral"
+    },
+    {
+      "text": "remind me to call the dentist tomorrow at 9am",
+      "register": "neutral",
+      "tag": "neutral"
+    },
+    {
+      "text": "what day is it, and what time in tokyo?",
+      "register": "neutral",
+      "tag": "neutral"
+    },
+    {
+      "text": "keep a note: the gallery show is in July",
+      "register": "neutral",
+      "tag": "neutral"
+    }
   ]
 }

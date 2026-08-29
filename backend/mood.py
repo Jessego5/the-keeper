@@ -20,6 +20,9 @@ from memory import _cosine   # reuse the pure-Python cosine
 
 Embedder = Callable[[list[str]], list[list[float]]]
 
+# The register returned as "no signal" — see the NEUTRAL anchors below.
+NEUTRAL = "neutral"
+
 # Anchors capture the FEELING, varied in wording. Kept separate from any eval set.
 ANCHORS: dict[str, list[str]] = {
     "frozen": [
@@ -40,6 +43,33 @@ ANCHORS: dict[str, list[str]] = {
         "something shifted in me today.",
         "the hardest part might be ending.",
     ],
+    # A fourth class carrying NO emotional content. Nearest-centroid has to put every
+    # message in some class, so before this existed a plain tool request was forced
+    # into frozen/tidal/turn — and confidently: "search the web for beginner paint
+    # sets" scored turn 0.303 with a 0.142 margin, while a real cry ("i don't know why
+    # i even bother") scored frozen 0.303 with a 0.092 margin. The neutral message had
+    # the HIGHER confidence, so no floor or margin could separate them; only another
+    # class can. Winning here means "no signal": classify() returns None and the caller
+    # inherits register continuity, which is what should happen when someone asks the
+    # time. Phrasings mirror the ones the app actually receives (see FEATURES.md).
+    #
+    # Keep these REQUEST-shaped — second person, imperative, tool vocabulary. A first
+    # attempt included bare queries ("what time is it") and first-person lines ("what
+    # have i been working on lately"), and they swallowed real implicit mood: implicit
+    # accuracy fell 38% -> 25%, because implicit distress is ALSO phrased as mundane
+    # first-person activity ("i just stare at the ceiling for hours"). Short generic
+    # queries are handled by the floor already and do not need an anchor.
+    NEUTRAL: [
+        "can you look something up on the web for me",
+        "search the web for beginner brands",
+        "look in my files and tell me what's there",
+        "read that web page and summarize it",
+        "add that to my shopping list",
+        "what's on my list right now",
+        "work out what that costs exactly",
+        "remind me to do that tomorrow at nine",
+    ],
+
 }
 
 
@@ -65,7 +95,7 @@ def classify(message: str, embed: Embedder,
     (r1, s1), (r2, s2) = ranked[0], ranked[1]
     if s1 < floor or (s1 - s2) < margin:
         return None
-    return r1
+    return None if r1 == NEUTRAL else r1     # neutral == no emotional signal
 
 
 def make_mood_classifier(embed: Embedder,
@@ -95,10 +125,11 @@ def _model2vec_embedder():
     return lambda texts: [list(map(float, v)) for v in m.encode(texts)]
 
 
-def build_local_mood_signal(floor: float = 0.18):
+def build_local_mood_signal(floor: float = 0.15):
     """The chosen mood sensor: a local Model2Vec anchor classifier, or None if the
-    model can't load (caller falls back to the keyword register_signal). floor 0.18
-    is tuned on evals/register_dataset.json (see mood_bench.py) for this model."""
+    model can't load (caller falls back to the keyword register_signal). floor 0.15
+    is tuned on evals/register_dataset.json (see mood_bench.py) for this model and
+    these anchors — re-run mood_bench.py and move this if either changes."""
     embed = _model2vec_embedder()
     if embed is None:
         return None

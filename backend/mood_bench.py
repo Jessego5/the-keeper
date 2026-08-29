@@ -60,7 +60,9 @@ def _scores(embed, anchors, texts):
 
 def _predict(scores: dict, floor: float, margin: float = 0.03) -> Optional[str]:
     (r1, s1), (_, s2) = sorted(scores.items(), key=lambda x: x[1], reverse=True)[:2]
-    return None if (s1 < floor or (s1 - s2) < margin) else r1
+    if s1 < floor or (s1 - s2) < margin:
+        return None
+    return None if r1 == mood.NEUTRAL else r1   # mirrors mood.classify
 
 
 def tune_floor(embed, anchors) -> float:
