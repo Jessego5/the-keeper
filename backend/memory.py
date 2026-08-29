@@ -95,7 +95,19 @@ _RECENCY_DECAY = 0.995
 # Relevance gate: on a cued turn, a fact must clear this dense-cosine floor (or share a
 # word, or be this important) to be surfaced — so a vague request in a sparse store
 # doesn't pull back an unrelated memory the model then recites.
-_REL_FLOOR = 0.25
+#
+# 0.25 was too high to be a gate on MEANING: it also blocked real semantic hits that
+# happen to share no word. Measured against the live embedder:
+#
+#   "what do i do for work"     -> "Is a painter."        0.199   must pass
+#   "tell me about my sibling"  -> "Has a brother, Sam."  0.396   must pass
+#   "help me write things down" -> best fact              0.138   must NOT pass
+#   "what's the weather like"   -> best fact              0.082   must NOT pass
+#
+# so the floor belongs between 0.138 and 0.199. The margin either side is only ~0.03,
+# which is thin for an absolute cosine — tests/evals/test_recall_gate.py pins both
+# directions against the real embedder so a model change can't drift through it.
+_REL_FLOOR = 0.17
 _AMBIENT_IMPORTANCE = 8.0
 
 

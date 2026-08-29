@@ -98,9 +98,14 @@ def test_semantic_memory_recalls_without_shared_words(tmp_path):
         store.add(t, k, embed=emb)
     assert "brother" in memory.recall(store, "tell me about my sibling", k=1, embed=emb)
     assert "painter" in memory.recall(store, "what do i do for work", k=1, embed=emb)
-    # keyword recall would fail here — prove it
-    assert memory.recall(store, "tell me about my sibling", k=1) and \
-        "brother" not in memory.recall(store, "what do i do for work", k=1).lower()
+    # keyword recall would fail here — prove it. Neither cue shares a word with the
+    # fact it should find, so the keyword-only path (no embedder) surfaces neither.
+    # This previously read `assert recall(...) and "brother" not in ...`, which
+    # required keyword recall to RETURN something — the opposite of what the comment
+    # and the docstring claim. It never ran, because the semantic assert above it
+    # was failing first.
+    assert "brother" not in memory.recall(store, "tell me about my sibling", k=1).lower()
+    assert "painter" not in memory.recall(store, "what do i do for work", k=1).lower()
 
 
 async def test_agentic_reminder_task_succeeds(tmp_path):
