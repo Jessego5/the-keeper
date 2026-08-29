@@ -13,6 +13,7 @@ the time reasoning is the model's, which is itself a small agentic step.
 from __future__ import annotations
 
 import asyncio
+import time
 from datetime import datetime
 from typing import Callable, Optional
 
@@ -285,9 +286,17 @@ class NativeTools:
             due = _parse_iso(args.get("due_iso", ""))
             if due is None:
                 return "(could not read the time — need an ISO datetime)"
-            r = self.store.add(args.get("text", "").strip(), due,
-                               repeat=args.get("repeat"))
-            when = datetime.fromtimestamp(due).strftime("%a %b %d, %H:%M")
+            repeat = args.get("repeat")
+            # "every day at 9am", said in the afternoon, arrives as TODAY's 9am —
+            # already past. Stored as-is it fires instantly, once, before the re-arm.
+            # Roll a RECURRING reminder to its next real slot; leave a one-shot alone,
+            # since a genuinely overdue one-shot should still be returned.
+            if repeat:
+                now = time.time()
+                if due <= now:
+                    due = reminders_mod.next_occurrence(due, repeat, now) or due
+            r = self.store.add(args.get("text", "").strip(), due, repeat=repeat)
+            when = datetime.fromtimestamp(r.due_at).strftime("%a %b %d, %H:%M")
             cadence = f", then {r.repeat}" if r.repeat else ""
             return f"kept: \"{r.text}\" — will return it {when}{cadence} (id {r.id})"
         if name == "list_reminders":
