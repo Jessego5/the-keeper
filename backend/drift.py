@@ -109,7 +109,10 @@ question and the relevant things it keeps about the person, write ONE insight: a
 higher-level understanding that FOLLOWS FROM those facts — a pattern, a tension, a \
 likely need — not a restatement of any single fact. Ground it only in what is given; \
 never invent events. Write it as the companion's own quiet conclusion about the \
-person, one sentence (e.g. "She keeps circling back to what she left unfinished"). \
+person, one sentence (e.g. "They keep circling back to what they left unfinished"). \
+The person's gender is NOT known. Always write about them as "they/them" — never "he", \
+"she", "his" or "her" — unless their own words established it, in which case use what \
+they said. Inventing a gender is inventing a fact about them, which you must never do. \
 Prefix it with an importance from 1 to 10 in brackets, e.g. [7]. If the facts support \
 no honest higher-level read, output exactly NONE."""
 

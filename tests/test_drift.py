@@ -1,4 +1,5 @@
 """Tier 1 — drift / idle self-reflection (drift.py). No key: stub generator."""
+import re
 import time
 import pytest
 import drift
@@ -123,3 +124,21 @@ def test_maybe_drift_synthesizes_when_rich(rich_store, log):
                           last_drift_at=time.time() - 4 * 3600)
     assert r is not None
     assert any(f.kind == "insight" for f in rich_store.facts)
+
+
+# --- the insight prompt must not seed a gender --- #
+
+def test_insight_prompt_carries_no_gendered_example():
+    """Regression: the prompt's one-shot example read "She keeps circling back to what
+    she left unfinished", and the model copied the gender — every insight it wrote
+    called the person "he". Those land in facts.jsonl as kind=insight and feed back
+    through recall, so an invented fact about the person compounds every turn."""
+    prompt = drift._INSIGHT_SYSTEM
+    gendered = re.findall(r"\b(he|she|his|her|him|hers)\b", prompt, re.I)
+    # "never he, she, his or her" is the instruction naming them — strip the ban line
+    instruction = prompt[prompt.find("The person's gender is NOT known"):]
+    leaked = re.findall(r"\b(he|she|his|her|him|hers)\b",
+                        prompt.replace(instruction, ""), re.I)
+    assert not leaked, f"gendered wording outside the ban: {leaked}"
+    assert "they" in prompt.lower()
+    assert "gender is NOT known" in prompt
