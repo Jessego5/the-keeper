@@ -39,7 +39,7 @@ Keep the **trace** open (`/trace-view`) to watch every tool fire.
 
 ## A. Conversation & voice
 - [ ] **Oceanic voice** — answers in the Keeper's spare, watery register. *Try:* `i've been feeling stuck lately`
-- [ ] **Truthfulness** — a plain question gets a real a nswer, not metaphor. *Try:* `what temperature does water boil at?`
+- [ ] **Truthfulness** — a plain question gets a real answer, not metaphor. *Try:* `what temperature does water boil at?`
 - [ ] **Emotional register (water-states)** — frozen / tidal / turn, chosen from your words. *Try:* `i feel numb and far away` (frozen) vs `i had a good day today` (tidal). See `register` in the trace.
 - [ ] **Register continuity** — a neutral follow-up inherits the register, doesn't reset. *Try:* say something sad, then `what should i do` — it stays with the cold.
 - [ ] **Mood sensing (two-layer)** — keyword lexicon + local Model2Vec classifier for implicit mood. *Try:* `i don't know why i even bother` → `mood` shows in the trace.
@@ -49,7 +49,7 @@ Keep the **trace** open (`/trace-view`) to watch every tool fire.
 - [ ] **Importance weighting** — big things score higher. *Try:* say `my mother is in the hospital` and `i ran out of oat milk`; view `memory_store/facts.jsonl` — hospital `imp` high, oat milk low.
 - [ ] **Hybrid retrieval (BM25 + semantic)** — recalls by exact term AND meaning. *Try:* `tell me about my sibling` → surfaces the brother fact (no shared word).
 - [ ] **Reranking** — an LLM reorders candidates for the best few. *(on the chat path; see it in `/trace` when many facts exist)*
-- [ ] **Relevance gate** — a vague request that matches nothing recalls **nothing** (no recitation). *Try:* `help me write things down` → trace shows `memory injected: (empty)`.
+- [ ] **Relevance gate** — a vague request that matches nothing recalls **nothing** (no recitation). *Try:* `help me write things down` → trace shows `memory injected: (empty)`. *(Only in a store with no high-importance fact: anything scored ≥8 is **ambient** by design and stays in mind regardless of the cue — so run this before the importance item, or on a fresh store.)*
 - [ ] **Semantic dedup** — the same fact reworded doesn't duplicate. *Try:* `Sam is my brother` then `my brother is called Sam` → still one fact.
 - [ ] **Temporal / change-aware (the tide)** — a fact that updates an old one supersedes it, history kept. *Try:* `i stopped painting in march` then `actually i started painting again` → ask `how's my painting going?`; `changes_tracked` rises in `/state`.
 - [ ] **Cross-session memory** — facts from one conversation surface in another. *Try:* mention something, click **+ new** in the sidebar, ask about it in the fresh chat.
@@ -64,7 +64,7 @@ Keep the **trace** open (`/trace-view`) to watch every tool fire.
 - [ ] **Time / timezone** (MCP) — *Try:* `what day is it, and what time in Tokyo?`
 - [ ] **Read-only safety** — writes/escapes are blocked. *Try (terminal):* the snippet in `TRY_IT.md §4` → `no such tool: files__write_file`.
 - [ ] **Run Python (code-as-action)** — computes exactly. *Try:* `if i save $45 a week, how much over 3 years? work it out exactly`
-- [ ] **Journal (its one write)** — append-only. *Try:* `keep a note: the gallery show is in July`, then `what have you kept?`
+- [ ] **Journal (its one write)** — append-only. *Try:* `keep a note: the gallery show is in July`, then `what's in your journal?`. *(Ask for the journal by name — a bare "what have you kept?" is ambiguous with the memory it also keeps, and answers from facts instead.)*
 
 ## D. The agent — goals it pursues over time
 - [ ] **Goal + planning** — decomposes a wish into steps. *Try:* `help me get back to painting, work on it with me`
@@ -78,7 +78,7 @@ Keep the **trace** open (`/trace-view`) to watch every tool fire.
 ## E. Multi-agent (specialists)
 - [ ] **Specialists** — researcher / archivist / scribe / analyst. *Try:* `have your researcher dig into what a watercolor setup costs`
 - [ ] **Delegate (route to one)** — picks the right specialist. *(same as above)*
-- [ ] **Orchestration (decompose → parallel → synthesize)** — *Try:* `find a typical price for a beginner watercolor set and work out the cost per week over a year` → terminal/`/trace` shows two specialists.
+- [ ] **Orchestration (decompose → parallel → synthesize)** — *Try:* `go compare watercolor and gouache for a beginner and get back to me` → terminal shows `[bg] … started`, then parallel specialists and one synthesized answer. *(The inline phrasing often answers in one turn with search + run_python instead of delegating — orchestration lives on the background path.)*
 - [ ] **Background delegation (come back later)** — *Try:* `go look into watercolor vs gouache and get back to me` → immediate ack, `working_on` in `/state`, a new line + banner minutes later.
 - [ ] **Graceful step budgets** — a specialist running out of steps wraps up cleanly. *(internal; verified by behavior)*
 - [ ] **A2A — the Keeper as an agent** — *Try (terminal):* `curl -s localhost:8790/.well-known/agent.json | python3 -m json.tool` (its Agent Card).
@@ -107,7 +107,7 @@ Keep the **trace** open (`/trace-view`) to watch every tool fire.
 
 ## I. Under the hood
 - [ ] **Voice fidelity harness** — `.venv/bin/python backend/voice_test.py` (scores lines across every mode).
-- [ ] **Test suite** — `.venv/bin/python -m pytest -q` (~213 tests, offline).
+- [ ] **Test suite** — `.venv/bin/python -m pytest -q` (~233 tests, offline; evals excluded by default).
 
 ---
 
