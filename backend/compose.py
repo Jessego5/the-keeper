@@ -218,6 +218,7 @@ def openai_generator(
     model: str = "gpt-4o",
     fast: str = "gpt-4o-mini",
     max_tokens: int = 600,     # room for re-voiced tool answers; short lines stay short
+    fast_max_tokens: int = 600,   # see fast_model below — a CAP, never a target
 ) -> tuple[Generator, Generator]:
     """Build (generate, fast_model) backed by the OpenAI API.
 
@@ -249,7 +250,13 @@ def openai_generator(
         return _call(model, system, user, max_tokens)
 
     def fast_model(system: str, user: str) -> str:
-        return _call(fast, system, user, 128)
+        # This was capped at 128 tokens, which is plenty for what the fast model was
+        # first used for (a one-word SUPERSEDES/DISTINCT verdict, a rerank list, the
+        # voice rubric) but silently truncated everything else. Background research
+        # is synthesized AND re-voiced through this same callable, so a multi-
+        # paragraph answer arrived cut off mid-sentence at ~640 characters. max_tokens
+        # is only an upper bound — a short verdict still costs one short answer.
+        return _call(fast, system, user, fast_max_tokens)
 
     return generate, fast_model
 
