@@ -152,6 +152,13 @@ def synthesize(store: memory.MemoryStore, generate: compose.Generator,
         text = _IMP_PREFIX_RE.sub("", raw).strip()
         if not text or text.upper().strip(".!") == "NONE":
             continue
+        # The same water-poetry guard distill uses. Reflection reaches the store by a
+        # different door, so the filter added there never covered it: lines like "The
+        # tide brought back what you gave the water in spring" were landing as
+        # kind=insight — the Keeper's own voice stored as a read of the person, then
+        # recalled back to it as something it had understood.
+        if memory._is_junk_fact(text):
+            continue
         key = text.lower()
         if key in seen:
             continue
