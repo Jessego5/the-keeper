@@ -263,3 +263,34 @@ async def test_goal_tools_graceful_without_store(tmp_path):
         reminders_mod.ReminderStore(tmp_path / "r.jsonl"))
     assert "cannot take on goals" in await bare.call("set_goal", {"title": "x"})
     assert "not holding" in await bare.call("list_goals", {})
+
+
+# --- remind_me: a recurring reminder must not be born already overdue --- #
+
+@pytest.fixture
+def rt(tmp_path):
+    return native_tools.NativeTools(
+        reminders_mod.ReminderStore(tmp_path / "r.jsonl"))
+
+
+async def test_recurring_reminder_rolls_past_slot_forward(rt):
+    """Regression: "every day at 9am" said in the afternoon arrives as TODAY's 9am,
+    already gone. Stored as-is it fired instantly, once, before the re-arm."""
+    import time as _t
+    from datetime import datetime
+    past = datetime.fromtimestamp(_t.time() - 5 * 3600).isoformat(timespec="seconds")
+    await rt.call("remind_me", {"text": "water the plants",
+                                "due_iso": past, "repeat": "daily"})
+    r = rt.store.pending()[0]
+    assert r.due_at > _t.time(), "a daily reminder was created already overdue"
+    assert rt.store.due(_t.time()) == []
+
+
+async def test_overdue_one_shot_is_left_alone(rt):
+    """The other direction: a one-shot whose time genuinely passed must still come
+    back, not be silently pushed into the future."""
+    import time as _t
+    from datetime import datetime
+    past = datetime.fromtimestamp(_t.time() - 60).isoformat(timespec="seconds")
+    await rt.call("remind_me", {"text": "call the dentist", "due_iso": past})
+    assert [x.text for x in rt.store.due(_t.time())] == ["call the dentist"]
