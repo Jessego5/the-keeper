@@ -37,3 +37,35 @@ def test_floor_holds_regardless_of_speed():
     blocked = [server.within_reach_floor(spoke_at, now=spoke_at + s)
                for s in range(0, int(GAP))]
     assert all(blocked)   # every second inside the window is silent
+
+
+# --- the goal clock must follow the demo speed knob --- #
+
+import tasks
+
+
+def test_goal_check_interval_compresses_with_speed():
+    """Regression: tasks.DEFAULT_CHECK_INTERVAL_S is 6 REAL hours, and the `speed`
+    knob compressed the battery and the drift clock but not this one. So after a
+    goal's first step it went quiet for 6 real hours whatever the speed — which made
+    the documented "crank speed to see autonomous execution / nudges" trigger
+    impossible, and a [person] step was never nudged in a demo."""
+    original = server.STATE.config.speed
+    try:
+        server.STATE.config.speed = 1.0
+        assert server._goal_check_interval() == tasks.DEFAULT_CHECK_INTERVAL_S
+        server.STATE.config.speed = 600.0
+        assert server._goal_check_interval() == tasks.DEFAULT_CHECK_INTERVAL_S / 600.0
+        # 6h at 600x is 36s — inside a demo window, which is the whole point
+        assert server._goal_check_interval() < 60
+    finally:
+        server.STATE.config.speed = original
+
+
+def test_goal_check_interval_never_speeds_below_real_time():
+    original = server.STATE.config.speed
+    try:
+        server.STATE.config.speed = 0.0          # nonsense input
+        assert server._goal_check_interval() == tasks.DEFAULT_CHECK_INTERVAL_S
+    finally:
+        server.STATE.config.speed = original

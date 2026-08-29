@@ -519,6 +519,18 @@ async def _maybe_routine(pres: sensors.Presence) -> bool:
     return True
 
 
+def _goal_check_interval() -> float:
+    """How long to wait before working a goal again, on the DEMO clock.
+
+    tasks.DEFAULT_CHECK_INTERVAL_S is 6 real hours. The `speed` knob compresses the
+    battery and the drift clock but not this one, so before this existed a goal went
+    quiet for 6 real hours after its first step — which meant the documented
+    "crank speed to see nudges/autonomous execution" trigger could never fire, and
+    a person-step was never nudged in a demo. Compress it the same way drift is.
+    """
+    return tasks.DEFAULT_CHECK_INTERVAL_S / max(STATE.config.speed, 1.0)
+
+
 async def _maybe_advance_goal() -> bool:
     """The agent at work: if a goal is due, take its next step. A [keeper] step it
     EXECUTES itself with its tools (ReAct); a [person] step it NUDGES, then waits for
@@ -556,9 +568,9 @@ async def _nudge_goal_step(goal, step, water) -> bool:
         memory=memory.recall(STATE.store, goal.title, k=3, embed=STATE.embed),
         context=context)
     if result.silent or not result.text:
-        STATE.goals.touch(goal)
+        STATE.goals.touch(goal, _goal_check_interval())
         return False
-    STATE.goals.touch(goal)              # nudge, don't complete
+    STATE.goals.touch(goal, _goal_check_interval())   # nudge, don't complete
     await _deliver_proactive(result.text)
     done, total = goal.progress()
     print(f"[goal] {goal.id} nudged {done}/{total}: {step.text[:50]}", flush=True)
@@ -579,12 +591,12 @@ async def _execute_goal_step(goal, step, water) -> bool:
             STATE.fast or STATE.generate, mcp=STATE.mcp, native=sub_native)
     except Exception as exc:  # noqa: BLE001
         print(f"[goal] execute error: {exc}", flush=True)
-        STATE.goals.touch(goal)
+        STATE.goals.touch(goal, _goal_check_interval())
         return False
     result = (res.result or "").strip()
     if not result:
         step.actor = "person"            # hand it back — nudge them next time
-        STATE.goals.touch(goal)
+        STATE.goals.touch(goal, _goal_check_interval())
         print(f"[goal] {goal.id} sub-agent found nothing, handed back: "
               f"{step.text[:40]}", flush=True)
         return False
@@ -592,7 +604,8 @@ async def _execute_goal_step(goal, step, water) -> bool:
     voiced = await asyncio.to_thread(
         compose.revoice, result, water, generate=STATE.fast or STATE.generate,
         memory=mem)
-    STATE.goals.advance(goal, note=f"[{res.who()}] {result[:130]}")   # who did it
+    STATE.goals.advance(goal, note=f"[{res.who()}] {result[:130]}",   # who did it
+                        interval_s=_goal_check_interval())
     await _deliver_proactive(voiced)
     done, total = goal.progress()
     print(f"[goal] {goal.id} EXECUTED via {res.who()} {done}/{total}: "
