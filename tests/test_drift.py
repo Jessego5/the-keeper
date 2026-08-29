@@ -142,3 +142,39 @@ def test_insight_prompt_carries_no_gendered_example():
     assert not leaked, f"gendered wording outside the ban: {leaked}"
     assert "they" in prompt.lower()
     assert "gender is NOT known" in prompt
+
+
+# --- reflection must not store the Keeper's own water-poetry as an insight --- #
+
+def test_synthesize_drops_water_poetry_insights(tmp_path):
+    """Regression: distill filters the Keeper's own motif lines out of facts, but
+    reflection reaches the store by a different door and skipped that guard — so
+    "The tide brought back what you gave the water in spring" was landing as
+    kind=insight, the voice stored as a read of the person and recalled back to it."""
+    store = memory.MemoryStore(tmp_path / "facts.jsonl")
+    for t in ("Has a brother, Sam.", "Is a painter.", "Turns 30 next month."):
+        store.add(t, "identity")
+
+    def poetic(system, user):
+        if "questions" in system.lower() or "ask the" in system.lower():
+            return "What is he carrying?"
+        return "[7] The tide brought back what you gave the water in spring."
+
+    made = drift.synthesize(store, poetic)
+    assert made == []
+    assert [f for f in store.facts if f.kind == "insight"] == []
+
+
+def test_synthesize_keeps_a_plain_insight(tmp_path):
+    """The filter must not eat legitimate insights that merely mention water once."""
+    store = memory.MemoryStore(tmp_path / "facts.jsonl")
+    for t in ("Has a brother, Sam.", "Is a painter.", "Turns 30 next month."):
+        store.add(t, "identity")
+
+    def plain(system, user):
+        if "questions" in system.lower() or "ask the" in system.lower():
+            return "What are they moving through?"
+        return "[7] They keep circling back to what they left unfinished."
+
+    made = drift.synthesize(store, plain)
+    assert len(made) == 1 and "circling back" in made[0].text
