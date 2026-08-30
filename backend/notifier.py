@@ -46,6 +46,13 @@ def available() -> str:
     return "terminal-notifier" if shutil.which("terminal-notifier") else "osascript"
 
 
+def _as_string(text: str) -> str:
+    """Make `text` safe to sit inside an AppleScript double-quoted string."""
+    out = text.replace("\\", "")          # drop escapes before anything else
+    out = out.replace('"', "'")           # cannot close the string
+    return " ".join(out.split())          # collapse newlines/tabs into spaces
+
+
 def notify(title: str, message: str) -> None:
     """Fire one native notification. Blocking but fast (~tens of ms); call via
     asyncio.to_thread from an async loop. Never raises."""
@@ -62,9 +69,14 @@ def notify(title: str, message: str) -> None:
                 cmd += ["-contentImage", str(ICON)]
             subprocess.run(cmd, timeout=5, capture_output=True)
         else:
-            # osascript: escape double quotes for the AppleScript string.
-            t = title.replace('"', "'")
-            m = message.replace('"', "'")
+            # osascript: the text is interpolated into an AppleScript string, so it
+            # has to survive AppleScript's own escaping. Backslashes go FIRST: "\\"
+            # is an escape character there, so a message ending in one would escape
+            # the closing quote and let the string run on into the script. Newlines
+            # would break the one-line -e form. (terminal-notifier above takes argv,
+            # so it needs none of this.)
+            t = _as_string(title)
+            m = _as_string(message)
             subprocess.run(
                 ["osascript", "-e",
                  f'display notification "{m}" with title "{t}"'],
