@@ -30,15 +30,21 @@ _IS_MAC = sys.platform == "darwin"
 
 # Import the macOS frameworks once, tolerantly. If pyobjc isn't present we simply
 # lose the lock/app signals and keep idle (which is pure shell).
+# Why an import failed, kept so capabilities() can say WHY a signal is missing
+# instead of just reporting it absent.
+_IMPORT_ERRORS: dict[str, str] = {}
+
 try:  # pragma: no cover - platform dependent
     from AppKit import NSWorkspace  # type: ignore
-except Exception:  # noqa: BLE001
+except Exception as exc:  # noqa: BLE001
     NSWorkspace = None
+    _IMPORT_ERRORS["frontmost_app"] = f"{type(exc).__name__}: {exc}"
 
 try:  # pragma: no cover - platform dependent
     from Quartz import CGSessionCopyCurrentDictionary  # type: ignore
-except Exception:  # noqa: BLE001
+except Exception as exc:  # noqa: BLE001
     CGSessionCopyCurrentDictionary = None
+    _IMPORT_ERRORS["screen_locked"] = f"{type(exc).__name__}: {exc}"
 
 
 @dataclass(frozen=True)
@@ -161,3 +167,34 @@ if __name__ == "__main__":
     print("Presence:", p)
     print("context line:", repr(p.to_context_line()))
     print("available:", p.available)
+
+
+def capabilities() -> dict[str, str]:
+    """Which presence signals this machine can actually provide — {name: status},
+    where status is "live" or the reason it is not.
+
+    The individual readers return None on failure and stay SILENT on purpose: the
+    proactive loop reads presence every few seconds, so logging per failure would
+    flood the log. The cost of that silence is that a permanently blind sensor is
+    invisible — the "house" panel just shows defaults and looks like it works. This
+    is read once at startup and logged, the way the mood classifier reports itself.
+    """
+    if not _IS_MAC:
+        reason = f"unsupported platform ({sys.platform}); macOS only"
+        return {name: reason
+                for name in ("idle_seconds", "screen_locked", "frontmost_app")}
+
+    out: dict[str, str] = {}
+    out["idle_seconds"] = ("live" if read_idle_seconds() is not None
+                           else "ioreg gave no HIDIdleTime")
+    if CGSessionCopyCurrentDictionary is None:
+        out["screen_locked"] = _IMPORT_ERRORS.get("screen_locked", "Quartz unavailable")
+    else:
+        out["screen_locked"] = ("live" if read_screen_locked() is not None
+                                else "CGSessionCopyCurrentDictionary gave nothing")
+    if NSWorkspace is None:
+        out["frontmost_app"] = _IMPORT_ERRORS.get("frontmost_app", "AppKit unavailable")
+    else:
+        out["frontmost_app"] = ("live" if read_frontmost_app() is not None
+                                else "NSWorkspace gave no frontmost app")
+    return out

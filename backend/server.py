@@ -339,6 +339,16 @@ async def lifespan(app: FastAPI):
     STATE.mood_signal = mood.build_local_mood_signal()   # local; None -> keyword
     print(f"[mood] classifier: {'model2vec' if STATE.mood_signal else 'keyword'}",
           flush=True)
+    # Presence readers fail silently per call (the loop reads every few seconds and
+    # must not flood), so say once, here, which of them this machine can actually
+    # provide — otherwise a blind sensor just shows defaults and looks healthy.
+    caps = sensors.capabilities()
+    live = [n for n, st in caps.items() if st == "live"]
+    print(f"[sensors] live: {', '.join(live) if live else 'none'}"
+          f" ({len(live)}/{len(caps)})", flush=True)
+    for name, status in caps.items():
+        if status != "live":
+            print(f"[sensors] {name} unavailable — {status}", flush=True)
     STATE.current_key = STATE.sessions.most_recent_key()  # resume last on start
     STATE.wake = asyncio.Event()
     # Delivery surfaces: web + native banner always; Telegram if a token is set.

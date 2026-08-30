@@ -42,3 +42,29 @@ def test_live_read_returns_signals():
 def test_idle_command_parses_a_number():
     val = sensors.read_idle_seconds()
     assert val is not None and val >= 0
+
+
+# --- capability reporting --- #
+
+def test_capabilities_names_every_signal():
+    """Every presence signal must be accounted for, on any platform. The readers
+    fail silently by design (the proactive loop reads every few seconds and must not
+    flood the log), so this report is the only place a permanently blind sensor
+    becomes visible instead of quietly showing defaults."""
+    caps = sensors.capabilities()
+    assert set(caps) == {"idle_seconds", "screen_locked", "frontmost_app"}
+    assert all(isinstance(v, str) and v for v in caps.values())
+
+
+@requires_mac
+def test_capabilities_report_live_on_mac():
+    caps = sensors.capabilities()
+    assert caps["idle_seconds"] == "live"
+
+
+def test_capabilities_explain_themselves_off_mac(monkeypatch):
+    """Off-mac every signal must say WHY, not just be absent."""
+    monkeypatch.setattr(sensors, "_IS_MAC", False)
+    caps = sensors.capabilities()
+    assert all(v != "live" for v in caps.values())
+    assert all("platform" in v for v in caps.values())

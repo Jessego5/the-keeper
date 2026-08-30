@@ -147,3 +147,17 @@ async def test_proactive_loop_reaches_out(client):
         assert payload["content"]
     finally:
         server.STATE.listeners.discard(q)
+
+
+# --- notifier: text that must survive AppleScript --- #
+
+def test_applescript_string_cannot_escape_its_quotes():
+    """Regression: the osascript fallback escaped double quotes but not backslashes.
+    AppleScript treats "\\" as an escape, so a message ending in one escaped the
+    CLOSING quote and let the string run on into the script. The text is model
+    written, and the model reads fetched web pages, so it is not fully trusted."""
+    import notifier
+    assert "\\" not in notifier._as_string("all is well\\")
+    assert '"' not in notifier._as_string('he said "hi"')
+    assert "\n" not in notifier._as_string("line one\nline two")
+    assert notifier._as_string("plain message") == "plain message"

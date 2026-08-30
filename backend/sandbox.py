@@ -4,14 +4,28 @@ The most powerful action space is code. This lets the Keeper (and its analyst
 sub-agent) COMPUTE — calculate, transform, parse, reason numerically — the things
 fixed tools can't. It's the reference agent's shell.py, scoped down to Python and fenced.
 
-Threat model, stated plainly: this runs code the MODEL writes to help the person, not
-untrusted attacker input. The fences — a separate process in isolated mode (`-I`), a
-hard wall-clock timeout, CPU + memory rlimits, a throwaway temp working directory, a
-stripped environment, and capped output — stop runaways and accidents (infinite loops,
-memory blowups, floods of output). What they do NOT do: block network access or the
-filesystem, or defend against deliberately malicious code — that needs a container /
-nsjail / macOS sandbox-exec profile. Kept this way on purpose: legible, dependency-free,
-right-sized for a single-user companion running its own helper code.
+Threat model, stated plainly. The fences — a separate process in isolated mode (`-I`),
+a hard wall-clock timeout, CPU + memory rlimits, a throwaway temp working directory, a
+stripped environment (HOME points at that temp dir), and capped output — stop runaways
+and accidents: infinite loops, memory blowups, floods of output.
+
+What they do NOT do: block the filesystem or the network. Measured, not assumed — code
+run here can read backend/.env (which holds the API key) by absolute path, list the
+real home directory, and open outbound sockets. The temp cwd/HOME only redirect
+relative paths and `~`.
+
+READ THIS BEFORE ASSUMING THE INPUT IS TRUSTED. An earlier version of this note said
+the code here is written by the model "to help the person, not untrusted attacker
+input". That is not true of this app. The Keeper's own showcase flow searches the web,
+fetches a page, and calls run_python IN THE SAME TURN, so attacker-controlled text from
+a fetched page reaches the same model that then writes this code. A prompt injection in
+a page is therefore a path to reading local secrets and sending them out.
+
+Closing that needs real isolation — the app's own Dockerfile with no host mount beyond
+keeper_sandbox/, or a macOS sandbox-exec profile (fiddly: a naive deny-by-default
+profile aborts CPython at startup) — or a rule that no turn may both fetch untrusted
+content and run code. Until one of those lands, treat this as a single-user, local,
+trusted-network tool and do not point it at hostile pages.
 """
 
 from __future__ import annotations
