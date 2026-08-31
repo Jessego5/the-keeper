@@ -20,10 +20,24 @@ from __future__ import annotations
 import json
 import re
 from contextlib import AsyncExitStack
+import os
 from pathlib import Path
 from typing import Any
 
 CONFIG_PATH = Path(__file__).resolve().parent / "mcp.json"
+
+# Where the Keeper's files live. mcp.json can write ${KEEPER_ROOT} instead of an
+# absolute path, so one config works on the host AND in the container, where the
+# app sits at /app rather than the developer's home directory. Absolute paths in
+# mcp.json still work untouched.
+KEEPER_ROOT = os.environ.get(
+    "KEEPER_ROOT", str(Path(__file__).resolve().parent.parent))
+
+
+def _expand(args: list) -> list:
+    """Substitute ${KEEPER_ROOT} in server args."""
+    return [a.replace("${KEEPER_ROOT}", KEEPER_ROOT) if isinstance(a, str) else a
+            for a in args]
 
 # OpenAI tool names must match ^[a-zA-Z0-9_-]+$, so we join server+tool with "__".
 _QUALIFY = "__"
@@ -99,7 +113,7 @@ class MCPManager:
             deny = set(spec.get("deny") or [])
             try:
                 params = StdioServerParameters(
-                    command=spec["command"], args=spec.get("args", []),
+                    command=spec["command"], args=_expand(spec.get("args", [])),
                     env=spec.get("env"))
                 read, write = await self._stack.enter_async_context(
                     stdio_client(params))

@@ -100,3 +100,29 @@ def test_missing_config_yields_no_tools(tmp_path):
     # No mcp.json -> zero tools, Keeper behaves as before (no crash).
     mgr = tools.MCPManager.from_config(tmp_path / "absent.json")
     assert mgr.openai_tools() == [] and not mgr.has_tools
+
+
+# --- portable server paths --- #
+
+def test_keeper_root_expands_in_server_args(monkeypatch):
+    """mcp.json used to hardcode /Users/<name>/rusty-companion, so the same config
+    could not run in the container, where the app lives at /app. ${KEEPER_ROOT}
+    keeps one config working in both."""
+    monkeypatch.setattr(tools, "KEEPER_ROOT", "/app")
+    out = tools._expand(["-y", "pkg", "${KEEPER_ROOT}/keeper_sandbox"])
+    assert out == ["-y", "pkg", "/app/keeper_sandbox"]
+
+
+def test_absolute_args_are_left_alone(monkeypatch):
+    monkeypatch.setattr(tools, "KEEPER_ROOT", "/app")
+    assert tools._expand(["/etc/hosts", 3]) == ["/etc/hosts", 3]
+
+
+def test_shipped_config_uses_no_developer_path():
+    """Guard against an absolute home path creeping back into the tracked config."""
+    import json
+    from pathlib import Path
+    for name in ("mcp.json", "mcp.example.json"):
+        p = Path(tools.__file__).resolve().parent / name
+        if p.exists():
+            assert "/Users/" not in p.read_text(), f"{name} hardcodes a home path"
