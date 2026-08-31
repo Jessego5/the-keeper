@@ -7,3 +7,9 @@ evals/results/
 .keeper.log
 tests/
 DESIGN_NOTES.md
+
+# Secrets must never be baked into an image layer. The key reaches the container
+# at RUN time via compose's env_file, so the file itself is not needed inside —
+# and sandbox.py strips the child environment, which means excluding it here is
+# what puts the credential out of run_python's reach entirely.
+**/.env
