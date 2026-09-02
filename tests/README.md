@@ -40,6 +40,28 @@ in 8 proactive lines", "sad → frozen", "a plain question contains the real ans
 - `test_mcp.py::test_sandbox_escape_refused` / `test_read_only_blocks_mutating_tools` — MCP safety
 - `test_server.py::test_proactive_loop_reaches_out` — the battery actually delivers a line
 
+## Every fake has a real-model twin
+
+Three bugs this week lived where a Tier 1 test replaced the model with a fake that
+returned output the real model does not produce — distill, the supersede judge,
+and the goal matcher. The machinery was fine each time; the boundary was wrong,
+and the suite stayed green.
+
+So every behavioural fake in the unit tier is now paired with a Tier 3 eval that
+drives the real thing:
+
+| Faked in Tier 1 | Real-model twin |
+|---|---|
+| `distill` generator | `evals/test_distill.py` |
+| `_supersede_judge` | `evals/test_supersede.py` |
+| drift `_stub` | `evals/test_reflection.py` |
+| `revoice` generator | `evals/test_revoice.py` |
+| embedder (`_fake_embed`) | `evals/test_recall_gate.py` |
+| `rerank`, `route`, `critique_plan`, `plan`, `_decompose` | `evals/test_model_seams.py` |
+
+Adding a fake generator to a Tier 1 test means adding its twin here too —
+otherwise the assertion is about output you invented.
+
 ## CI
 
 | Workflow | When | Runs |
