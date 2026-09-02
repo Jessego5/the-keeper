@@ -70,6 +70,24 @@ def _reads_as_supersedes(verdict: str) -> bool:
     return any(t.startswith("SUPER") for t in re.findall(r"[A-Z]+", v))
 
 
+_WARMING_SYSTEM = """Two facts about the same person: an OLD one that is no longer \
+true, and the NEW one that replaced it. Did their situation get BETTER, or not? \
+Answer WARMER if the change is an improvement, recovery, or a return to something \
+good. Answer COLDER if it is a loss, a setback, or a worsening. Answer NEITHER if \
+it is a factual update carrying no direction. One word only."""
+
+
+def _reads_as_warmer(verdict: str) -> bool:
+    """Did the change judge say WARMER? Loose about spelling for the same reason
+    _reads_as_supersedes is: the judge is a cheap model writing free text, and it
+    misspells its own verdict often enough to matter. COLDER and NEITHER are both
+    safe defaults, so anything unrecognised falls through to not-warmer."""
+    v = (verdict or "").strip().upper()
+    if "COLD" in v or "NEITHER" in v or "NOT" in v:
+        return False
+    return any(t.startswith("WARM") for t in re.findall(r"[A-Z]+", v))
+
+
 STORE_DIR = Path(__file__).resolve().parent.parent / "memory_store"
 STORE_PATH = STORE_DIR / "facts.jsonl"
 
@@ -131,6 +149,10 @@ class Fact:
     id: str = field(default_factory=lambda: uuid.uuid4().hex[:8])
     valid_until: Optional[float] = None        # None => still true; else when it changed
     supersedes: Optional[str] = None           # id of the fact this one replaced
+    # Direction of that change, judged once when it happens (never on the hot
+    # path). True only for a reversal INTO something better — the thing the
+    # persona calls the ice going out. See recent_warmings().
+    warmed: Optional[bool] = None
 
     @property
     def active(self) -> bool:
@@ -221,6 +243,15 @@ class MemoryStore:
             if old is not None:
                 old.valid_until = time.time()      # the tide goes out on the old
                 fact.supersedes = old.id           # the new keeps what it replaced
+                # One extra judge call, here rather than per turn: this runs in the
+                # async distill path, so the person never waits for it.
+                try:
+                    verdict = judge(_WARMING_SYSTEM,
+                                    f"OLD: {old.text}\nNEW: {text}") or ""
+                    fact.warmed = _reads_as_warmer(verdict)
+                except Exception as exc:  # noqa: BLE001
+                    print(f"[memory] warming judge failed: "
+                          f"{type(exc).__name__}: {exc}", flush=True)
         self.facts.append(fact)
         self._save()
         return fact
@@ -259,6 +290,21 @@ class MemoryStore:
                   flush=True)
             return None
         return best if _reads_as_supersedes(verdict) else None
+
+    def recent_warmings(self, within_s: float = 7 * 86400.0,
+                        now: Optional[float] = None) -> list:
+        """Facts that recently replaced a bleaker one — reversals INTO something
+        better, most recent first.
+
+        This is what earns the `turn` register. A reversal cannot be seen in a
+        single message, which is why detecting it from the message alone never
+        worked: "the ice is going out" is a comparison between two points in time,
+        and only the store holds both.
+        """
+        now = now or time.time()
+        out = [f for f in self.facts
+               if f.warmed and f.active and (now - f.created) <= within_s]
+        return sorted(out, key=lambda f: f.created, reverse=True)
 
     def changes(self, within_s: Optional[float] = None,
                 now: Optional[float] = None) -> list:

@@ -69,3 +69,86 @@ def test_goal_check_interval_never_speeds_below_real_time():
         assert server._goal_check_interval() == tasks.DEFAULT_CHECK_INTERVAL_S
     finally:
         server.STATE.config.speed = original
+
+
+# --- `turn` must be EARNED by the store, not matched in the message --- #
+
+
+
+class _Fact:
+    def __init__(self, text, warmed=True, created=None, active=True):
+        import time as _t
+        self.text, self.warmed = text, warmed
+        self.created = created if created is not None else _t.time()
+        self.active = active
+
+
+class _Store:
+    def __init__(self, warmings): self._w = warmings
+    def recent_warmings(self, *a, **k): return self._w
+
+
+def _with_store(monkeypatch, warmings):
+    monkeypatch.setattr(server.STATE, "store", _Store(warmings))
+
+
+def test_turn_is_earned_when_a_relevant_reversal_exists(monkeypatch):
+    _with_store(monkeypatch, [_Fact("Started painting again.")])
+    mem = "- Started painting again.\n- Is a painter."
+    assert server._resolve_turn("how's the painting", mem, "tidal") == "turn"
+
+
+def test_an_irrelevant_reversal_does_not_earn_it(monkeypatch):
+    """THE trap the naive version falls into. Any fact scored >= 8 is ambient and
+    surfaces regardless of the cue, so co-presence alone would declare the ice
+    going out on whatever happens to be in mind. Requiring the warming itself to
+    have reached `mem` is what prevents that."""
+    _with_store(monkeypatch, [_Fact("Started painting again.")])
+    mem = "- Their mother is in the hospital."      # ambient, and unrelated
+    assert server._resolve_turn("i had a good day", mem, "tidal") == "tidal"
+
+
+def test_frozen_is_never_overridden(monkeypatch):
+    """Someone in the cold is not told their season has turned because the store
+    remembers better days."""
+    _with_store(monkeypatch, [_Fact("Started painting again.")])
+    mem = "- Started painting again."
+    assert server._resolve_turn("i feel numb", mem, "frozen") == "frozen"
+
+
+def test_no_reversal_means_no_turn(monkeypatch):
+    """The greeting case: "hello" classified as turn because a single message was
+    being asked to contain a reversal it cannot hold."""
+    _with_store(monkeypatch, [])
+    assert server._resolve_turn("hello", "", "tidal") == "tidal"
+
+
+def test_a_broken_store_never_costs_the_turn(monkeypatch):
+    class Boom:
+        def recent_warmings(self, *a, **k): raise RuntimeError("disk gone")
+    monkeypatch.setattr(server.STATE, "store", Boom())
+    assert server._resolve_turn("hello", "", "tidal") == "tidal"
+
+
+def test_the_classifier_alone_cannot_produce_a_turn(monkeypatch):
+    """The greeting bug, structurally. "hello" classifies as turn — the rarest
+    register — because a lone sentence was being asked to carry a reversal. With
+    nothing in the store behind it, turn is demoted rather than trusted."""
+    _with_store(monkeypatch, [])
+    assert server._resolve_turn("hello", "", "turn") == "tidal"
+
+
+def test_a_relevant_reversal_keeps_a_turn(monkeypatch):
+    _with_store(monkeypatch, [_Fact("Started painting again.")])
+    mem = "- Started painting again."
+    assert server._resolve_turn("how is the painting going", mem, "turn") == "turn"
+
+
+def test_the_words_must_overlap_the_reversal(monkeypatch):
+    """Learned live: with a small store recall surfaces almost anything for a warm
+    cue, so requiring only that the warming reached `mem` promoted "i had a good
+    day today" on the strength of a painting fact it never mentioned."""
+    _with_store(monkeypatch, [_Fact("Started painting again.")])
+    mem = "- Started painting again."
+    assert server._resolve_turn("i had a good day today", mem, "tidal") == "tidal"
+    assert server._resolve_turn("how is painting going", mem, "tidal") == "turn"
