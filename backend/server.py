@@ -423,6 +423,7 @@ async def chat(body: ChatIn):
     if signal is not None:
         STATE.current_register = signal
     water = STATE.current_register or voice_eval.detect_state(msg)
+    water = _resolve_turn(msg, mem, water)
 
     # Native action tools (reminders + goals + journal + delegate) are always
     # available; MCP tools join when configured. Reaching for a tool — or handing a
@@ -698,6 +699,64 @@ async def _maybe_drift_note() -> None:
             print(f"[drift] reflected: {r.text[:80]}...", flush=True)
     except Exception as exc:  # noqa: BLE001
         print(f"[drift] error: {exc}", flush=True)
+
+
+def _resolve_turn(msg: str, mem: str, water: str) -> str:
+    """Make "turn" reachable ONLY through the store, in both directions.
+
+    persona.py calls it the rarest register — the ice going out — and says to
+    spend it almost never. Chosen from the message alone it fired on "hello",
+    because a single sentence cannot contain a reversal: "the ice is going out" is
+    a comparison between two points in time, and only the store holds both. So:
+
+      DEMOTE  the classifier saying "turn" is not evidence of anything. Without a
+              recorded reversal behind it, fall back to tidal. This is what stops
+              a greeting from being met as a season changing.
+      PROMOTE a person moving (tidal) who is talking about something that really
+              did reverse gets the register the persona describes.
+
+    Never touches frozen: someone in the cold is not told their season has turned
+    because the store remembers better days.
+    """
+    if water == "frozen":
+        return water
+    earned = _warming_behind(msg, mem)
+    if earned is not None:
+        print(f"[register] turn earned by: {earned.text[:60]!r}", flush=True)
+        return "turn"
+    if water == "turn":
+        print("[register] turn not earned by the store — falling back to tidal",
+              flush=True)
+        return "tidal"
+    return water
+
+
+def _warming_behind(msg: str, mem: str):
+    """The recorded reversal this message is actually about, or None.
+
+    Two conditions, and the second is the one that took a live failure to learn.
+    The warming must have survived recall's relevance gate into `mem`, AND the
+    person's own words must overlap it. Recall alone is far too loose: in a small
+    store it surfaces almost anything for a warm cue, so "i had a good day today"
+    was promoted to turn on the strength of a painting fact it never mentioned.
+    """
+    if STATE.store is None:
+        return None
+    try:
+        warmings = STATE.store.recent_warmings()
+    except Exception as exc:  # noqa: BLE001 - a register is never worth a 500
+        print(f"[register] warming lookup failed: {type(exc).__name__}: {exc}",
+              flush=True)
+        return None
+    cue_tokens = memory._tokens(msg)
+    if not cue_tokens:
+        return None
+    for fact in warmings:
+        if not fact.text or fact.text not in mem:
+            continue                      # recall did not judge it relevant
+        if cue_tokens & memory._tokens(fact.text):
+            return fact                   # and they are talking about it
+    return None
 
 
 async def _distill_async(user_msg: str, reply: str) -> None:

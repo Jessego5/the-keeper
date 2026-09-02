@@ -374,3 +374,60 @@ def test_consolidate_leaves_insights_untouched(store):
               "insight", importance=8)
     memory.consolidate(store, _merge_gen, budget=2)
     assert any(f.kind == "insight" for f in store.facts)      # insight never archived
+
+
+# --- warming: the reversal that earns the `turn` register --- #
+
+def _warming_judge(system, user):
+    """Fake judge over a "OLD: ...\nNEW: ..." prompt. Reads only the NEW line —
+    an earlier version matched "again" anywhere and so called a LOSS warmer,
+    because the fact being replaced still contained the word."""
+    new_line = ""
+    for line in user.splitlines():
+        if line.startswith("NEW:"):
+            new_line = line.lower()
+    if "WARMER" in system:
+        return "WARMER" if "again" in new_line else "COLDER"
+    return "SUPERSEDES" if "paint" in user.lower() else "DISTINCT"
+
+
+def test_warming_parse_survives_misspelling_and_defaults_safe():
+    assert memory._reads_as_warmer("WARMER")
+    assert memory._reads_as_warmer("WARMR")        # the judge misspells its verdicts
+    assert not memory._reads_as_warmer("COLDER")
+    assert not memory._reads_as_warmer("NEITHER")
+    assert not memory._reads_as_warmer("")         # unrecognised -> not a turn
+
+
+def test_a_return_is_recorded_as_a_warming(store):
+    store.add("Hasn't painted since March.", "state", embed=_fake_embed_paint)
+    new = store.add("Started painting again this week.", "state",
+                    embed=_fake_embed_paint, judge=_warming_judge)
+    assert new.supersedes is not None
+    assert new.warmed is True
+    assert [f.text for f in store.recent_warmings()] == [new.text]
+
+
+def test_a_loss_is_not_a_warming(store):
+    # the texts must differ under _fake_embed_paint, or semantic dedup merges them
+    # before supersession is ever considered
+    store.add("Started painting again this week.", "state", embed=_fake_embed_paint)
+    new = store.add("Stopped painting in March.", "state",
+                    embed=_fake_embed_paint, judge=_warming_judge)
+    assert new.supersedes is not None, "expected a supersession, not a dedup"
+    assert new.warmed is False
+    assert store.recent_warmings() == []
+
+
+def test_a_stale_warming_stops_counting(store):
+    new = store.add("Started painting again this week.", "state",
+                    embed=_fake_embed_paint, judge=_warming_judge)
+    new.created = 0.0                              # long ago
+    assert store.recent_warmings() == []
+
+
+def test_an_unsuperseded_fact_is_never_a_warming(store):
+    """Only a REVERSAL earns it. A plain new fact, however cheerful, does not."""
+    f = store.add("Had a wonderful day.", "state", embed=_fake_embed_paint)
+    assert f.warmed is None
+    assert store.recent_warmings() == []
