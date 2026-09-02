@@ -198,7 +198,13 @@ class MemoryStore:
         if embed is not None:
             try:
                 vec = embed([text])[0]
-            except Exception:  # noqa: BLE001 - degrade to keyword, never crash
+            except Exception as exc:  # noqa: BLE001 - degrade to keyword, never crash
+                # This one is not recoverable later: the fact is about to be written
+                # with embedding=None and nothing revisits it, so it stays
+                # keyword-only for good. Retry already happened inside the embedder;
+                # reaching here means it really failed, and that must be on record.
+                print(f"[memory] fact stored WITHOUT an embedding "
+                      f"({type(exc).__name__}: {exc}) — {text[:60]!r}", flush=True)
                 vec = None
         dupe = self._find_similar(text, vec)
         if dupe is not None:
@@ -325,7 +331,9 @@ def rerank(cue: str, facts: list, generate: Generator, k: int = 5) -> list:
     listing = "\n".join(f"{i}. {f.text}" for i, f in enumerate(facts))
     try:
         raw = generate(_RERANK_SYSTEM, f"Cue: {cue}\n\nFacts:\n{listing}") or ""
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        print(f"[memory] rerank failed, keeping hybrid order "
+              f"({type(exc).__name__}: {exc})", flush=True)
         return facts[:k]
     picked: list[int] = []
     seen: set[int] = set()
@@ -417,7 +425,11 @@ def rank_facts(facts: list[Fact], cue: str = "", k: int = 5,
     if embed is not None and cue.strip() and any(f.embedding for f in facts):
         try:
             cue_vec = embed([cue])[0]
-        except Exception:  # noqa: BLE001 - degrade to sparse-only
+        except Exception as exc:  # noqa: BLE001 - degrade to sparse-only
+            # Semantic recall silently becoming keyword-only is why a cue like
+            # "tell me about my sibling" can suddenly find nothing.
+            print(f"[memory] recall fell back to keyword-only "
+                  f"({type(exc).__name__}: {exc})", flush=True)
             cue_vec = None
         if cue_vec is not None:
             dense = [max(0.0, _cosine(cue_vec, f.embedding)) if f.embedding

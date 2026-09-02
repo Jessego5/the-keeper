@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Any, Callable, Optional
 
 import persona
+import retry
 import voice_eval
 
 # Load backend/.env (if present) so OPENAI_API_KEY is available without the
@@ -201,7 +202,9 @@ def revoice(text: str, water_state: str = persona.DEFAULT_WATER_STATE, *,
     system = system + "\n\n---\n\n" + _REVOICE_INSTRUCTION
     try:
         out = (generate(system, text) or "").strip()
-    except Exception:  # noqa: BLE001 - never lose the answer to a re-voice failure
+    except Exception as exc:  # noqa: BLE001 - never lose the answer to a re-voice failure
+        print(f"[compose] revoice failed, answering plainly "
+              f"({type(exc).__name__}: {exc})", flush=True)
         return text
     return out or text
 
@@ -237,14 +240,18 @@ def openai_generator(
     client = OpenAI()
 
     def _call(model_id: str, system: str, user: str, mt: int) -> str:
-        resp = client.chat.completions.create(
-            model=model_id, max_tokens=mt,
-            messages=[
-                {"role": "system", "content": system},
-                {"role": "user", "content": user or "."},
-            ],
-        )
-        return resp.choices[0].message.content or ""
+        def once() -> str:
+            resp = client.chat.completions.create(
+                model=model_id, max_tokens=mt,
+                messages=[
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": user or "."},
+                ],
+            )
+            return resp.choices[0].message.content or ""
+        # A 429 here used to surface as the canned ERROR_LINE, or as a lost
+        # supersede verdict — both indistinguishable from a real answer.
+        return retry.with_retry(once, what=f"chat({model_id})")
 
     def generate(system: str, user: str) -> str:
         return _call(model, system, user, max_tokens)
