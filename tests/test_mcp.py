@@ -120,7 +120,6 @@ def test_absolute_args_are_left_alone(monkeypatch):
 
 def test_shipped_config_uses_no_developer_path():
     """Guard against an absolute home path creeping back into the tracked config."""
-    import json
     from pathlib import Path
     for name in ("mcp.json", "mcp.example.json"):
         p = Path(tools.__file__).resolve().parent / name

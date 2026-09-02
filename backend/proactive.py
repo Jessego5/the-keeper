@@ -104,11 +104,13 @@ def tick(
     generate: Generator,
     fast_model: Optional[Generator] = None,
     store: Optional[memory.MemoryStore] = None,
-    config: ProactiveConfig = ProactiveConfig(),
+    config: Optional[ProactiveConfig] = None,
     presence: Optional[sensors.Presence] = None,
     rng: Optional[random.Random] = None,
 ) -> TickDecision:
     """Run one proactive decision. Never blocks; never raises on a normal path."""
+    # See maybe_drift: a dataclass default in the signature is built once and shared.
+    config = config or ProactiveConfig()
     rng = rng or random
     en = energy.compute_energy(state.minutes_since_user)
     score = energy.base_score(en, state.recent_msg_count)

@@ -134,7 +134,6 @@ def test_insight_prompt_carries_no_gendered_example():
     called the person "he". Those land in facts.jsonl as kind=insight and feed back
     through recall, so an invented fact about the person compounds every turn."""
     prompt = drift._INSIGHT_SYSTEM
-    gendered = re.findall(r"\b(he|she|his|her|him|hers)\b", prompt, re.I)
     # "never he, she, his or her" is the instruction naming them — strip the ban line
     instruction = prompt[prompt.find("The person's gender is NOT known"):]
     leaked = re.findall(r"\b(he|she|his|her|him|hers)\b",

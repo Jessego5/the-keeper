@@ -30,7 +30,12 @@ jobs:
         run: pip install uv
 
       - name: Install pinned dependencies
-        run: pip install -r requirements.lock
+        run: pip install -r requirements.lock ruff
+
+      # F + B only — see the rationale in pyproject.toml. Fast enough to run first,
+      # so an obvious defect fails before the suite spends 20 minutes.
+      - name: Lint
+        run: ruff check backend/ tests/
 
       # model2vec pulls minishlab/potion-base-8M on first use — ~100MB and slow
       # enough to dominate the job if refetched every run.

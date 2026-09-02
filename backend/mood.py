@@ -92,7 +92,7 @@ def classify(message: str, embed: Embedder,
     scores = {r: max(_cosine(v, a) for a in vecs)
               for r, vecs in anchor_vecs.items()}
     ranked = sorted(scores.items(), key=lambda x: x[1], reverse=True)
-    (r1, s1), (r2, s2) = ranked[0], ranked[1]
+    (r1, s1), (_r2, s2) = ranked[0], ranked[1]
     if s1 < floor or (s1 - s2) < margin:
         return None
     return None if r1 == NEUTRAL else r1     # neutral == no emotional signal
