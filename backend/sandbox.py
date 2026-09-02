@@ -21,11 +21,20 @@ fetches a page, and calls run_python IN THE SAME TURN, so attacker-controlled te
 a fetched page reaches the same model that then writes this code. A prompt injection in
 a page is therefore a path to reading local secrets and sending them out.
 
-Closing that needs real isolation — the app's own Dockerfile with no host mount beyond
-keeper_sandbox/, or a macOS sandbox-exec profile (fiddly: a naive deny-by-default
-profile aborts CPython at startup) — or a rule that no turn may both fetch untrusted
-content and run code. Until one of those lands, treat this as a single-user, local,
-trusted-network tool and do not point it at hostile pages.
+DOCKER CLOSES THE SEVERE PART, and is how this is meant to be run. Measured inside
+the container: no .env exists on disk (see .dockerignore — the key arrives as an env
+var, and the child environment is stripped), and the host filesystem is unreachable.
+So the fetch -> write-code path has no credential and no host to reach.
+
+Accepted residual, deliberately: the container still has outbound network, and
+memory_store is mounted so the person's facts and journal are readable inside it. A
+compromised run_python could therefore still read those and send them out. Closing
+that needs an egress allowlist, which partly fights the feature set — web search and
+fetch need broad egress by nature. The judgement is that the severe exposure (an API
+key, the whole home directory) is gone and what remains needs a real attack to reach.
+
+Running on the HOST has none of this containment. That is fine for development; it is
+not the posture to use while pointing the Keeper at pages you do not trust.
 """
 
 from __future__ import annotations
