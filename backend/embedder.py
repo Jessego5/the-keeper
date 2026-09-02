@@ -12,6 +12,7 @@ the model supports the `dimensions` param to shrink from its native 1536).
 from __future__ import annotations
 
 import os
+import retry
 from typing import Callable, List, Optional
 
 # texts -> one vector per text
@@ -39,9 +40,17 @@ def openai_embedder(model: str = DEFAULT_MODEL, dim: int = DEFAULT_DIM) -> Embed
     def embed(texts: List[str]) -> List[List[float]]:
         if not texts:
             return []
-        resp = client.embeddings.create(model=model, input=texts, dimensions=dim)
-        # API preserves input order
-        return [d.embedding for d in resp.data]
+
+        def once() -> List[List[float]]:
+            resp = client.embeddings.create(model=model, input=texts,
+                                            dimensions=dim)
+            # API preserves input order
+            return [d.embedding for d in resp.data]
+
+        # Worth retrying harder than a chat call: a failure here makes MemoryStore
+        # write the fact with embedding=None, and nothing ever comes back to embed
+        # it later. A transient 429 would otherwise cost that memory permanently.
+        return retry.with_retry(once, what="embed")
 
     return embed
 
