@@ -40,6 +40,25 @@ in 8 proactive lines", "sad → frozen", "a plain question contains the real ans
 - `test_mcp.py::test_sandbox_escape_refused` / `test_read_only_blocks_mutating_tools` — MCP safety
 - `test_server.py::test_proactive_loop_reaches_out` — the battery actually delivers a line
 
+## CI
+
+| Workflow | When | Runs |
+|---|---|---|
+| `.github/workflows/ci.yml` | every push + PR to main | tiers 1 + 2, plus a collect-only check that the eval tier still imports |
+| `.github/workflows/evals.yml` | nightly 07:00 UTC, or on demand | tier 3 against real models, then `mood_bench.py` |
+
+Two deliberate details. `-W error` is set in `pyproject.toml`, so a warning from
+our own code fails the run (one narrow `ResourceWarning` ignore covers a
+huggingface file-handle leak we do not own). And the nightly job **fails if
+`OPENAI_API_KEY` is missing** rather than skipping: every eval is `skipif` on that
+key, so without the guard an unset secret would produce a green run of zero
+tests — silence that looks exactly like success, which is the failure this tier
+exists to catch.
+
+CI installs `requirements.lock`, not `requirements.txt`. Several constants here
+are calibrated against specific model versions (`memory._REL_FLOOR`, the mood
+floor), so an unpinned upgrade decalibrates them silently.
+
 ## Notes
 
 - Delivery over the live `/events` HTTP stream is verified manually with `curl`;

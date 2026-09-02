@@ -1,0 +1,56 @@
+# The live tier: real models, real money, non-deterministic. Nightly, not per push.
+name: Evals
+
+on:
+  schedule:
+    - cron: "0 7 * * *"        # 07:00 UTC daily
+  workflow_dispatch:            # and on demand
+
+jobs:
+  evals:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Install pinned dependencies
+        run: pip install -r requirements.lock
+
+      - name: Cache the Model2Vec weights
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: hf-potion-base-8m-${{ runner.os }}
+
+      # Every eval is marked skipif no OPENAI_API_KEY. Without this guard a missing
+      # secret produces a green run of zero tests — silence that looks like success,
+      # which is the exact failure this tier exists to catch.
+      - name: Require the API key
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          if [ -z "$OPENAI_API_KEY" ]; then
+            echo "::error::OPENAI_API_KEY is not set — every eval would skip and"
+            echo "::error::this job would pass without testing anything."
+            exit 1
+          fi
+
+      - name: Evals
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        # retry.py now absorbs the 429s that made the recall-gate eval flake when
+        # the whole tier ran at once; if flakes return, that is the thing to look at
+        # rather than loosening an assertion.
+        run: python -m pytest tests/evals -m eval -q
+
+      - name: Mood sensor benchmark
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        # Not an assertion — a printed record, so a decalibrated floor is visible
+        # in the nightly log rather than discovered months later.
+        run: python backend/mood_bench.py

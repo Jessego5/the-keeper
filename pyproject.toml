@@ -11,4 +11,8 @@ markers = [
 ]
 # Default run excludes evals (they cost money and are non-deterministic).
 # Run them explicitly with:  .venv/bin/pytest tests/evals -m eval
-addopts = "-m 'not eval'"
+#
+# -W error: a warning from our own code fails the run. The single ignore is a
+# third-party leak — huggingface leaves config.json unclosed when model2vec loads
+# — and narrowing it to ResourceWarning keeps every other warning fatal.
+addopts = "-m 'not eval' -W error -W ignore::ResourceWarning"

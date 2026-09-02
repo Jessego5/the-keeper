@@ -1,0 +1,50 @@
+# Runs on every push and PR. The eval tier is NOT here — it costs money and needs
+# a real key; see evals.yml, which runs nightly.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      # The MCP integration tests spawn servers with npx (files) and uvx
+      # (fetch/search/time/git). Without both, those tests skip rather than fail,
+      # and a green run would mean less than it looks.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install uv (provides uvx)
+        run: pip install uv
+
+      - name: Install pinned dependencies
+        run: pip install -r requirements.lock
+
+      # model2vec pulls minishlab/potion-base-8M on first use — ~100MB and slow
+      # enough to dominate the job if refetched every run.
+      - name: Cache the Model2Vec weights
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: hf-potion-base-8m-${{ runner.os }}
+
+      # -W error is on in pyproject.toml, so a warning from our own code fails here.
+      - name: Unit + integration
+        run: python -m pytest -q
+
+      - name: Confirm the eval tier still collects
+        # Evals are excluded from the default run, so a broken eval file would
+        # otherwise sit undetected until the nightly job. Collect-only is free.
+        run: python -m pytest tests/evals -m eval --collect-only -q
