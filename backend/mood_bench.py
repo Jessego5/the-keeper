@@ -19,7 +19,7 @@ from __future__ import annotations
 import json
 import time
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Optional
 
 import mood
 import voice_eval
@@ -70,7 +70,7 @@ def tune_floor(embed, anchors) -> float:
     best_acc, best_floor = 0.0, FLOOR_GRID[0]
     for f in FLOOR_GRID:
         acc = _mean(_predict(sc, f) == _gold(c["register"])
-                    for sc, c in zip(scores, TRAIN))
+                    for sc, c in zip(scores, TRAIN, strict=True))
         if acc > best_acc:
             best_acc, best_floor = acc, f
     return best_floor
@@ -80,13 +80,13 @@ def eval_embed(embed, floor: float):
     anchors = mood.precompute_anchors(embed)
     scores = _scores(embed, anchors, [c["text"] for c in TEST])
     preds = [_predict(sc, floor) for sc in scores]
-    acc = _mean(p == _gold(c["register"]) for p, c in zip(preds, TEST))
+    acc = _mean(p == _gold(c["register"]) for p, c in zip(preds, TEST, strict=True))
     return acc, _by_tag(TEST, preds)
 
 
 def eval_keyword():
     preds = [voice_eval.register_signal(c["text"]) for c in TEST]
-    acc = _mean(p == _gold(c["register"]) for p, c in zip(preds, TEST))
+    acc = _mean(p == _gold(c["register"]) for p, c in zip(preds, TEST, strict=True))
     return acc, _by_tag(TEST, preds)
 
 
@@ -133,21 +133,26 @@ def run() -> None:
         acc, tag = eval_embed(embed, floor)
         rows.append((name, acc, tag, floor, avg_latency_ms(embed)))
 
-    print("\n" + "=" * 66)
+    print("\n" + "=" * 73)
     print(f"  MOOD SENSOR BENCHMARK   train={len(TRAIN)}  test={len(TEST)} (held out)")
-    print("=" * 66)
-    hdr = f"  {'method':17} {'TEST':>5} {'implicit':>9} {'negation':>9} {'neutral':>8} {'latency':>9}"
+    print("=" * 73)
+    hdr = (f"  {'method':17} {'TEST':>5} {'implicit':>9} {'negation':>9} "
+           f"{'neutral':>8} {'floor':>6} {'latency':>9}")
     print(hdr)
-    print("  " + "-" * 62)
+    print("  " + "-" * 69)
     for name, acc, tag, floor, lat in rows:
         if acc is None:
             print(f"  {name:17} {'skipped'}")
             continue
         def pc(d, k): return f"{d.get(k, 0)*100:.0f}%" if d and k in d else "  —"
         lt = f"{lat:.0f}ms" if lat else "  —"
+        # The tuned floor is printed because it is the number that DRIFTS: it is
+        # chosen here on TRAIN, and copied by hand into mood.build_local_mood_signal.
+        # Those two silently disagreed once already; showing it makes that visible.
+        fl = f"{floor:.2f}" if floor else "   —"
         print(f"  {name:17} {acc*100:>4.0f}% {pc(tag,'implicit'):>9} "
-              f"{pc(tag,'negation'):>9} {pc(tag,'neutral'):>8} {lt:>9}")
-    print("=" * 66)
+              f"{pc(tag,'negation'):>9} {pc(tag,'neutral'):>8} {fl:>6} {lt:>9}")
+    print("=" * 73)
 
     scored = [(n, a, lat) for n, a, _, _, lat in rows if a is not None]
     win = max(scored, key=lambda x: (x[1], -(x[2] or 0)))

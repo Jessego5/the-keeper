@@ -16,3 +16,26 @@ markers = [
 # third-party leak — huggingface leaves config.json unclosed when model2vec loads
 # — and narrowing it to ResourceWarning keeps every other warning fatal.
 addopts = "-m 'not eval' -W error -W ignore::ResourceWarning"
+
+
+[tool.ruff]
+line-length = 88
+target-version = "py313"
+
+[tool.ruff.lint]
+# Deliberately narrow. Adopting lint late on 9k lines, the full default set found
+# 253 issues — 122 of them Optional[X] -> X | None and 57 line-length. That is a
+# large diff that buries real signal and rewrites history for style.
+#
+# F (pyflakes) and B (bugbear) are the rules that find DEFECTS. On the first run
+# they found 14, and two were real: dead code in a test, and a benchmark that
+# unpacked its tuned floor and never printed it — the very number that had
+# silently drifted out of step with production.
+#
+# Widen this later if you want the modernization pass; do it as its own commit.
+select = ["F", "B"]
+
+[tool.ruff.lint.per-file-ignores]
+# The test tier imports mid-file on purpose, to keep each group of tests beside
+# the module it drives.
+"tests/*" = ["E402"]

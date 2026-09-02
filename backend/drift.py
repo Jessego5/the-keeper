@@ -173,7 +173,7 @@ def synthesize(store: memory.MemoryStore, generate: compose.Generator,
 
 def maybe_drift(store: memory.MemoryStore, generate: compose.Generator,
                 log: ReflectionLog, *, last_drift_at: Optional[float],
-                config: DriftConfig = DriftConfig(),
+                config: Optional[DriftConfig] = None,
                 now: Optional[float] = None,
                 embed: Optional[memory.Embedder] = None) -> Optional[Reflection]:
     """Drift only if enabled and enough (virtual) time has passed since the last one.
@@ -181,6 +181,10 @@ def maybe_drift(store: memory.MemoryStore, generate: compose.Generator,
     Prefers the richer synthesize() path (grounded, retrievable insights); falls back
     to a single voice-y reflect() note when there is too little to synthesize. Returns
     the latest Reflection made, or None if it didn't drift."""
+    # Built here, not in the signature: DriftConfig is a plain (mutable) dataclass
+    # and server.py mutates .speed at runtime, so a default built once at def time
+    # would be shared by every caller that omits it.
+    config = config or DriftConfig()
     if not config.enabled:
         return None
     # Nothing kept yet -> nothing to reflect on. Never let the idle mind invent a

@@ -19,7 +19,6 @@ distributed-task machinery a single-user companion doesn't need.
 from __future__ import annotations
 
 import uuid
-from typing import Optional
 
 import httpx
 
