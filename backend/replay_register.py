@@ -17,6 +17,13 @@ to correct a label rather than compose an example.
 
 Nothing is added to the dataset automatically. The predictions come from the
 system under test, so promoting them unread would be marking its own homework.
+
+PRIVACY. The output is derived from memory_store/, which .gitignore excludes
+because conversation content is private. Writing candidates into the repo would
+route real user messages around that rule, so evals/register_candidates.json is
+itself gitignored and --out warns if you aim it somewhere tracked. Only the
+reviewed evals/register_dataset.json belongs in git, and reviewing is the moment
+to notice anything that should not be committed.
 """
 
 from __future__ import annotations
@@ -83,9 +90,41 @@ def classify_both(messages: list[str]) -> list[dict]:
     return rows
 
 
+def _has_labels(out: Path) -> bool:
+    """True if `out` already holds human work worth not destroying."""
+    if not out.exists():
+        return False
+    try:
+        rows = json.loads(out.read_text())
+    except (OSError, json.JSONDecodeError):
+        return False
+    return any(isinstance(r, dict) and r.get("register") for r in rows)
+
+
+def _warn_if_tracked(out: Path) -> None:
+    """Say something if the candidates are about to land somewhere git tracks.
+
+    These messages come from real conversations; memory_store/ is ignored for that
+    reason. A silent write into a tracked path is how private content ends up in a
+    remote, so this is loud rather than clever.
+    """
+    import subprocess
+    try:
+        r = subprocess.run(["git", "check-ignore", "-q", str(out.resolve())],
+                           cwd=Path(__file__).resolve().parent.parent,
+                           capture_output=True, timeout=5)
+    except (OSError, subprocess.SubprocessError):
+        return
+    if r.returncode != 0:                      # 0 means "ignored"
+        print(f"\n  WARNING: {out} is NOT gitignored, and these lines are real "
+              f"conversation.\n           Add it to .gitignore before committing.")
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--out", type=Path, help="write candidates as JSON")
+    ap.add_argument("--force", action="store_true",
+                    help="overwrite an --out file that already carries labels")
     ap.add_argument("--all", action="store_true",
                     help="include messages already in the dataset")
     args = ap.parse_args()
@@ -113,6 +152,12 @@ def main() -> None:
               f"{r['text'][:52]!r}")
 
     if args.out:
+        if not args.force and _has_labels(args.out):
+            raise SystemExit(
+                f"  refusing to overwrite {args.out}: it already carries labels.\n"
+                f"  Labelling is the expensive part — merge it into the dataset "
+                f"first, or pass --force to discard it.")
+        _warn_if_tracked(args.out)
         # Dataset shape, with `register` left EMPTY: a human sets it. `predicted`
         # is the system's own guess, kept only so the reviewer can agree quickly.
         cands = [{"text": r["text"], "register": "", "tag": "",

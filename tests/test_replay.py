@@ -54,3 +54,27 @@ def test_candidates_leave_the_label_empty():
 def test_already_labelled_reads_the_real_dataset():
     known = rr.already_labelled()
     assert "i am sad" in known, "expected the shipped dataset to be readable"
+
+
+# --- guards on the output file --- #
+
+def test_refuses_to_overwrite_labelled_work(tmp_path):
+    """Regression, from doing exactly this: re-running the harness silently
+    overwrote a fully labelled candidates file. Labelling is the expensive part,
+    and the harness can always regenerate what it produced."""
+    out = tmp_path / "cands.json"
+    out.write_text(json.dumps([{"text": "hello", "register": "neutral"}]))
+    assert rr._has_labels(out)
+
+
+def test_an_unlabelled_file_is_free_to_overwrite(tmp_path):
+    out = tmp_path / "cands.json"
+    out.write_text(json.dumps([{"text": "hello", "register": ""}]))
+    assert not rr._has_labels(out)
+
+
+def test_a_missing_or_corrupt_file_does_not_block(tmp_path):
+    assert not rr._has_labels(tmp_path / "nope.json")
+    bad = tmp_path / "bad.json"
+    bad.write_text("{not json")
+    assert not rr._has_labels(bad)
