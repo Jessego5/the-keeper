@@ -67,15 +67,23 @@ otherwise the assertion is about output you invented.
 | Workflow | When | Runs |
 |---|---|---|
 | `.github/workflows/ci.yml` | every push + PR to main | tiers 1 + 2, plus a collect-only check that the eval tier still imports |
-| `.github/workflows/evals.yml` | nightly 07:00 UTC, or on demand | tier 3 against real models, then `mood_bench.py` |
+| `.github/workflows/evals.yml` | **manual only** (`workflow_dispatch`) | tier 3 against real models, then `mood_bench.py` |
 
 Two deliberate details. `-W error` is set in `pyproject.toml`, so a warning from
 our own code fails the run (one narrow `ResourceWarning` ignore covers a
-huggingface file-handle leak we do not own). And the nightly job **fails if
+huggingface file-handle leak we do not own). And the eval job **fails if
 `OPENAI_API_KEY` is missing** rather than skipping: every eval is `skipif` on that
-key, so without the guard an unset secret would produce a green run of zero
-tests — silence that looks exactly like success, which is the failure this tier
-exists to catch.
+key, so without the guard a run with no key would pass zero tests — silence that
+looks exactly like success, which is the failure this tier exists to catch.
+
+The eval tier is **not scheduled**: that would require handing GitHub a copy of
+the API key, and the decision was to keep the credential on the machine that owns
+it. So nothing runs these unless you do. Run them by hand before touching a
+prompt, a threshold, or a parser:
+
+```bash
+.venv/bin/pytest tests/evals -m eval
+```
 
 CI installs `requirements.lock`, not `requirements.txt`. Several constants here
 are calibrated against specific model versions (`memory._REL_FLOOR`, the mood

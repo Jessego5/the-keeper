@@ -1,10 +1,24 @@
-# The live tier: real models, real money, non-deterministic. Nightly, not per push.
+# The live tier: real models, real money, non-deterministic.
+#
+# MANUAL ONLY, by choice. Running this on a schedule would mean giving GitHub a
+# copy of the OPENAI_API_KEY as a repository secret, and the decision was not to —
+# the credential stays on the machine that owns it. The nightly trigger is removed
+# rather than left failing, because a workflow that is always red teaches you to
+# ignore red.
+#
+# The consequence is real and worth stating: nothing runs the eval tier unless a
+# person does. Run it before anything that touches a prompt, a threshold or a
+# parser:
+#
+#     .venv/bin/pytest tests/evals -m eval
+#
+# The API-key guard below stays, because it protects a manual run too: every eval
+# is skipif on that key, so without it a run with no key passes zero tests and
+# reports success.
 name: Evals
 
 on:
-  schedule:
-    - cron: "0 7 * * *"        # 07:00 UTC daily
-  workflow_dispatch:            # and on demand
+  workflow_dispatch:            # on demand only — see above
 
 jobs:
   evals:
