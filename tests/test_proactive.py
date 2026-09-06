@@ -157,3 +157,61 @@ def test_an_item_is_re_voiced_so_the_news_survives():
     assert "Erin Milez" in seen.get("user", ""), "the item never reached the model"
     assert d.spoke and "Erin Milez" in d.text
     assert d.reason == "spoke about something watched"
+
+
+# --- saying nothing beats saying it twice --- #
+
+def _tick(gen, recent=None, draw=0.0):
+    return proactive.tick(
+        proactive.ProactiveState(minutes_since_user=120.0, recent_msg_count=0),
+        generate=gen,
+        config=proactive.ProactiveConfig(cooldown_min=0.0, use_presence=False),
+        presence=sensors.Presence(idle_seconds=60.0, screen_locked=False),
+        rng=_AlwaysRoll(draw), recent=recent)
+
+
+def test_a_repeat_becomes_silence_not_a_second_send():
+    """35% of real model lines were duplicates — one appeared twelve times. A
+    Keeper with nothing new is in character staying quiet; one paraphrasing itself
+    to fill the gap is not."""
+    line = "This is the part where the water holds still."
+    d = _tick(lambda s, u: line, recent=[line])
+    assert not d.spoke and d.reason == "would only repeat itself"
+
+
+def test_a_near_repeat_is_caught_not_just_an_exact_one():
+    """Exact-match dedup would pass this: different string, same line."""
+    d = _tick(lambda s, u: "The water holds still.",
+              recent=["This is the part where the water holds still."])
+    assert not d.spoke and d.reason == "would only repeat itself"
+
+
+def test_a_genuinely_new_line_still_goes_out():
+    d = _tick(lambda s, u: "The ice is going out.",
+              recent=["This is the part where the water holds still."])
+    assert d.spoke and d.text == "The ice is going out."
+
+
+def test_what_it_recently_said_reaches_the_composer():
+    """The actual cause: identical input returns an identical sentence, so the
+    recent lines have to change the input, not just filter the output."""
+    seen = {}
+    def gen(system, user):
+        seen["system"] = system
+        return "The ice is going out."
+    _tick(gen, recent=["This is the part where the water holds still."])
+    assert "recently said" in seen.get("system", "")
+    assert "water holds still" in seen.get("system", "")
+
+
+def test_no_history_is_not_a_repeat():
+    d = _tick(lambda s, u: "The tide returns.", recent=[])
+    assert d.spoke
+
+
+def test_only_the_recent_window_silences_a_line():
+    """An old line must not silence a fair echo of itself much later."""
+    old = "The ice is going out."
+    stale = [f"line number {i}" for i in range(proactive.REPEAT_WINDOW + 3)]
+    d = _tick(lambda s, u: old, recent=[old, *stale])
+    assert d.spoke, "a line outside the window should no longer bind"

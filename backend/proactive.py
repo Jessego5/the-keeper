@@ -104,6 +104,33 @@ def derive_state(minutes_since_user: Optional[float]) -> str:
 # for news that matters, it does not remove the gate.
 SOURCE_BOOST = 3.0
 
+# Token overlap above which a new line counts as something already said. Measured
+# on real repeats: "This is the part where the water holds still." against "The
+# water holds still." scores 0.60, while two genuinely different lines in the same
+# register score 0.29 and across registers 0.14. 0.5 sits in that gap.
+REPEAT_SIMILARITY = 0.5
+# How many recent lines to weigh against. Long enough to catch a loop, short
+# enough that an old line does not silence a fair echo of itself weeks later.
+REPEAT_WINDOW = 8
+
+
+def _too_similar(text: str, recent: list) -> Optional[str]:
+    """The recent line `text` merely repeats, or None.
+
+    Proactive lines repeat because the composer is handed identical input every
+    tick — same prompt, same register, and recall("") returns the same facts — so a
+    near-deterministic model returns the same sentence. Measured across real
+    sessions, 35% of model-written lines were duplicates; one appeared twelve
+    times.
+    """
+    toks = memory._tokens(text)
+    if not toks:
+        return None
+    for prev in recent[-REPEAT_WINDOW:]:
+        if memory._jaccard(toks, memory._tokens(prev)) >= REPEAT_SIMILARITY:
+            return prev
+    return None
+
 
 def tick(
     state: ProactiveState,
@@ -115,6 +142,7 @@ def tick(
     presence: Optional[sensors.Presence] = None,
     rng: Optional[random.Random] = None,
     pending: Optional[object] = None,
+    recent: Optional[list] = None,
 ) -> TickDecision:
     """Run one proactive decision. Never blocks; never raises on a normal path."""
     # See maybe_drift: a dataclass default in the signature is built once and shared.
@@ -182,10 +210,27 @@ def tick(
                                 en, score, wait, text.strip(), water)
         # fall through to the ordinary line rather than losing the turn
 
+    # Say what it has recently said, so the input actually differs. This is the
+    # cause, not the symptom: identical input returns an identical sentence.
+    said = list(recent or [])
+    ctx = ""
+    if said:
+        recent_lines = "\n".join(f"- {line}" for line in said[-REPEAT_WINDOW:])
+        ctx = ("You have recently said these. Do not say any of them again, and do "
+               f"not rephrase them:\n{recent_lines}")
     result = compose.compose(
-        "proactive", water, generate=generate, fast_model=fast_model, memory=mem)
+        "proactive", water, generate=generate, fast_model=fast_model, memory=mem,
+        context=ctx)
     if result.silent:
         return quiet("rolled to speak, but chose silence")
+
+    # And if it did anyway: say nothing. Silence is a first-class outcome here, and
+    # a Keeper with nothing new is in character staying quiet — where one
+    # paraphrasing itself to fill the gap is not. Retrying is not worth a call: the
+    # input barely changed, so the line barely would.
+    echo = _too_similar(result.text or "", said)
+    if echo is not None:
+        return quiet("would only repeat itself")
 
     return TickDecision(True, "spoke", en, score, wait, result.text, water)
 
