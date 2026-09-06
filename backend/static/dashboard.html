@@ -60,7 +60,9 @@
   .foot { text-align:center; font-size:0.6rem; color:var(--current);
           margin-top:1.4rem; letter-spacing:0.08em; }
   a { color:var(--tide); text-decoration:none; }
-</style>
+  .btn{cursor:pointer;border:none;font:inherit}
+  .btn:disabled{opacity:.4;cursor:default}
+  </style>
 </head>
 <body>
   <div class="wrap">
@@ -134,6 +136,11 @@
       <span class="badge" id="b-backend">backend —</span>
       <span class="badge" id="b-embed">memory —</span>
       <span class="badge" id="b-speed">speed —</span>
+      <!-- The demo clock, on the page instead of in a terminal. Everything the
+           Keeper does on its own runs on this clock; compressing it is the only way
+           to watch an hour of patience in a minute. -->
+      <button class="badge btn" id="crank" title="compress the Keeper's clock so its slow behaviour happens in seconds">crank clock</button>
+      <button class="badge btn" id="uncrank" title="back to real time">real time</button>
       <span class="badge" id="b-listeners">listeners —</span>
     </div>
     <div class="foot"><a href="/">← back to the water</a> · <a href="/trace-view">trace ↗</a> · refreshes every 3s</div>
@@ -223,9 +230,20 @@
     document.getElementById("b-backend").textContent = "backend " + (s.backend || "—");
     document.getElementById("b-embed").textContent = "memory " + (s.embedder || "—");
     document.getElementById("b-speed").textContent = "speed " + (s.speed ?? 1) + "×";
+    document.getElementById("crank").disabled = (s.speed ?? 1) > 1;
+    document.getElementById("uncrank").disabled = (s.speed ?? 1) <= 1;
     document.getElementById("b-listeners").textContent = (s.listeners ?? 0) + " listening";
   }
   tick(); setInterval(tick, 3000);
+
+  async function setSpeed(speed, cooldown){
+    await fetch("/config", {method:"POST",
+      headers:{"content-type":"application/json"},
+      body: JSON.stringify({speed: speed, cooldown_min: cooldown})});
+    tick();
+  }
+  document.getElementById("crank").onclick   = () => setSpeed(600, 5);
+  document.getElementById("uncrank").onclick = () => setSpeed(1, 600);
 </script>
 </body>
 </html>

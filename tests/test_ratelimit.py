@@ -95,7 +95,7 @@ def _with_store(monkeypatch, warmings):
 def test_turn_is_earned_when_a_relevant_reversal_exists(monkeypatch):
     _with_store(monkeypatch, [_Fact("Started painting again.")])
     mem = "- Started painting again.\n- Is a painter."
-    assert server._resolve_turn("how's the painting", mem, "tidal") == "turn"
+    assert server._resolve_turn("how's the painting", mem, "tidal")[0] == "turn"
 
 
 def test_an_irrelevant_reversal_does_not_earn_it(monkeypatch):
@@ -105,7 +105,7 @@ def test_an_irrelevant_reversal_does_not_earn_it(monkeypatch):
     have reached `mem` is what prevents that."""
     _with_store(monkeypatch, [_Fact("Started painting again.")])
     mem = "- Their mother is in the hospital."      # ambient, and unrelated
-    assert server._resolve_turn("i had a good day", mem, "tidal") == "tidal"
+    assert server._resolve_turn("i had a good day", mem, "tidal")[0] == "tidal"
 
 
 def test_frozen_is_never_overridden(monkeypatch):
@@ -113,21 +113,21 @@ def test_frozen_is_never_overridden(monkeypatch):
     remembers better days."""
     _with_store(monkeypatch, [_Fact("Started painting again.")])
     mem = "- Started painting again."
-    assert server._resolve_turn("i feel numb", mem, "frozen") == "frozen"
+    assert server._resolve_turn("i feel numb", mem, "frozen")[0] == "frozen"
 
 
 def test_no_reversal_means_no_turn(monkeypatch):
     """The greeting case: "hello" classified as turn because a single message was
     being asked to contain a reversal it cannot hold."""
     _with_store(monkeypatch, [])
-    assert server._resolve_turn("hello", "", "tidal") == "tidal"
+    assert server._resolve_turn("hello", "", "tidal")[0] == "tidal"
 
 
 def test_a_broken_store_never_costs_the_turn(monkeypatch):
     class Boom:
         def recent_warmings(self, *a, **k): raise RuntimeError("disk gone")
     monkeypatch.setattr(server.STATE, "store", Boom())
-    assert server._resolve_turn("hello", "", "tidal") == "tidal"
+    assert server._resolve_turn("hello", "", "tidal")[0] == "tidal"
 
 
 def test_the_classifier_alone_cannot_produce_a_turn(monkeypatch):
@@ -135,13 +135,13 @@ def test_the_classifier_alone_cannot_produce_a_turn(monkeypatch):
     register — because a lone sentence was being asked to carry a reversal. With
     nothing in the store behind it, turn is demoted rather than trusted."""
     _with_store(monkeypatch, [])
-    assert server._resolve_turn("hello", "", "turn") == "tidal"
+    assert server._resolve_turn("hello", "", "turn")[0] == "tidal"
 
 
 def test_a_relevant_reversal_keeps_a_turn(monkeypatch):
     _with_store(monkeypatch, [_Fact("Started painting again.")])
     mem = "- Started painting again."
-    assert server._resolve_turn("how is the painting going", mem, "turn") == "turn"
+    assert server._resolve_turn("how is the painting going", mem, "turn")[0] == "turn"
 
 
 def test_the_words_must_overlap_the_reversal(monkeypatch):
@@ -150,5 +150,5 @@ def test_the_words_must_overlap_the_reversal(monkeypatch):
     day today" on the strength of a painting fact it never mentioned."""
     _with_store(monkeypatch, [_Fact("Started painting again.")])
     mem = "- Started painting again."
-    assert server._resolve_turn("i had a good day today", mem, "tidal") == "tidal"
-    assert server._resolve_turn("how is painting going", mem, "tidal") == "turn"
+    assert server._resolve_turn("i had a good day today", mem, "tidal")[0] == "tidal"
+    assert server._resolve_turn("how is painting going", mem, "tidal")[0] == "turn"

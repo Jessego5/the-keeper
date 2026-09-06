@@ -322,6 +322,34 @@ async def _proactive_loop() -> None:
             print(f"[proactive] tick spoke={decision.spoke} reason={decision.reason!r} "
                   f"E={decision.energy:.2f} score={decision.base_score:.2f} "
                   f"wait={decision.wait_next_s}s", flush=True)
+            # Trace the unbidden lines too. The trace answers "why did it say
+            # that", and a line the person did not ask for is where that question
+            # actually bites — yet until now only chat turns were recorded, so
+            # every autonomous decision was invisible outside the terminal.
+            item = STATE.pending_item
+            STATE.traces.appendleft({
+                "ts": time.time(),
+                "kind": "proactive",
+                "cue": "(unbidden — the Keeper decided to speak)",
+                "water_state": decision.water_state,
+                "register_note": f"proactive: {decision.reason}",
+                "memory_injected": "",
+                "path": "proactive",
+                "tools_called": [],
+                "reply": decision.text or "",
+                "spoke": decision.spoke,
+                "reason": decision.reason,
+                "energy": round(decision.energy, 3),
+                "base_score": round(decision.base_score, 3),
+                "source_item": ({
+                    "title": item.title,
+                    "url": item.url,
+                    "relevance": round(item.relevance, 2),
+                    "because": item.because,
+                } if item is not None and decision.spoke else None),
+                "score": None,
+                "fell_back": False,
+            })
             if decision.spoke and decision.text:
                 # Whatever was pending has now been said (or was at least the
                 # context for what was said), so retire it before anything else can
@@ -486,7 +514,7 @@ async def chat(body: ChatIn):
     if signal is not None:
         STATE.current_register = signal
     water = STATE.current_register or voice_eval.detect_state(msg)
-    water = _resolve_turn(msg, mem, water)
+    water, register_note = _resolve_turn(msg, mem, water)
 
     # Native action tools (reminders + goals + journal + delegate) are always
     # available; MCP tools join when configured. Reaching for a tool — or handing a
@@ -543,6 +571,11 @@ async def chat(body: ChatIn):
         "cue": msg,
         "water_state": water,
         "mood_signal": signal,
+        # WHY that register, not just which. The trace exists to answer "why did it
+        # say that", and until now the most interesting register decision — turn
+        # being granted or refused by the store — only reached stdout.
+        "register_note": register_note or (
+            f"classified {signal}" if signal else "inherited (no signal in this message)"),
         "memory_injected": mem,
         "path": "tool" if used_tools else "compose",
         "tools_called": tool_trace,
@@ -827,7 +860,7 @@ async def _maybe_drift_note() -> None:
         print(f"[drift] error: {exc}", flush=True)
 
 
-def _resolve_turn(msg: str, mem: str, water: str) -> str:
+def _resolve_turn(msg: str, mem: str, water: str) -> tuple:
     """Make "turn" reachable ONLY through the store, in both directions.
 
     persona.py calls it the rarest register — the ice going out — and says to
@@ -845,16 +878,19 @@ def _resolve_turn(msg: str, mem: str, water: str) -> str:
     because the store remembers better days.
     """
     if water == "frozen":
-        return water
+        return water, ""
     earned = _warming_behind(msg, mem)
     if earned is not None:
+        note = f"turn earned by a recorded reversal: {earned.text}"
         print(f"[register] turn earned by: {earned.text[:60]!r}", flush=True)
-        return "turn"
+        return "turn", note
     if water == "turn":
+        note = ("turn not earned — nothing the store remembers changed, "
+                "so it falls back to tidal")
         print("[register] turn not earned by the store — falling back to tidal",
               flush=True)
-        return "tidal"
-    return water
+        return "tidal", note
+    return water, ""
 
 
 def _warming_behind(msg: str, mem: str):
