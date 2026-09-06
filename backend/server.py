@@ -185,6 +185,7 @@ class AppState:
     fast: Optional[compose.Generator] = None
     embed: Optional[memory.Embedder] = None   # semantic recall; None => keyword
     mood_signal: Optional[object] = None   # local mood classifier; None => keyword
+    llm_mood_signal: Optional[object] = None   # live-model register read; None => local
     wake: Optional[asyncio.Event] = None   # set to interrupt the loop's sleep
     mcp: Optional[tools.MCPManager] = None  # passive-loop tools; None until connected
     reflections: drift.ReflectionLog = field(default_factory=drift.ReflectionLog)
@@ -336,9 +337,14 @@ async def _proactive_loop() -> None:
 async def lifespan(app: FastAPI):
     STATE.generate, STATE.fast = compose.make_generator()
     STATE.embed = embedder.make_embedder()   # semantic recall when a key is set
-    STATE.mood_signal = mood.build_local_mood_signal()   # local; None -> keyword
-    print(f"[mood] classifier: {'model2vec' if STATE.mood_signal else 'keyword'}",
-          flush=True)
+    STATE.mood_signal = mood.build_local_mood_signal()   # local fallback
+    if STATE.fast is not None:
+        STATE.llm_mood_signal = mood.make_llm_mood_signal(STATE.fast)
+    primary = ("llm" if STATE.llm_mood_signal
+               else "model2vec" if STATE.mood_signal else "keyword")
+    fallback = "model2vec" if STATE.mood_signal else "keyword"
+    print(f"[mood] classifier: {primary}"
+          + (f" (falls back to {fallback})" if primary == "llm" else ""), flush=True)
     # Presence readers fail silently per call (the loop reads every few seconds and
     # must not flood), so say once, here, which of them this machine can actually
     # provide — otherwise a blind sensor just shows defaults and looks healthy.
@@ -412,14 +418,38 @@ async def chat(body: ChatIn):
     # Register continuity: a clear emotional signal sets the register; a neutral
     # follow-up ("what should i do") INHERITS it rather than resetting to tidal,
     # so a stuck person is never told they're moving.
-    # Mood, two layers: the high-precision keyword signal wins when a feeling word
-    # is present; the local Model2Vec classifier (benchmark winner) fills the gap
-    # for IMPLICIT mood the lexicon misses ("i don't know why i bother" -> frozen).
-    # Known tradeoff: the embedding layer can over-commit on ambiguous requests
-    # ("what should i do"); register continuity softens that downstream.
-    signal = voice_eval.register_signal(msg)
-    if signal is None and STATE.mood_signal is not None:
-        signal = STATE.mood_signal(msg)
+    # Mood. The model decides when there is one; the local pair is the offline
+    # path. Measured on 32 real conversation turns:
+    #
+    #   llm             6% wrong        keyword   fires 9/32, right 5 of those 9
+    #   model2vec      41% wrong (with the keyword layer in front of it)
+    #
+    # The keyword lexicon used to go first, justified as high precision. It is
+    # not: it met "go look into watercolor vs gouache" in the register reserved
+    # for grief, because "ache" sits inside "gouache" — and once that was fixed to
+    # match on word boundaries it merely failed differently, on "back to" inside
+    # "get back to me". Those are word SENSE, which a word list cannot see. First
+    # in the chain it had veto over a classifier three times more accurate.
+    #
+    # It stays, underneath, because with no key and no network it and the anchor
+    # classifier are the only register detection there is.
+    #
+    # The model returning None is a DECISION — it read the message as neutral —
+    # and is honoured. Only an unavailable model falls through.
+    signal = None
+    if STATE.llm_mood_signal is not None:
+        try:
+            signal = STATE.llm_mood_signal(msg)
+        except Exception as exc:  # noqa: BLE001 - retry already ran inside compose
+            print(f"[mood] llm classifier failed, using local "
+                  f"({type(exc).__name__}: {exc})", flush=True)
+            signal = voice_eval.register_signal(msg)
+            if signal is None and STATE.mood_signal is not None:
+                signal = STATE.mood_signal(msg)
+    else:
+        signal = voice_eval.register_signal(msg)
+        if signal is None and STATE.mood_signal is not None:
+            signal = STATE.mood_signal(msg)
     if signal is not None:
         STATE.current_register = signal
     water = STATE.current_register or voice_eval.detect_state(msg)

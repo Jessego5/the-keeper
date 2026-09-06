@@ -161,3 +161,64 @@ def test_applescript_string_cannot_escape_its_quotes():
     assert '"' not in notifier._as_string('he said "hi"')
     assert "\n" not in notifier._as_string("line one\nline two")
     assert notifier._as_string("plain message") == "plain message"
+
+
+# --- the register chain degrades in the right order --- #
+
+def _chain(msg, *, keyword, llm, local):
+    """Reproduce server.py's layering so the ORDER is pinned, not just the parts.
+
+    The model decides when it is available; keyword + anchors are the offline
+    path, reached only when there is no model or the call fails.
+    """
+    if llm is not None:
+        try:
+            return llm(msg)                  # None here is a decision: neutral
+        except Exception:                    # noqa: BLE001
+            pass
+    signal = keyword(msg)
+    if signal is None and local is not None:
+        signal = local(msg)
+    return signal
+
+
+def test_the_model_outranks_the_lexicon():
+    """The keyword layer used to go first, justified as high precision. Measured on
+    real messages it fires 9 times in 32 and is right 5 of those — it met "go look
+    into watercolor vs gouache" as grief, because "ache" sits inside "gouache".
+    First in the chain it had veto over a classifier three times more accurate."""
+    assert _chain("go look into gouache", keyword=lambda m: "frozen",
+                  llm=lambda m: None, local=lambda m: "tidal") is None
+
+
+def test_the_model_is_used_when_present():
+    assert _chain("i just stare at the ceiling", keyword=lambda m: None,
+                  llm=lambda m: "frozen", local=lambda m: "tidal") == "frozen"
+
+
+def test_a_failing_model_falls_back_to_the_local_classifier():
+    """A 429 or an outage must not cost register detection entirely — the local
+    Model2Vec path is why this still works with no key and no network."""
+    def boom(m): raise RuntimeError("429")
+    assert _chain("x", keyword=lambda m: None, llm=boom,
+                  local=lambda m: "tidal") == "tidal"
+
+
+def test_with_no_key_at_all_the_local_classifier_carries_it():
+    assert _chain("x", keyword=lambda m: None, llm=None,
+                  local=lambda m: "frozen") == "frozen"
+
+
+def test_all_layers_abstaining_means_inherit():
+    """None reaches the caller, which leaves STATE.current_register alone."""
+    assert _chain("what's on my list", keyword=lambda m: None,
+                  llm=lambda m: None, local=lambda m: None) is None
+
+
+def test_the_models_abstention_is_a_decision_not_a_gap():
+    """Regression, caught live: the model answering None means it read the message
+    as NEUTRAL. Falling through to the weaker classifier on None put "go look into
+    watercolor vs gouache" back to frozen — the exact error the model was brought
+    in to fix. Only an unavailable model may fall back."""
+    assert _chain("go look into watercolor vs gouache", keyword=lambda m: None,
+                  llm=lambda m: None, local=lambda m: "frozen") is None
