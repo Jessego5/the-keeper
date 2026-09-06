@@ -102,6 +102,50 @@ class TelegramChannel:
         await asyncio.to_thread(self._sender, url, data)
 
 
+class DiscordChannel:
+    """A message in a Discord channel via an incoming webhook. Opt-in — only built
+    when DISCORD_WEBHOOK_URL is set.
+
+    Simpler than Telegram on purpose: a webhook is one URL with no bot
+    registration and no chat id to look up, so it is the quickest surface to prove
+    that browser-closed delivery works. It is also the only kind of surface that
+    works everywhere — the native banner is macOS-only, and cannot fire at all from
+    inside the Linux container, where this can.
+    """
+
+    name = "discord"
+    # Discord rejects a message over 2000 characters outright. The Keeper's lines
+    # are short, but a re-voiced source item is not guaranteed to be.
+    MAX_CHARS = 1900
+
+    def __init__(self, webhook_url: str,
+                 sender: Optional[Callable[[str, dict], None]] = None):
+        self.webhook_url = webhook_url
+        self._sender = sender or _json_post
+
+    @classmethod
+    def from_env(cls) -> Optional["DiscordChannel"]:
+        url = os.environ.get("DISCORD_WEBHOOK_URL", "").strip()
+        return cls(url) if url else None
+
+    def wants(self, kind: str) -> bool:
+        return kind == "proactive"     # don't echo your own web chat to a channel
+
+    async def deliver(self, role: str, content: str, kind: str) -> None:
+        body = f"**{KEEPER_NAME}**\n{content}"[:self.MAX_CHARS]
+        await asyncio.to_thread(self._sender, self.webhook_url, {"content": body})
+
+
+def _json_post(url: str, data: dict) -> None:
+    """POST JSON. Stdlib only, short timeout; Delivery logs anything that raises."""
+    body = json.dumps(data).encode()
+    req = urllib.request.Request(
+        url, data=body, method="POST",
+        headers={"content-type": "application/json"})
+    with urllib.request.urlopen(req, timeout=8) as resp:  # noqa: S310 - operator-set URL
+        resp.read()
+
+
 def _http_post(url: str, data: dict) -> None:
     """POST form-encoded data. Stdlib only; short timeout; never raises upward-
     important errors are logged by the Delivery wrapper."""
@@ -134,7 +178,7 @@ class Delivery:
 
 def build_default(listeners: set) -> Delivery:
     """The Keeper's standard surfaces: web always; the native banner only where it
-    can actually fire; Telegram if a bot token is configured.
+    can actually fire; Telegram and Discord if configured.
 
     The banner is conditional because it was not, and /state advertised
     channels: ["web", "native"] from inside a Linux container where
@@ -150,4 +194,5 @@ def build_default(listeners: set) -> Delivery:
         print("[channels] native banner unavailable here "
               "(no macOS notifier) — not offering it", flush=True)
     surfaces.append(TelegramChannel.from_env())
+    surfaces.append(DiscordChannel.from_env())
     return Delivery(surfaces)

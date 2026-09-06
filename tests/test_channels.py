@@ -109,3 +109,50 @@ def test_native_banner_is_withheld_where_it_cannot_fire(monkeypatch):
     names = channels.build_default(set()).names()
     assert "native" not in names
     assert "web" in names, "the web surface must survive regardless"
+
+
+# --- Discord --- #
+
+def test_discord_is_off_unless_a_webhook_is_set(monkeypatch):
+    monkeypatch.delenv("DISCORD_WEBHOOK_URL", raising=False)
+    assert channels.DiscordChannel.from_env() is None
+    monkeypatch.setenv("DISCORD_WEBHOOK_URL", "   ")
+    assert channels.DiscordChannel.from_env() is None, "whitespace is not a webhook"
+
+
+def test_discord_is_built_when_configured(monkeypatch):
+    monkeypatch.setenv("DISCORD_WEBHOOK_URL", "https://discord.com/api/webhooks/x")
+    assert channels.DiscordChannel.from_env() is not None
+
+
+async def test_discord_sends_the_line_as_json():
+    sent = {}
+    c = channels.DiscordChannel("https://x/hook",
+                                sender=lambda u, d: sent.update(url=u, data=d))
+    await c.deliver("assistant", "The tide returns.", "proactive")
+    assert sent["url"] == "https://x/hook"
+    assert "The tide returns." in sent["data"]["content"]
+
+
+async def test_discord_truncates_below_the_api_limit():
+    """Discord rejects anything over 2000 characters outright, and a re-voiced
+    source item is not guaranteed to be short."""
+    sent = {}
+    c = channels.DiscordChannel("https://x/h",
+                                sender=lambda u, d: sent.update(data=d))
+    await c.deliver("assistant", "x" * 5000, "proactive")
+    assert len(sent["data"]["content"]) <= channels.DiscordChannel.MAX_CHARS
+
+
+def test_discord_does_not_echo_your_own_chat():
+    """A phone or a channel is for unbidden lines. Mirroring the web conversation
+    into it would make both useless."""
+    c = channels.DiscordChannel("https://x/h")
+    assert c.wants("proactive") and not c.wants("chat")
+
+
+def test_a_configured_discord_joins_the_default_surfaces(monkeypatch):
+    monkeypatch.setattr(channels.notifier, "available", lambda: "none")
+    monkeypatch.setenv("DISCORD_WEBHOOK_URL", "https://discord.com/api/webhooks/x")
+    names = channels.build_default(set()).names()
+    assert "discord" in names and "web" in names
