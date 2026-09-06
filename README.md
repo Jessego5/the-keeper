@@ -94,8 +94,16 @@ the same turn — so a page it reads can influence the code it writes. The fence
 and their limits are documented honestly in
 [`backend/sandbox.py`](backend/sandbox.py).
 
-**Run it in Docker.** Verified inside the container: no API key on disk, host
-filesystem unreachable. On the host there is no containment.
+`docker compose up` contains that: verified inside the container, there is no API
+key on disk and the host filesystem is unreachable. Use it if you point the Keeper
+at feeds or pages you do not trust, or to try the project without installing
+anything.
+
+**It is not the everyday posture, though.** The container is Linux, so it loses
+presence sensing and the native banner — the two things that make this a companion
+rather than a chat window. Run it on the host to see what it actually is; run it
+in Docker when you want the fence more than the senses. `/state` reports which
+surfaces are really live either way, rather than claiming ones that are not.
 
 ## Credits
 
