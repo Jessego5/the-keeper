@@ -312,6 +312,7 @@ async def _proactive_loop() -> None:
                     generate=STATE.generate, fast_model=STATE.fast,
                     store=STATE.store, config=STATE.config, presence=pres,
                     pending=STATE.pending_item,
+                    recent=_recent_lines(),
                 )
             except Exception as exc:  # noqa: BLE001 - never let the loop die silently
                 print(f"[proactive] tick error: {type(exc).__name__}: {exc}",
@@ -602,6 +603,19 @@ def _goal_check_interval() -> float:
     a person-step was never nudged in a demo. Compress it the same way drift is.
     """
     return tasks.DEFAULT_CHECK_INTERVAL_S / max(STATE.config.speed, 1.0)
+
+
+def _recent_lines(limit: int = proactive.REPEAT_WINDOW) -> list:
+    """The last few things the Keeper actually said, newest last.
+
+    Read from STATE.history, which every delivery already appends to, so this adds
+    no state of its own. It resets when the process does — acceptable, because the
+    repetition it guards against comes from the composer being handed identical
+    input tick after tick within a run.
+    """
+    out = [m.get("content", "") for m in STATE.history
+           if m.get("role") == "assistant" and m.get("content")]
+    return out[-limit:]
 
 
 async def _poll_sources() -> None:
