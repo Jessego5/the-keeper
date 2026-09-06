@@ -44,7 +44,8 @@
            font-size:1rem; color:var(--foam); }
   .flag { color:var(--amber); }
   .foot { text-align:center; color:var(--current); font-size:0.62rem; margin-top:1rem; }
-</style>
+  .dim{opacity:.65;font-size:.85em}
+  </style>
 </head>
 <body>
   <div class="wrap">
@@ -74,15 +75,39 @@
     const mem = (t.memory_injected||"").trim()
       ? '<div class="box mem">'+esc(t.memory_injected)+'</div>'
       : '<div class="box empty">nothing injected — no relevant memory</div>';
+    // Why that register — the trace's whole job. "turn" being granted or refused by
+    // the store is the most interesting decision the Keeper makes, and it used to
+    // reach the terminal only.
+    const why = (t.register_note||"").trim()
+      ? '<div class="row"><div class="label">why this register</div>'
+        + '<div class="box mem">'+esc(t.register_note)+'</div></div>'
+      : '';
+    // An unbidden line: what made it worth interrupting for.
+    const src = t.source_item
+      ? '<div class="row"><div class="label">what it noticed</div><div class="box mem">'
+        + esc(t.source_item.title)
+        + '<br><span class="dim">relevance '+esc(t.source_item.relevance)
+        + ' — because it keeps: '+esc(t.source_item.because||"—")+'</span>'
+        + (t.source_item.url ? '<br><a href="'+esc(t.source_item.url)+'" target="_blank">'+esc(t.source_item.url)+'</a>' : '')
+        + '</div></div>'
+      : '';
+    const unbidden = t.kind === "proactive"
+      ? '<span class="flag">unbidden</span>' : '';
+    const gates = t.kind === "proactive"
+      ? '<span>energy: '+esc(t.energy)+'</span><span>score: '+esc(t.base_score)+'</span>'
+      : '';
     return '<div class="turn">'
-      + '<div class="cue">'+esc(t.cue)+'</div>'
+      + '<div class="cue">'+unbidden+' '+esc(t.cue)+'</div>'
       + '<div class="meta"><span>'+fmtTime(t.ts)+'</span>'
         + '<span class="tag">register: '+esc(t.water_state)+'</span>'
         + '<span>mood: '+esc(t.mood_signal||"—")+'</span>'
         + '<span>path: '+esc(t.path)+'</span>'
+        + gates
         + (t.score!=null?'<span>voice: '+esc(t.score)+'</span>':'')
         + (flags.length?'<span>'+flags.join(" ")+'</span>':'')
       + '</div>'
+      + why
+      + src
       + '<div class="row"><div class="label">memory injected (what it recalled)</div>'+mem+'</div>'
       + '<div class="row"><div class="label">tools called</div>'+tools+'</div>'
       + '<div class="row"><div class="label">reply</div><div class="box reply">'+esc(t.reply)+'</div></div>'
