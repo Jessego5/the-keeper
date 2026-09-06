@@ -87,10 +87,17 @@ async def test_telegram_builds_correct_request():
 
 
 def test_build_default_has_web_and_native(monkeypatch):
+    """The native banner is conditional on a notifier existing, so this pins the
+    macOS case explicitly rather than assuming the host it runs on. Asserting it
+    unconditionally passed on a developer Mac and failed on Linux CI — which is
+    exactly the platform assumption CI is there to catch."""
     monkeypatch.delenv("TELEGRAM_BOT_TOKEN", raising=False)
+    monkeypatch.delenv("DISCORD_WEBHOOK_URL", raising=False)
+    monkeypatch.setattr(channels.notifier, "available", lambda: "keeper.app")
     d = channels.build_default(set())
     assert "web" in d.names() and "native" in d.names()
     assert "telegram" not in d.names()          # off without a token
+    assert "discord" not in d.names()           # off without a webhook
 
 
 # --- a surface is only offered if it can actually deliver --- #
