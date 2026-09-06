@@ -98,6 +98,47 @@ def classify(message: str, embed: Embedder,
     return None if r1 == NEUTRAL else r1     # neutral == no emotional signal
 
 
+_LLM_SYSTEM = """You read one message from a person to their companion and name the \
+emotional register it should be met in. Answer with exactly one word:
+
+frozen  - they are in the cold: stuck, stalled, numb, wintering, a loss.
+tidal   - they are moving: returning, lighter, something went well.
+turn    - the ice going out: a genuine reversal from bad to better. Rare.
+neutral - no emotional content at all: a question, a request, a greeting, an
+          instruction, a mundane fact.
+
+Most messages are neutral. Answer neutral unless the message really carries \
+feeling. One word, lowercase, nothing else."""
+
+
+def llm_signal(message: str, generate) -> Optional[str]:
+    """The register a live model names, or None for neutral / unrecognised.
+
+    Same contract as register_signal and the anchor classifier — None means "no
+    signal, inherit" — so the three are interchangeable and the benchmark compares
+    like with like.
+
+    Measured against the anchors it is not close: 92% vs 67% on the held-out
+    split, and 6% vs 41% wrong on real conversation turns. The gap is almost all
+    IMPLICIT mood (88% vs 38%) — a message carrying feeling with no feeling word
+    in it, which a bag-of-words embedding cannot represent. It does NOT fix
+    negation ("i'm not sad at all"), which scores the same either way.
+    """
+    out = (generate(_LLM_SYSTEM, message) or "").strip().lower()
+    for name in ("frozen", "tidal", "turn"):
+        if name in out:
+            return name
+    return None                       # neutral, or anything unrecognised
+
+
+def make_llm_mood_signal(generate):
+    """Bind a generator into a message -> register fn, shaped exactly like
+    voice_eval.register_signal so it drops into the same chain."""
+    def signal(message: str) -> Optional[str]:
+        return llm_signal(message, generate)
+    return signal
+
+
 def make_mood_classifier(embed: Embedder,
                          floor: float = 0.35, margin: float = 0.03):
     """Bind an embedder + precomputed anchors into a message -> register fn,

@@ -90,36 +90,11 @@ def eval_keyword():
     return acc, _by_tag(TEST, preds)
 
 
-# --- the LLM classifier: ask a model outright, instead of measuring distance --- #
-
-_LLM_SYSTEM = """You read one message from a person to their companion and name the \
-emotional register it should be met in. Answer with exactly one word:
-
-frozen  - they are in the cold: stuck, stalled, numb, wintering, a loss.
-tidal   - they are moving: returning, lighter, something went well.
-turn    - the ice going out: a genuine reversal from bad to better. Rare.
-neutral - no emotional content at all: a question, a request, a greeting, an
-          instruction, a mundane fact.
-
-Most messages are neutral. Answer neutral unless the message really carries \
-feeling. One word, lowercase, nothing else."""
-
-
-def llm_classify(message: str, generate) -> Optional[str]:
-    """The register a live model picks, or None for neutral / unparseable.
-
-    Mirrors the anchor classifiers' contract exactly — None means "no signal, let
-    the caller inherit" — so the comparison is like for like.
-    """
-    out = (generate(_LLM_SYSTEM, message) or "").strip().lower()
-    for name in ("frozen", "tidal", "turn"):
-        if name in out:
-            return name
-    return None                       # neutral, or anything unrecognised
-
+# --- the LLM classifier (implementation lives in mood.py, so this measures
+# exactly what runs) --- #
 
 def eval_llm(generate):
-    preds = [llm_classify(c["text"], generate) for c in TEST]
+    preds = [mood.llm_signal(c["text"], generate) for c in TEST]
     acc = _mean(p == _gold(c["register"]) for p, c in zip(preds, TEST, strict=True))
     return acc, _by_tag(TEST, preds)
 
@@ -127,7 +102,7 @@ def eval_llm(generate):
 def avg_llm_latency_ms(generate, n: int = 3) -> float:
     t0 = time.perf_counter()
     for _ in range(n):
-        llm_classify("how are you feeling today, really", generate)
+        mood.llm_signal("how are you feeling today, really", generate)
     return (time.perf_counter() - t0) / n * 1000
 
 

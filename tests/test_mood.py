@@ -66,3 +66,42 @@ def test_neutral_anchors_stay_request_shaped():
     for anchor in mood.ANCHORS[mood.NEUTRAL]:
         assert not anchor.lower().startswith("i "), anchor
         assert " i " not in f" {anchor.lower()} ", anchor
+
+
+# --- the LLM register read --- #
+
+def test_llm_signal_reads_a_named_register():
+    assert mood.llm_signal("x", lambda s, u: "frozen") == "frozen"
+    assert mood.llm_signal("x", lambda s, u: "tidal") == "tidal"
+    assert mood.llm_signal("x", lambda s, u: "turn") == "turn"
+
+
+def test_llm_signal_tolerates_the_model_padding_its_answer():
+    """The prompt asks for one lowercase word; models do not always comply."""
+    assert mood.llm_signal("x", lambda s, u: "Frozen.") == "frozen"
+    assert mood.llm_signal("x", lambda s, u: "  tidal\n") == "tidal"
+
+
+def test_neutral_and_nonsense_both_mean_no_signal():
+    """None is the contract shared with register_signal and the anchor classifier:
+    no signal, so the caller inherits rather than resetting the register."""
+    for answer in ("neutral", "", "   ", "I'm not sure", "banana"):
+        # bind per iteration — a bare closure over `answer` is a late-binding trap
+        assert mood.llm_signal("x", lambda s, u, a=answer: a) is None
+
+
+def test_the_prompt_names_every_register_and_biases_to_neutral():
+    """Guard on the prompt itself: most real messages carry no feeling, and an
+    earlier version of this system spent its rarest register on "hello"."""
+    p = mood._LLM_SYSTEM.lower()
+    for name in ("frozen", "tidal", "turn", "neutral"):
+        assert name in p
+    assert "most messages are neutral" in p
+
+
+def test_make_llm_mood_signal_matches_register_signal_shape():
+    """It has to drop into the same chain, so it must take a message and return
+    a register or None — exactly what voice_eval.register_signal does."""
+    sig = mood.make_llm_mood_signal(lambda s, u: "frozen")
+    assert sig("anything") == "frozen"
+    assert mood.make_llm_mood_signal(lambda s, u: "neutral")("anything") is None

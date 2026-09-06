@@ -162,7 +162,16 @@ def _lower(text: str) -> str:
 
 
 def _contains_any(text_low: str, lexicon: set[str]) -> list[str]:
-    return [w for w in lexicon if w in text_low]
+    """Lexicon entries present in `text_low`, matched on WORD boundaries.
+
+    Plain substring containment read "ache" out of "gouache" and so met a request
+    to research paint in the register reserved for grief. Multi-word entries
+    ("burnt out", "no point") still match as phrases, but each end is anchored, so
+    "back to" no longer fires inside "get back to me" without the words being
+    there in their own right.
+    """
+    return [w for w in lexicon
+            if re.search(rf"(?<!\w){re.escape(w)}(?!\w)", text_low)]
 
 
 def deterministic_checks(text: str,
