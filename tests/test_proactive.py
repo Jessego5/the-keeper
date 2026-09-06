@@ -66,3 +66,94 @@ def test_simulation_rate_is_sane_not_spammy():
     # cooldown + rolls, not one per tick.
     res = proactive.simulate(48.0, seed=7, generate=_speaks, verbose=False)
     assert 1 <= res.spoke <= 10
+
+
+# --- a watched source may weight the coin, but never bypass a gate --- #
+
+import sources as _src
+
+
+def _item(score):
+    it = _src.SourceItem(source="feed", title="Erin Milez's Dense Paintings",
+                         url="https://x/1")
+    it.relevance, it.because = score, "Is a painter."
+    return it
+
+
+class _AlwaysRoll(random.Random):
+    """Fixes only the speak draw. Subclasses Random so uniform() and the rest still
+    work — next_tick_seconds jitters with uniform, and a bare stub breaks it."""
+    def __init__(self, draw):
+        super().__init__(0)
+        self._draw = draw
+    def random(self): return self._draw
+
+
+def test_a_relevant_item_raises_the_odds_of_speaking():
+    """The design decision: news the person cares about should shorten the wait,
+    not merely improve what is said once the coin happens to come up."""
+    state = proactive.ProactiveState(minutes_since_user=120.0, recent_msg_count=0)
+    cfg = proactive.ProactiveConfig(cooldown_min=0.0, use_presence=False)
+    pres = sensors.Presence(idle_seconds=60.0, screen_locked=False)
+    base = proactive.tick(state, generate=lambda s, u: "line", config=cfg,
+                          presence=pres, rng=_AlwaysRoll(0.30))
+    boosted = proactive.tick(state, generate=lambda s, u: "line", config=cfg,
+                             presence=pres, rng=_AlwaysRoll(0.30),
+                             pending=_item(0.9))
+    # Assert on the GATE, not on what the composer then did with it: the same draw
+    # fails the roll without an item and passes it with one. Whether a line
+    # survives voice scoring afterwards is compose's business, not this gate's.
+    assert base.reason == "did not roll to speak"
+    assert boosted.reason != "did not roll to speak"
+
+
+def test_a_merely_mentionable_item_does_not_buy_an_interruption():
+    """Over MENTION but under INTERRUPT: it may colour what is said, it may not
+    make the Keeper speak."""
+    state = proactive.ProactiveState(minutes_since_user=120.0, recent_msg_count=0)
+    cfg = proactive.ProactiveConfig(cooldown_min=0.0, use_presence=False)
+    pres = sensors.Presence(idle_seconds=60.0, screen_locked=False)
+    d = proactive.tick(state, generate=lambda s, u: "line", config=cfg,
+                       presence=pres, rng=_AlwaysRoll(0.30), pending=_item(0.5))
+    assert not d.spoke
+
+
+def test_no_item_may_break_the_cooldown():
+    state = proactive.ProactiveState(minutes_since_user=120.0, recent_msg_count=0,
+                                     minutes_since_proactive=1.0)
+    cfg = proactive.ProactiveConfig(cooldown_min=600.0)
+    d = proactive.tick(state, generate=lambda s, u: "line", config=cfg,
+                       presence=sensors.Presence(idle_seconds=60.0,
+                                                 screen_locked=False),
+                       rng=_AlwaysRoll(0.0), pending=_item(1.0))
+    assert not d.spoke and "cooldown" in d.reason
+
+
+def test_no_item_may_speak_to_a_locked_screen():
+    state = proactive.ProactiveState(minutes_since_user=120.0, recent_msg_count=0)
+    cfg = proactive.ProactiveConfig(cooldown_min=0.0)
+    d = proactive.tick(state, generate=lambda s, u: "line", config=cfg,
+                       presence=sensors.Presence(idle_seconds=60.0,
+                                                 screen_locked=True),
+                       rng=_AlwaysRoll(0.0), pending=_item(1.0))
+    assert not d.spoke and "locked" in d.reason
+
+
+def test_an_item_is_re_voiced_so_the_news_survives():
+    """compose() writes spare mood lines: handed this item live it produced "The
+    tide brings the brush back to your hand", which carries no news at all. revoice
+    preserves every fact while putting it in register, so the item's substance
+    reaches the person."""
+    seen = {}
+    def gen(system, user):
+        seen["user"] = user
+        return "Erin Milez paints crowded cities."
+    state = proactive.ProactiveState(minutes_since_user=120.0, recent_msg_count=0)
+    cfg = proactive.ProactiveConfig(cooldown_min=0.0, use_presence=False)
+    d = proactive.tick(state, generate=gen, config=cfg,
+                       presence=sensors.Presence(idle_seconds=60.0,
+                                                 screen_locked=False),
+                       rng=_AlwaysRoll(0.0), pending=_item(0.9))
+    assert "Erin Milez" in seen.get("user", ""), "the item never reached the model"
+    assert d.spoke and "Erin Milez" in d.text
+    assert d.reason == "spoke about something watched"
