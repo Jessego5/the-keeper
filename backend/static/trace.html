@@ -13,7 +13,11 @@
   }
   * { box-sizing:border-box; }
   html,body { margin:0; height:100%; }
+  /* background-attachment:fixed maps the ramp to the VIEWPORT, not the document.
+     Without it the gradient stretches across the full scroll height, and the trace
+     grows without limit, so a long session smeared it into flat dull bands. */
   body { background:linear-gradient(180deg,var(--surface),var(--sea) 40%,var(--deep));
+         background-attachment:fixed;
          color:var(--foam); font-family:var(--mono); font-size:12.5px;
          padding:2rem 1.2rem; }
   .wrap { max-width:52rem; margin:0 auto; }
@@ -37,10 +41,9 @@
          border-radius:0.4rem; padding:0.5rem 0.65rem; white-space:pre-wrap;
          line-height:1.5; overflow-x:auto; }
   .empty { color:var(--current); font-style:italic; }
-  .mem { border-left:2px solid rgba(207,224,218,0.28); }
-  .tool { border-left:2px solid var(--amber); margin-bottom:0.35rem; }
+  .tool { margin-bottom:0.35rem; }
   .tool .tn { color:var(--amber); }
-  .reply { border-left:2px solid var(--foam-dim); font-family:var(--serif);
+  .reply { font-family:var(--serif);
            font-size:1rem; color:var(--foam); }
   .flag { color:var(--amber); }
   .foot { text-align:center; color:var(--current); font-size:0.62rem; margin-top:1rem; }
@@ -73,18 +76,18 @@
       ? (t.tools_called||[]).map(tool).join("")
       : '<div class="box empty">no tools called ('+esc(t.path)+' path)</div>';
     const mem = (t.memory_injected||"").trim()
-      ? '<div class="box mem">'+esc(t.memory_injected)+'</div>'
+      ? '<div class="box">'+esc(t.memory_injected)+'</div>'
       : '<div class="box empty">nothing injected — no relevant memory</div>';
     // Why that register — the trace's whole job. "turn" being granted or refused by
     // the store is the most interesting decision the Keeper makes, and it used to
     // reach the terminal only.
     const why = (t.register_note||"").trim()
       ? '<div class="row"><div class="label">why this register</div>'
-        + '<div class="box mem">'+esc(t.register_note)+'</div></div>'
+        + '<div class="box">'+esc(t.register_note)+'</div></div>'
       : '';
     // An unbidden line: what made it worth interrupting for.
     const src = t.source_item
-      ? '<div class="row"><div class="label">what it noticed</div><div class="box mem">'
+      ? '<div class="row"><div class="label">what it noticed</div><div class="box">'
         + esc(t.source_item.title)
         + '<br><span class="dim">relevance '+esc(t.source_item.relevance)
         + ' — because it keeps: '+esc(t.source_item.because||"—")+'</span>'
