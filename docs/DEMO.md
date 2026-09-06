@@ -140,23 +140,32 @@ Finish on the **dashboard**, now fully populated: energy and speak-probability, 
 and changes and insights, the goal's progress, the house (idle, screen, focused app),
 reminders held.
 
-## Optional coda — it is an agent, not just an app  *(~15s)*
+## Act 7 — It is an agent, not just an app  *(~25s)*
 
-```bash
-curl -s localhost:8790/.well-known/agent.json | python3 -m json.tool
-```
-> An Agent Card. Other agents can call it.
+Open **`localhost:8790/.well-known/agent.json`** in a tab.
+> An **Agent Card**: name, skills, and an endpoint. This is the server half of
+> A2A — other agents can discover the Keeper and call it.
+
+Then, in chat:
 
 ```
 consult the agent at http://localhost:8790 and ask what it can help with
 ```
-> It consults a peer over A2A — here, itself.
+> The **trace** shows the client half:
+> ```
+> tool : consult_peer
+> args : {"url": "http://localhost:8790", "task": "What can you help with?"}
+> reply: [The Keeper] The tide brings many things...
+> ```
+> It discovers an agent by URL, sends it a task, and reads the reply. Here it is
+> pointed at itself for want of a second agent to hand — say so, and note the URL
+> could be anyone's.
 
 ---
 
 ## Timing
 
-About **4½ minutes**. Acts 1 and 5 are the ones that cannot be cut: memory that
+About **5 minutes**. Acts 1 and 5 are the ones that cannot be cut: memory that
 changes, and a machine that speaks first with the browser shut.
 
 ## Rehearsal notes

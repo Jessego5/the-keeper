@@ -327,29 +327,38 @@ async def _proactive_loop() -> None:
             # actually bites — yet until now only chat turns were recorded, so
             # every autonomous decision was invisible outside the terminal.
             item = STATE.pending_item
-            STATE.traces.appendleft({
-                "ts": time.time(),
-                "kind": "proactive",
-                "cue": "(unbidden — the Keeper decided to speak)",
-                "water_state": decision.water_state,
-                "register_note": f"proactive: {decision.reason}",
-                "memory_injected": "",
-                "path": "proactive",
-                "tools_called": [],
-                "reply": decision.text or "",
-                "spoke": decision.spoke,
-                "reason": decision.reason,
-                "energy": round(decision.energy, 3),
-                "base_score": round(decision.base_score, 3),
-                "source_item": ({
-                    "title": item.title,
-                    "url": item.url,
-                    "relevance": round(item.relevance, 2),
-                    "because": item.because,
-                } if item is not None and decision.spoke else None),
-                "score": None,
-                "fell_back": False,
-            })
+            # Only decisions worth reading. Tracing every tick floods the ring with
+            # "did not roll to speak" and pushes real turns out of it — the loop
+            # ticks constantly, and most ticks are the Keeper correctly saying
+            # nothing. A quiet that was ABOUT something (it had a line and withheld
+            # it) is worth keeping; ordinary restraint is not.
+            worth_tracing = decision.spoke or decision.reason in (
+                "would only repeat itself", "rolled to speak, but chose silence")
+            if worth_tracing:
+                STATE.traces.appendleft({
+                    "ts": time.time(),
+                    "kind": "proactive",
+                    "cue": ("(unbidden — the Keeper decided to speak)" if decision.spoke
+                            else "(unbidden — the Keeper had a line and withheld it)"),
+                    "water_state": decision.water_state,
+                    "register_note": f"proactive: {decision.reason}",
+                    "memory_injected": "",
+                    "path": "proactive",
+                    "tools_called": [],
+                    "reply": decision.text or "",
+                    "spoke": decision.spoke,
+                    "reason": decision.reason,
+                    "energy": round(decision.energy, 3),
+                    "base_score": round(decision.base_score, 3),
+                    "source_item": ({
+                        "title": item.title,
+                        "url": item.url,
+                        "relevance": round(item.relevance, 2),
+                        "because": item.because,
+                    } if item is not None and decision.spoke else None),
+                    "score": None,
+                    "fell_back": False,
+                })
             if decision.spoke and decision.text:
                 # Whatever was pending has now been said (or was at least the
                 # context for what was said), so retire it before anything else can
