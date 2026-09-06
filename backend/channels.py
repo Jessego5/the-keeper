@@ -133,10 +133,21 @@ class Delivery:
 
 
 def build_default(listeners: set) -> Delivery:
-    """The Keeper's standard surfaces: web + native banner always; Telegram if a bot
-    token is configured."""
-    return Delivery([
-        SSEChannel(listeners),
-        NotifierChannel(),
-        TelegramChannel.from_env(),
-    ])
+    """The Keeper's standard surfaces: web always; the native banner only where it
+    can actually fire; Telegram if a bot token is configured.
+
+    The banner is conditional because it was not, and /state advertised
+    channels: ["web", "native"] from inside a Linux container where
+    notifier.available() is "none" — a delivery surface that silently swallowed
+    every line sent to it. Reporting a capability that does not exist is the same
+    failure as the presence sensors quietly returning defaults: it reads as
+    working right up until someone depends on it.
+    """
+    surfaces: list = [SSEChannel(listeners)]
+    if notifier.available() != "none":
+        surfaces.append(NotifierChannel())
+    else:
+        print("[channels] native banner unavailable here "
+              "(no macOS notifier) — not offering it", flush=True)
+    surfaces.append(TelegramChannel.from_env())
+    return Delivery(surfaces)

@@ -91,3 +91,21 @@ def test_build_default_has_web_and_native(monkeypatch):
     d = channels.build_default(set())
     assert "web" in d.names() and "native" in d.names()
     assert "telegram" not in d.names()          # off without a token
+
+
+# --- a surface is only offered if it can actually deliver --- #
+
+def test_native_banner_is_offered_when_the_notifier_exists(monkeypatch):
+    monkeypatch.setattr(channels.notifier, "available", lambda: "keeper.app")
+    assert "native" in channels.build_default(set()).names()
+
+
+def test_native_banner_is_withheld_where_it_cannot_fire(monkeypatch):
+    """Regression: inside the Linux container /state advertised
+    channels: ["web", "native"] while notifier.available() was "none" — a surface
+    that silently swallowed every line sent to it. Claiming a capability you do
+    not have reads as working until something depends on it."""
+    monkeypatch.setattr(channels.notifier, "available", lambda: "none")
+    names = channels.build_default(set()).names()
+    assert "native" not in names
+    assert "web" in names, "the web surface must survive regardless"
