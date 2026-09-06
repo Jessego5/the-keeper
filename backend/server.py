@@ -20,6 +20,7 @@ the fact store, which persists to memory_store/facts.jsonl.
 from __future__ import annotations
 
 import asyncio
+import os
 import time
 from collections import deque
 from contextlib import asynccontextmanager
@@ -50,7 +51,9 @@ import native_tools
 import persona
 import reminders
 import routines
+import relevance
 import sessions
+import sources
 import subagents
 import tasks
 import proactive
@@ -154,6 +157,10 @@ RECENT_WINDOW_MIN = 240.0   # "recent" messages = last 4h, for context richness
 # this many seconds of REAL time. Due reminders are exempt (kept promises land on
 # time). This is the backstop against notification spam.
 MIN_REAL_REACH_GAP_S = 60.0
+# How often the watched feeds are re-fetched, and how many new items are scored
+# per pass — each costs a judge call, so this is a budget, not a limit on reading.
+SOURCE_POLL_S = 900.0
+SOURCE_SCAN_MAX = 8
 # Same idea for idle reflection: never synthesize insights more than once per this
 # many seconds of real time, so a fast demo clock can't flood the store.
 MIN_REAL_DRIFT_GAP_S = 300.0
@@ -186,6 +193,9 @@ class AppState:
     embed: Optional[memory.Embedder] = None   # semantic recall; None => keyword
     mood_signal: Optional[object] = None   # local mood classifier; None => keyword
     llm_mood_signal: Optional[object] = None   # live-model register read; None => local
+    seen_sources: Optional[object] = None      # delivery keys already sent
+    pending_item: Optional[object] = None      # scored, unsent, waiting for a tick
+    last_poll_at: Optional[float] = None
     wake: Optional[asyncio.Event] = None   # set to interrupt the loop's sleep
     mcp: Optional[tools.MCPManager] = None  # passive-loop tools; None until connected
     reflections: drift.ReflectionLog = field(default_factory=drift.ReflectionLog)
@@ -288,12 +298,20 @@ async def _proactive_loop() -> None:
         if spoke:
             pass
         elif can_reach:
+            # Refresh what is being watched before deciding. Rate-limited inside,
+            # and it only ever writes a candidate — the decision stays in tick().
+            try:
+                await _poll_sources()
+            except Exception as exc:  # noqa: BLE001 - a feed must not kill the loop
+                print(f"[sources] poll error: {type(exc).__name__}: {exc}",
+                      flush=True)
             try:
                 decision = await asyncio.to_thread(
                     proactive.tick,
                     STATE.proactive_state(),
                     generate=STATE.generate, fast_model=STATE.fast,
                     store=STATE.store, config=STATE.config, presence=pres,
+                    pending=STATE.pending_item,
                 )
             except Exception as exc:  # noqa: BLE001 - never let the loop die silently
                 print(f"[proactive] tick error: {type(exc).__name__}: {exc}",
@@ -304,6 +322,15 @@ async def _proactive_loop() -> None:
                   f"E={decision.energy:.2f} score={decision.base_score:.2f} "
                   f"wait={decision.wait_next_s}s", flush=True)
             if decision.spoke and decision.text:
+                # Whatever was pending has now been said (or was at least the
+                # context for what was said), so retire it before anything else can
+                # deliver it a second time.
+                if STATE.pending_item is not None and STATE.seen_sources is not None:
+                    STATE.seen_sources.mark(STATE.pending_item)
+                    print(f"[sources] delivered {STATE.pending_item.title[:50]!r} "
+                          f"(relevance {STATE.pending_item.relevance:.1f}, "
+                          f"because {STATE.pending_item.because!r})", flush=True)
+                    STATE.pending_item = None
                 STATE.last_proactive_at = time.time()
                 STATE.history.append({"role": "assistant", "content": decision.text,
                                       "ts": time.time()})
@@ -355,6 +382,11 @@ async def lifespan(app: FastAPI):
     for name, status in caps.items():
         if status != "live":
             print(f"[sensors] {name} unavailable — {status}", flush=True)
+    STATE.seen_sources = sources.SeenStore()
+    feeds = [u for u in os.environ.get("KEEPER_FEEDS", "").split(",") if u.strip()]
+    print(f"[sources] watching {len(feeds)} feed(s)"
+          + (f"; {len(STATE.seen_sources.keys)} already delivered" if feeds else
+             " — set KEEPER_FEEDS to a comma-separated list to enable"), flush=True)
     STATE.current_key = STATE.sessions.most_recent_key()  # resume last on start
     STATE.wake = asyncio.Event()
     # Delivery surfaces: web + native banner always; Telegram if a token is set.
@@ -570,6 +602,56 @@ def _goal_check_interval() -> float:
     a person-step was never nudged in a demo. Compress it the same way drift is.
     """
     return tasks.DEFAULT_CHECK_INTERVAL_S / max(STATE.config.speed, 1.0)
+
+
+async def _poll_sources() -> None:
+    """Fetch what is being watched, score it against memory, keep the best one.
+
+    Runs off the tick path deliberately. proactive.tick() is sync, pure and unit
+    testable with no network, and it stays that way: this writes a scored candidate
+    to STATE and the tick only reads it.
+    """
+    if STATE.store is None or STATE.seen_sources is None:
+        return
+    feeds = [u.strip() for u in os.environ.get("KEEPER_FEEDS", "").split(",")
+             if u.strip()]
+    if not feeds:
+        return
+    now = time.time()
+    if (STATE.last_poll_at is not None
+            and now - STATE.last_poll_at < SOURCE_POLL_S / max(STATE.config.speed, 1.0)):
+        return
+    STATE.last_poll_at = now
+
+    best = None
+    for url in feeds:
+        try:
+            xml = await asyncio.to_thread(_fetch_text, url)
+            items = sources.parse_feed(xml, source=url)
+        except Exception as exc:  # noqa: BLE001 - a dead feed is never fatal
+            print(f"[sources] {url} failed: {type(exc).__name__}: {exc}", flush=True)
+            continue
+        fresh = STATE.seen_sources.unseen(items)[:SOURCE_SCAN_MAX]
+        for item in fresh:
+            score, because = await asyncio.to_thread(
+                relevance.score_item, item, STATE.store,
+                generate=STATE.fast or STATE.generate, embed=STATE.embed)
+            item.relevance, item.because = score, because
+            if relevance.worth_mentioning(score) and (
+                    best is None or score > best.relevance):
+                best = item
+    if best is not None:
+        STATE.pending_item = best
+        print(f"[sources] pending {best.title[:50]!r} "
+              f"relevance={best.relevance:.1f} because={best.because!r}", flush=True)
+
+
+def _fetch_text(url: str) -> str:
+    import httpx
+    r = httpx.get(url, timeout=15, follow_redirects=True,
+                  headers={"user-agent": "the-keeper/1.0"})
+    r.raise_for_status()
+    return r.text
 
 
 async def _maybe_advance_goal() -> bool:

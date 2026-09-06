@@ -28,6 +28,7 @@ from typing import Optional
 import compose
 import energy
 import memory
+import relevance
 import sensors
 
 Generator = compose.Generator
@@ -98,6 +99,12 @@ def derive_state(minutes_since_user: Optional[float]) -> str:
     return "tidal"
 
 
+# How much a genuinely relevant item may weight the coin. p_max still binds, so a
+# busy feed cannot push the Keeper past its own ceiling — this shortens the wait
+# for news that matters, it does not remove the gate.
+SOURCE_BOOST = 3.0
+
+
 def tick(
     state: ProactiveState,
     *,
@@ -107,6 +114,7 @@ def tick(
     config: Optional[ProactiveConfig] = None,
     presence: Optional[sensors.Presence] = None,
     rng: Optional[random.Random] = None,
+    pending: Optional[object] = None,
 ) -> TickDecision:
     """Run one proactive decision. Never blocks; never raises on a normal path."""
     # See maybe_drift: a dataclass default in the signature is built once and shared.
@@ -138,12 +146,42 @@ def tick(
     # Gate 2 — restlessness, modulated by presence. Idle time nudges the score:
     # present-but-quiet is a good moment to reach out; long-gone is not.
     factor = presence_factor(pres.idle_seconds) if config.use_presence else 1.0
+    # Something worth interrupting for weights the coin. This is the ONLY route by
+    # which the outside world affects how often someone is disturbed, so it is
+    # deliberately narrow: only an item over relevance.INTERRUPT (a far higher bar
+    # than "worth mentioning"), and p_max still caps the result.
+    if pending is not None and relevance.worth_interrupting(
+            getattr(pending, "relevance", 0.0)):
+        factor *= SOURCE_BOOST
     if not energy.roll_speak(score * factor, rng=rng,
                              p_min=config.p_min, p_max=config.p_max):
         return quiet("did not roll to speak")
 
-    # Gate 3 — content. Recall what's present, then let compose try (or decline).
+    # Gate 3 — content. With something new to say, say that; otherwise fall back to
+    # what has always happened here, which is returning the person their own past.
     mem = memory.recall(store, "", k=3) if store is not None else ""
+
+    if pending is not None and relevance.worth_mentioning(
+            getattr(pending, "relevance", 0.0)):
+        # RE-VOICED, not composed. compose() writes spare mood lines, and handed an
+        # item it produced "The tide brings the brush back to your hand" — in voice,
+        # and carrying none of the news. revoice() exists to put a factual answer
+        # into the Keeper's register while preserving every fact, which is exactly
+        # this job: the point of a source is telling someone something they did not
+        # know.
+        #
+        # Tool-free on purpose. Feed text is written by strangers, and sandbox.py
+        # documents where untrusted text reaching a tool-capable loop leads.
+        plain = (f"Something new that touches what you keep about them: "
+                 f"{getattr(pending, 'title', '')}. "
+                 f"{getattr(pending, 'url', '')}").strip()
+        text = compose.revoice(plain, water,
+                               generate=fast_model or generate, memory=mem)
+        if text and text.strip():
+            return TickDecision(True, "spoke about something watched",
+                                en, score, wait, text.strip(), water)
+        # fall through to the ordinary line rather than losing the turn
+
     result = compose.compose(
         "proactive", water, generate=generate, fast_model=fast_model, memory=mem)
     if result.silent:
