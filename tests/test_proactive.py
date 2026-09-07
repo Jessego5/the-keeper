@@ -1,6 +1,7 @@
 """Tier 1 — the reach-out decision (proactive.py). Gating only; no LLM, no key."""
 import random
 import pytest
+import compose
 import proactive
 import sensors
 
@@ -25,13 +26,13 @@ def test_cooldown_gate_holds_silence():
                                   minutes_since_proactive=5)   # < cooldown
     d = proactive.tick(st, generate=_speaks, presence=AWAKE,
                        rng=random.Random(0))
-    assert not d.spoke and "cooldown" in d.reason
+    assert not d.spoke and d.code == proactive.Reason.COOLDOWN
 
 
 def test_lock_gate_holds_silence():
     d = proactive.tick(RESTLESS, generate=_speaks, presence=LOCKED,
                        rng=random.Random(0))
-    assert not d.spoke and d.reason == "screen locked"
+    assert not d.spoke and d.code == proactive.Reason.SCREEN_LOCKED
 
 
 def test_silence_when_compose_declines():
@@ -103,8 +104,8 @@ def test_a_relevant_item_raises_the_odds_of_speaking():
     # Assert on the GATE, not on what the composer then did with it: the same draw
     # fails the roll without an item and passes it with one. Whether a line
     # survives voice scoring afterwards is compose's business, not this gate's.
-    assert base.reason == "did not roll to speak"
-    assert boosted.reason != "did not roll to speak"
+    assert base.code == proactive.Reason.DICE
+    assert boosted.code != proactive.Reason.DICE
 
 
 def test_a_merely_mentionable_item_does_not_buy_an_interruption():
@@ -126,7 +127,7 @@ def test_no_item_may_break_the_cooldown():
                        presence=sensors.Presence(idle_seconds=60.0,
                                                  screen_locked=False),
                        rng=_AlwaysRoll(0.0), pending=_item(1.0))
-    assert not d.spoke and "cooldown" in d.reason
+    assert not d.spoke and d.code == proactive.Reason.COOLDOWN
 
 
 def test_no_item_may_speak_to_a_locked_screen():
@@ -136,7 +137,7 @@ def test_no_item_may_speak_to_a_locked_screen():
                        presence=sensors.Presence(idle_seconds=60.0,
                                                  screen_locked=True),
                        rng=_AlwaysRoll(0.0), pending=_item(1.0))
-    assert not d.spoke and "locked" in d.reason
+    assert not d.spoke and d.code == proactive.Reason.SCREEN_LOCKED
 
 
 def test_an_item_is_re_voiced_so_the_news_survives():
@@ -271,3 +272,71 @@ def test_zero_means_no_ceiling():
                                                              screen_locked=False),
                        rng=_AlwaysRoll(0.0))
     assert "said enough today" not in d.reason
+
+
+# --- every outcome is countable, not just readable --- #
+
+def test_every_decision_carries_a_known_code():
+    """The prose in `reason` is for a person and will keep being reworded. The
+    code is the thing anything else may branch or count on, so it must always be
+    from the closed set."""
+    st = proactive.ProactiveState(minutes_since_user=600.0, recent_msg_count=0)
+    for seed in range(30):
+        d = proactive.tick(st, generate=compose.stub_generator,
+                           presence=AWAKE, rng=random.Random(seed))
+        assert d.code in proactive.ALL_REASONS, d.code
+
+
+def test_the_code_agrees_with_whether_it_spoke():
+    st = proactive.ProactiveState(minutes_since_user=600.0, recent_msg_count=0)
+    for seed in range(30):
+        d = proactive.tick(st, generate=compose.stub_generator,
+                           presence=AWAKE, rng=random.Random(seed))
+        assert (d.code in proactive.SPOKE_REASONS) == d.spoke
+
+
+def test_each_gate_reports_its_own_code():
+    """One per gate, so a gate that stops firing shows up as a missing code
+    rather than as a number that quietly drifts."""
+    cfg = proactive.ProactiveConfig()
+    base = proactive.ProactiveState(minutes_since_user=600.0, recent_msg_count=0)
+
+    spent = proactive.ProactiveState(minutes_since_user=600.0, proactive_today=99)
+    assert proactive.tick(spent, generate=compose.stub_generator, config=cfg,
+                          presence=AWAKE).code == proactive.Reason.DAILY_MAX
+
+    hot = proactive.ProactiveState(minutes_since_user=600.0,
+                                   minutes_since_proactive=1.0)
+    assert proactive.tick(hot, generate=compose.stub_generator, config=cfg,
+                          presence=AWAKE).code == proactive.Reason.COOLDOWN
+
+    locked = sensors.Presence(idle_seconds=10.0, screen_locked=True,
+                              frontmost_app=None)
+    assert proactive.tick(base, generate=compose.stub_generator, config=cfg,
+                          presence=locked).code == proactive.Reason.SCREEN_LOCKED
+
+    never = proactive.tick(base, generate=compose.stub_generator,
+                           config=proactive.ProactiveConfig(p_min=0.0, p_max=0.0),
+                           presence=AWAKE)
+    assert never.code == proactive.Reason.DICE
+
+
+def test_a_silent_composer_is_distinguishable_from_a_repeat():
+    """Two different failures that both end in silence. Counting them together
+    would hide which one is happening."""
+    always = proactive.ProactiveConfig(p_min=1.0, p_max=1.0)
+    st = proactive.ProactiveState(minutes_since_user=600.0, recent_msg_count=0)
+
+    quiet_model = proactive.tick(st, generate=lambda s, u: "", config=always,
+                                 presence=AWAKE)
+    assert quiet_model.code == proactive.Reason.COMPOSER_SILENT
+
+    echo = proactive.tick(st, generate=lambda s, u: "The water holds still.",
+                          config=always, presence=AWAKE,
+                          recent=["The water holds still."])
+    assert echo.code == proactive.Reason.REPEAT
+
+
+def test_the_codes_are_all_distinct():
+    values = [v for k, v in vars(proactive.Reason).items() if not k.startswith("_")]
+    assert len(values) == len(set(values)) == len(proactive.ALL_REASONS)

@@ -39,6 +39,18 @@ Three things it said on first run, none of which were obvious beforehand:
     busy feed, not a shaper of ordinary behaviour, and it should be described that
     way rather than credited with restraint the cooldown is providing.
 
+Since every decision now carries a proactive.Reason code, the run also reports
+which gate ended each tick, which turns the first finding above from an inference
+into a count. Pooled across all three profiles at shipped settings:
+
+    cooldown  78.2%     dice  16.0%     spoke  5.8%
+
+and daily_max, composer_silent and repeat do not appear at all. The ceiling really
+never binds; the coin is a minor character; the refractory period IS the policy.
+(The two composer outcomes are absent because the simulation runs on the offline
+stub, which never declines and never repeats itself. Those gates are real, they
+just cannot be exercised without a live model.)
+
     python backend/proactive_bench.py
     python backend/proactive_bench.py --days 14 --runs 40
 """
@@ -46,10 +58,11 @@ Three things it said on first run, none of which were obvious beforehand:
 from __future__ import annotations
 
 import argparse
+import collections
 import itertools
 import random
 import statistics
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 
 import compose
 import proactive
@@ -82,6 +95,10 @@ class Outcome:
     burst_1h: float         # times it spoke twice inside an hour
     asleep: float           # outreaches while they were asleep
     spoke_total: int
+    # Which gate actually held the silence, counted by proactive.Reason code.
+    # Without this the benchmark can say HOW OFTEN it stayed quiet but not why,
+    # and "why" is the half that tells you which knob is load-bearing.
+    codes: dict = field(default_factory=dict)
 
 
 def _run(cfg: proactive.ProactiveConfig, prof: Profile, days: float,
@@ -95,6 +112,7 @@ def _run(cfg: proactive.ProactiveConfig, prof: Profile, days: float,
     last_user = 0.0
     last_spoke: float | None = None
     spoke_at: list[float] = []
+    codes: collections.Counter = collections.Counter()
     today_count, today_start = 0, 0.0
 
     while t < horizon:
@@ -110,6 +128,7 @@ def _run(cfg: proactive.ProactiveConfig, prof: Profile, days: float,
             proactive_today=today_count)
         d = proactive.tick(state, generate=compose.stub_generator, config=cfg,
                            presence=awake, rng=rng)
+        codes[d.code] += 1
         if d.spoke:
             spoke_at.append(t)
             last_spoke, today_count = t, today_count + 1
@@ -125,7 +144,8 @@ def _run(cfg: proactive.ProactiveConfig, prof: Profile, days: float,
         burst_1h=sum(1 for g in gaps if g < 60) / days,
         asleep=sum(1 for h in hour_of
                    if h < prof.awake_from or h > prof.awake_to) / days,
-        spoke_total=len(spoke_at))
+        spoke_total=len(spoke_at),
+        codes=dict(codes))
 
 
 def evaluate(cfg: proactive.ProactiveConfig, days: float = 7.0,
@@ -139,7 +159,9 @@ def evaluate(cfg: proactive.ProactiveConfig, days: float = 7.0,
             longest_silence_h=statistics.mean(r.longest_silence_h for r in rs),
             burst_1h=statistics.mean(r.burst_1h for r in rs),
             asleep=statistics.mean(r.asleep for r in rs),
-            spoke_total=int(statistics.mean(r.spoke_total for r in rs)))
+            spoke_total=int(statistics.mean(r.spoke_total for r in rs)),
+            codes=dict(sum((collections.Counter(r.codes) for r in rs),
+                           collections.Counter())))
     return out
 
 
@@ -172,6 +194,20 @@ def main() -> None:
             print(f"  {label:22} {prof:12} {o.per_day:6.1f} "
                   f"{o.longest_silence_h:8.1f} {o.burst_1h:6.2f} {o.asleep:7.2f}")
         print()
+    # The question the first version of this benchmark could not answer. It could
+    # report that the Keeper spoke 1.4 times a day and stayed quiet the rest, but
+    # not WHICH gate held the silence, which is what tells you where the policy
+    # actually lives and which knob is worth turning.
+    pooled: collections.Counter = collections.Counter()
+    for o in evaluate(base, days=args.days, runs=args.runs).values():
+        pooled.update(o.codes)
+    total = sum(pooled.values()) or 1
+    print("  WHY EACH TICK ENDED   (shipped config, every profile pooled)")
+    print("  " + "-" * 70)
+    for code, n in pooled.most_common():
+        share = 100.0 * n / total
+        print(f"  {code:17} {share:5.1f}%  {'#' * int(round(share / 2))}")
+    print()
     print("  /day   outreaches per day        quiet h  longest silence, hours")
     print("  burst  second line within an hour, per day")
     print("  asleep outreaches outside waking hours, per day")
