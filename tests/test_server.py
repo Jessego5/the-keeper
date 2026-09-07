@@ -75,10 +75,12 @@ async def test_a2a_message_send(client, monkeypatch):
     async def fake_answer(text):
         return f"kept: {text}"
     monkeypatch.setattr(server, "_answer_as_keeper", fake_answer)
+    monkeypatch.setenv("KEEPER_A2A_TOKEN", "test-token")
     req = {"jsonrpc": "2.0", "id": "1", "method": "message/send",
            "params": {"message": {"role": "user",
                                   "parts": [{"kind": "text", "text": "who are you?"}]}}}
-    r = await client.post("/a2a", json=req)
+    r = await client.post("/a2a", json=req,
+                          headers={"authorization": "Bearer test-token"})
     assert r.status_code == 200
     body = r.json()
     assert body["id"] == "1"
@@ -86,10 +88,30 @@ async def test_a2a_message_send(client, monkeypatch):
     assert a2a.text_of(body["result"]) == "kept: who are you?"
 
 
-async def test_a2a_rejects_unknown_method(client):
+async def test_a2a_rejects_unknown_method(client, monkeypatch):
+    monkeypatch.setenv("KEEPER_A2A_TOKEN", "test-token")
     r = await client.post("/a2a", json={"jsonrpc": "2.0", "id": "9",
-                                        "method": "tasks/cancel", "params": {}})
+                                        "method": "tasks/cancel", "params": {}},
+                          headers={"authorization": "Bearer test-token"})
     assert r.json()["error"]["code"] == -32601
+
+
+async def test_a2a_is_closed_without_a_token(client, monkeypatch):
+    """Closed by default, because answering means recalling memory and this repo is
+    about to be public. The refusal names the variable rather than just failing."""
+    monkeypatch.delenv("KEEPER_A2A_TOKEN", raising=False)
+    r = await client.post("/a2a", json={"jsonrpc": "2.0", "id": "1",
+                                        "method": "message/send", "params": {}})
+    err = r.json()["error"]
+    assert err["code"] == -32001 and "KEEPER_A2A_TOKEN" in err["message"]
+
+
+async def test_a2a_rejects_a_wrong_token(client, monkeypatch):
+    monkeypatch.setenv("KEEPER_A2A_TOKEN", "test-token")
+    r = await client.post("/a2a", json={"jsonrpc": "2.0", "id": "1",
+                                        "method": "message/send", "params": {}},
+                          headers={"authorization": "Bearer wrong"})
+    assert r.json()["error"]["code"] == -32002
 
 
 async def test_chat_survives_model_failure(client):
