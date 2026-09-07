@@ -696,7 +696,11 @@ async def _poll_sources() -> None:
         return
     feeds = [u.strip() for u in os.environ.get("KEEPER_FEEDS", "").split(",")
              if u.strip()]
-    if not feeds:
+    # Tools the Keeper watches, from mcp.json. The same servers already serving the
+    # /chat path, read a second time for what is new: a commit that landed, a file
+    # that changed. sources.py explains which tools may honestly go in this list.
+    watches = list(STATE.mcp.watches) if STATE.mcp is not None else []
+    if not feeds and not watches:
         return
     # Nothing kept yet means nothing can be relevant yet: relevance is measured
     # against what the Keeper knows about the person, so an empty store scores
@@ -711,15 +715,31 @@ async def _poll_sources() -> None:
         return
     STATE.last_poll_at = now
 
-    best = None
-    scanned: list = []
+    batches: list[list] = []
     for url in feeds:
         try:
             xml = await asyncio.to_thread(_fetch_text, url)
-            items = sources.parse_feed(xml, source=url)
+            batches.append(sources.parse_feed(xml, source=url))
         except Exception as exc:  # noqa: BLE001 - a dead feed is never fatal
             print(f"[sources] {url} failed: {type(exc).__name__}: {exc}", flush=True)
+    for watch in watches:
+        tool = watch.get("tool", "")
+        label = watch.get("name") or tool
+        if not tool:
             continue
+        try:
+            # mcp.call answers rather than raising, and its deadline is what keeps
+            # a hung server from stalling the whole proactive loop.
+            text = await STATE.mcp.call(tool, watch.get("args") or {})
+            batches.append(sources.parse_tool_output(
+                text, source=label, max_items=int(watch.get("max_items", 8))))
+        except Exception as exc:  # noqa: BLE001 - a dead tool is never fatal
+            print(f"[sources] watch {label} failed: {type(exc).__name__}: {exc}",
+                  flush=True)
+
+    best = None
+    scanned: list = []
+    for items in batches:
         fresh = STATE.seen_sources.unseen(items)[:SOURCE_SCAN_MAX]
         for item in fresh:
             score, because = await asyncio.to_thread(
@@ -1075,6 +1095,15 @@ async def state():
         "listeners": len(STATE.listeners),
         "considered": STATE.last_scan,
         "channels": STATE.delivery.names() if STATE.delivery else ["web"],
+        # Tools the Keeper can actually reach right now, and any server that
+        # promised something it did not deliver. A half-broken MCP server used to
+        # be visible only in the startup log, so a capability could go missing
+        # mid-demo and read as the Keeper simply choosing not to use it.
+        "tools": {
+            "count": len(STATE.mcp.openai_tools()) if STATE.mcp else 0,
+            "servers": STATE.mcp.health if STATE.mcp else [],
+            "problems": STATE.mcp.summary() if STATE.mcp else "",
+        },
     }
 
 

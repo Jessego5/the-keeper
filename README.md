@@ -20,12 +20,18 @@ tends a coast: steadily, expecting nothing back. It has a fixed voice, a memory
 that outlives any single conversation, and hands — when something needs finding
 or working out, it goes and does it.
 
-## Two things make it an agent, not a chatbot
+## Three things make it an agent, not a chatbot
 
 **It acts unbidden.** The proactive loop is gated by an energy model, your
 presence (idle time, screen lock, focused app), and whether it actually has
 anything to say — silence is a valid outcome, and a hard real-time floor stops it
 ever becoming a notification flood.
+
+**It notices.** What it can speak about unbidden is not limited to your own past.
+It watches sources that genuinely push, RSS feeds and its own MCP tools alike, so a
+commit that landed or a file that changed can become the thing it raises. Everything
+it notices is scored against what it knows about you before it earns the right to
+interrupt, and most of it never does.
 
 **It remembers and reflects.** Facts are distilled from conversation and
 retrieved by relevance, recency and importance (the *Generative Agents* function).

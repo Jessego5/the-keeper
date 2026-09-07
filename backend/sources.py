@@ -87,6 +87,103 @@ def _parse_date(raw: str) -> Optional[float]:
     return None
 
 
+# Lines that identify a record rather than describe it. Skipping them is what
+# makes a commit read as "bound the history deque" instead of "commit a1b2c3".
+_META_LINE = re.compile(r"^(commit|author|date|authordate|commitdate|merge|refs|"
+                        r"from|to|subject|id|uid)\b\s*:?\s", re.I)
+
+
+# The label a server puts in front of the one line worth reading, and the escape
+# it prints instead of a real newline. mcp-server-git emits a whole commit message
+# as ONE quoted, escaped string: Message: "subject\n\nbody...". Left alone, the
+# Keeper would say 'Message: "subject\n\nbody' out loud.
+_LABEL = re.compile(r"^(message|subject|summary|title|description)\s*:\s*", re.I)
+_ESCAPED_NEWLINE = "\\n"
+
+
+def _split_record_line(line: str) -> tuple[str, str]:
+    """(title, remainder) for the one line worth reading.
+
+    The title is that line as a person would say it: no field label, no wrapping
+    quotes, cut at the first paragraph break. The REMAINDER is everything after
+    that break, and it must be kept — in a commit it is the explanation under the
+    subject, which is the richest thing in the record to match against memory.
+    """
+    body = _LABEL.sub("", line.strip())
+    head, _, tail = body.partition(_ESCAPED_NEWLINE)
+    title = head.strip().strip("\"'").strip()
+    tail = tail.replace(_ESCAPED_NEWLINE, "\n").strip().strip("\"'").strip()
+    return title, tail
+
+
+def _block_title(block: str) -> tuple[str, str]:
+    """(title, rest) for one record: the first line that reads as prose, and
+    everything else in the block."""
+    lines = [ln.strip() for ln in block.splitlines() if ln.strip()]
+    if not lines:
+        return "", ""
+    raw = next((ln for ln in lines if not _META_LINE.match(ln)), lines[0])
+    title, tail = _split_record_line(raw)
+    rest = [ln for ln in lines if ln is not raw]
+    if tail:
+        rest.append(tail)
+    # A record that was ALL metadata (its only line was a label) still needs
+    # something to be called; the uncleaned line is better than nothing.
+    return (title or raw.strip())[:200], "\n".join(rest)
+
+
+def parse_tool_output(text: str, source: str = "tool",
+                      max_items: int = 8) -> list[SourceItem]:
+    """Turn one MCP tool's text result into items the same gates can judge.
+
+    This is what lets the Keeper notice something other than a feed: a commit that
+    landed, a file that changed in the folder it watches, the day's calendar. The
+    servers are already configured and already running for the /chat path, so
+    nothing here is a new integration, only a second reader of the same tools.
+
+    The PUSH rule from this module's docstring still binds, and it is a property of
+    the TOOL, not of this parser. `git_log` and a directory listing qualify: each
+    entry carries its own identity, so "new since I last looked" is a fact. A web
+    search does not, and pointing this at one would have the Keeper announce old
+    results as discoveries, which an eval already forbids. That choice is made in
+    mcp.json, so it is worth saying plainly: only watch tools whose entries are
+    stable and identifiable.
+
+    Output shape is not standardised across servers. Records separated by blank
+    lines are tried first (git log, calendars), with a wholly indented block read as
+    a continuation of the one above it, which is how git prints a commit message.
+    Failing that, each line is its own record (directory listings). The key is the
+    record's own text, so the same commit read twice is never delivered twice.
+    """
+    body = (text or "").strip()
+    if not body or body.startswith("("):     # "(tool error: ...)", "(no output)"
+        return []
+
+    paragraphs = [p for p in re.split(r"\n\s*\n", body) if p.strip()]
+    blocks: list[str] = []
+    for raw in paragraphs:
+        indented = all(ln.startswith((" ", "\t"))
+                       for ln in raw.splitlines() if ln.strip())
+        if indented and blocks:
+            blocks[-1] = f"{blocks[-1]}\n{raw.strip()}"
+        else:
+            blocks.append(raw.strip())
+    # Only when the output has no blank line anywhere is each line its own record.
+    # Counting the MERGED blocks instead would misread a single commit, whose
+    # message is one indented paragraph, as a listing, and hand back its hash,
+    # its author and its date as three separate things that happened.
+    if len(paragraphs) == 1:
+        blocks = [ln.strip() for ln in body.splitlines() if ln.strip()]
+
+    items: list[SourceItem] = []
+    for block in blocks[:max_items]:
+        title, rest = _block_title(block)
+        if title:
+            items.append(SourceItem(source=source, title=title, body=rest[:1000],
+                                    key=delivery_key("", block[:500])))
+    return items
+
+
 def parse_feed(xml_text: str, source: str = "feed") -> list[SourceItem]:
     """RSS or Atom -> items. Pure and offline, so the tests need no network."""
     try:

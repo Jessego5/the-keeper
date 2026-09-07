@@ -125,3 +125,56 @@ def test_shipped_config_uses_no_developer_path():
         p = Path(tools.__file__).resolve().parent / name
         if p.exists():
             assert "/Users/" not in p.read_text(), f"{name} hardcodes a home path"
+
+
+# --- declared dependencies: a server must provide what it promised --- #
+
+@requires_node
+async def test_a_server_that_delivers_its_required_tools_is_healthy(sandbox):
+    mgr = tools.MCPManager([_spec(sandbox, required=["list_directory"])])
+    await mgr.connect()
+    try:
+        assert mgr.problems() == [], mgr.summary()
+        assert mgr.health[0]["status"] == "ok"
+    finally:
+        await mgr.aclose()
+
+
+@requires_node
+async def test_a_vanished_tool_is_reported_not_silently_absent(sandbox):
+    """Regression in kind: a tool renamed upstream, or a server that came up
+    half-broken, used to leave no trace anywhere. The Keeper would simply never
+    reach for it, and the gap read as reticence rather than as a fault."""
+    mgr = tools.MCPManager([_spec(sandbox, required=["read_the_persons_mind"])])
+    await mgr.connect()
+    try:
+        assert mgr.health[0]["status"] == "degraded"
+        assert "read_the_persons_mind" in mgr.summary()
+        assert mgr.has_tools          # the rest of the server still works
+    finally:
+        await mgr.aclose()
+
+
+@requires_node
+async def test_a_tool_our_own_filter_blocks_is_named_as_such(sandbox):
+    """The confusing case: the tool exists, and OUR read-only default is what
+    removed it. Saying only 'missing' would send you hunting the wrong server."""
+    mgr = tools.MCPManager([_spec(sandbox, read_only=True,
+                                  required=["write_file"])])
+    await mgr.connect()
+    try:
+        assert mgr.health[0]["status"] == "degraded"
+        assert "write_file" in mgr.summary()
+        assert "blocked by this config" in mgr.summary()
+        assert mgr.health[0]["filtered"] == ["write_file"]
+    finally:
+        await mgr.aclose()
+
+
+@requires_node
+async def test_strict_mode_refuses_a_degraded_server(sandbox, monkeypatch):
+    monkeypatch.setattr(tools, "STRICT", True)
+    mgr = tools.MCPManager([_spec(sandbox, required=["no_such_tool"])])
+    with pytest.raises(RuntimeError, match="no_such_tool"):
+        await mgr.connect()
+    await mgr.aclose()

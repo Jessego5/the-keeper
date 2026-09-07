@@ -66,6 +66,7 @@
   .foot { text-align:center; font-size:0.6rem; color:var(--current);
           margin-top:1.4rem; letter-spacing:0.08em; }
   a { color:var(--tide); text-decoration:none; }
+  .badge.warn { color:#e8b17a; border-color:rgba(232,177,122,0.35); }
   .btn{cursor:pointer;border:none;font:inherit}
   .btn:disabled{opacity:.4;cursor:default}
     .cons-row{display:flex;gap:0.6rem;align-items:baseline;padding:0.18rem 0;
@@ -169,6 +170,7 @@
       <button class="badge btn" id="crank" title="compress the Keeper's clock so its slow behaviour happens in seconds">crank clock</button>
       <button class="badge btn" id="uncrank" title="back to real time">real time</button>
       <span class="badge" id="b-listeners">listeners —</span>
+      <span class="badge" id="b-tools">tools —</span>
     </div>
     <div class="foot"><a href="/">← back to the water</a> · <a href="/trace-view">trace ↗</a> · refreshes every 3s</div>
   </div>
@@ -275,6 +277,12 @@
     document.getElementById("crank").disabled = (s.speed ?? 1) > 1;
     document.getElementById("uncrank").disabled = (s.speed ?? 1) <= 1;
     document.getElementById("b-listeners").textContent = (s.listeners ?? 0) + " listening";
+    // A tool the Keeper cannot reach should look like a fault, not like reticence.
+    const tb = document.getElementById("b-tools"), tools = s.tools || {};
+    const bad = (tools.problems || "").length > 0;
+    tb.textContent = bad ? "tools " + (tools.count ?? 0) + " ⚠" : "tools " + (tools.count ?? 0);
+    tb.title = bad ? tools.problems : "every configured MCP server answered";
+    tb.classList.toggle("warn", bad);
   }
   tick(); setInterval(tick, 3000);
 
