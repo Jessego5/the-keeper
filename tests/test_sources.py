@@ -282,17 +282,22 @@ def test_a_shortened_fact_still_resolves_to_the_kept_one():
             == "Is a painter who stopped painting in March.")
 
 
-def test_an_invented_fact_is_dropped_rather_than_shown():
+def test_an_invented_fact_never_reaches_the_trace():
     """Regression, seen live: the judge copied the EXAMPLE out of its own prompt
     onto every item in a scan, birds and filmmakers included, naming a fact the
-    store never held. An attribution memory cannot back is worse than none: the
-    whole point of `because` is to show the person why it thought this mattered."""
-    assert relevance.attribute("Enjoys competitive cycling.", KEPT) == ""
+    store never held. Whatever is shown must be a line the store actually holds:
+    the whole point of `because` is to show the person why it thought this
+    mattered, and a fact they never gave it is a plausible lie."""
+    got = relevance.attribute("Enjoys competitive cycling.", KEPT)
+    assert got != "Enjoys competitive cycling."
+    assert got in [f.text for f in KEPT]
 
 
-def test_no_attribution_is_left_as_nothing():
-    assert relevance.attribute("", KEPT) == ""
-    assert relevance.attribute("   ", KEPT) == ""
+def test_an_unusable_answer_falls_back_to_the_best_ranked_fact():
+    """No answer, or an unusable one, still names something real: the fact that
+    ranked highest is the one the judge was most prominently shown."""
+    assert relevance.attribute("", KEPT) == KEPT[0].text
+    assert relevance.attribute("   ", KEPT) == KEPT[0].text
 
 
 def test_attribution_survives_an_empty_store():
