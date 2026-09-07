@@ -18,3 +18,7 @@ memory_store_backup_*/
 # would route real user messages around that rule. It is a working file for
 # labelling; only the reviewed evals/register_dataset.json belongs in git.
 evals/register_candidates.json
+
+# Personal demo checklist. Working notes for a recording session, not part of the
+# project; docs/DEMO.md is the version that belongs in git.
+DEMO_TODO.md
