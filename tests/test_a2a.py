@@ -59,10 +59,15 @@ def test_a_public_peer_is_reachable():
     ("http://[::1]:8790", "ipv6 loopback"),
     ("http://10.0.0.5", "private range"),
 ])
-def test_non_public_addresses_are_refused(url, what):
+def test_non_public_addresses_are_refused(url, what, monkeypatch):
     """The Keeper reads web pages, so a prompt injection in one can name a URL for
     it to consult. Unchecked that is a READABLE SSRF: the response comes back into
-    the conversation. These are what such an injection reaches for."""
+    the conversation. These are what such an injection reaches for.
+
+    The allowlist is cleared explicitly: compose.py calls load_dotenv() at import,
+    so a developer .env leaks into the tests. A machine with a loopback peer
+    allowed would pass this while CI, which has no .env, tested something else."""
+    monkeypatch.delenv(a2a.ALLOW_ENV, raising=False)
     with pytest.raises(a2a.PeerBlocked):
         a2a.check_peer_url(url)
 
