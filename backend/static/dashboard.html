@@ -68,6 +68,12 @@
   a { color:var(--tide); text-decoration:none; }
   .btn{cursor:pointer;border:none;font:inherit}
   .btn:disabled{opacity:.4;cursor:default}
+    .cons-row{display:flex;gap:0.6rem;align-items:baseline;padding:0.18rem 0;
+             font-size:0.76rem;font-family:var(--mono,monospace)}
+  .cons-t{color:var(--foam-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .v-int{color:var(--amber);min-width:6.5rem}
+  .v-men{color:var(--tide);min-width:6.5rem}
+  .v-sil{color:var(--foam-dim);opacity:.55;min-width:6.5rem}
   </style>
 </head>
 <body>
@@ -125,6 +131,13 @@
         <div class="val" id="since">—</div>
         <div class="sub">virtual minutes since you spoke</div>
       </div>
+    </div>
+
+    <!-- What it looked at and did NOT say. The rejecting is what separates a
+         companion from a feed reader, and it had no representation on the page. -->
+    <div class="reflection">
+      <div class="label">what it considered &mdash; and mostly didn't say</div>
+      <div id="considered"><span class="none">nothing watched yet.</span></div>
     </div>
 
     <div class="reflection">
@@ -242,6 +255,17 @@
       });
     }
 
+    const cons = document.getElementById("considered");
+    const scan = s.considered || [];
+    cons.innerHTML = scan.length
+      ? scan.map(function(r){
+          const cls = r.verdict === "interrupt" ? "v-int"
+                    : r.verdict === "mention" ? "v-men" : "v-sil";
+          return '<div class="cons-row"><span class="'+cls+'">'+r.relevance.toFixed(1)
+               + ' ' + r.verdict + '</span> <span class="cons-t">'
+               + (r.title||"").replace(/[<>&]/g,"") + '</span></div>';
+        }).join("")
+      : '<span class="none">nothing watched yet.</span>';
     const rt = document.getElementById("reflection-text");
     if (s.latest_reflection) rt.textContent = s.latest_reflection;
     else rt.innerHTML = '<span class="none">nothing kept yet — it has not drifted.</span>';

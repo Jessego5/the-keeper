@@ -82,8 +82,17 @@ def score_item(item, store: memory.MemoryStore, *,
         return 0.0, ""                     # nothing known -> nothing can matter
 
     cue = f"{item.title} {item.body}".strip()
-    # Stage 1: the cheap pass, with recall's own gate doing the rejecting.
-    near = memory.rank_facts(facts, cue=cue, k=k, embed=embed, gate=True)
+    # Stage 1 RANKS, it does not reject. It used to reject, with recall's gate: but
+    # that floor was measured for short chat cues against short facts, and a feed
+    # title plus summary is long enough to dilute the cosine below it. The judge
+    # then never got asked, and a store holding "Has started painting again" scored
+    # an article about someone's dense paintings at 0.0.
+    #
+    # The gate exists to save judge calls when candidates are many. A scan is capped
+    # at eight items, so it was saving almost nothing and costing the accuracy that
+    # is the whole point. As in the supersede path: the judge is the real gate, the
+    # cosine only decides which facts it is shown.
+    near = memory.rank_facts(facts, cue=cue, k=k, embed=embed, gate=False)
     if not near:
         return 0.0, ""
     if generate is None:
