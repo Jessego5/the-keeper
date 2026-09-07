@@ -52,6 +52,12 @@ everything is finally turning around for me
 > same register was granted on the strength of a recorded reversal. Saying it is
 > not evidence; the store is.
 
+**Pause about three seconds after "actually i started painting again."** The reply
+comes back before the memory is written; distillation lands roughly a second later.
+Ask "how is my painting going?" too fast and the reversal is not in the store yet,
+so `turn` is not earned and the beat silently becomes an ordinary tidal reply. This
+is the one place in the demo where typing quickly loses you the moment.
+
 ## Act 2 — It works on things with you  *(~60s)*
 
 ```
@@ -131,6 +137,11 @@ it is empty, because nothing it keeps is the reason.
 curl -s -X POST localhost:8790/config -H 'content-type: application/json' \
   -d '{"speed":600,"cooldown_min":5}'
 ```
+
+The cooldown is measured in the Keeper's own compressed minutes, so **cranking is
+not optional**: at `speed 1` with `cooldown_min 600` it will not speak for ten
+hours. Cranked, expect a line roughly every **60 to 130 seconds**, never faster,
+because the 60s real-time floor cannot be cranked away.
 
 **Close the browser.** One crank makes everything autonomous fire at once:
 
