@@ -40,7 +40,8 @@ class ProactiveState:
 
     minutes_since_user: Optional[float] = None   # None = never talked
     recent_msg_count: int = 0                     # messages in the recent window
-    minutes_since_proactive: Optional[float] = None  # since the Keeper last spoke
+    minutes_since_proactive: Optional[float] = None   # since the Keeper last spoke
+    proactive_today: int = 0        # outreaches already spent on the current day
 
 
 @dataclass
@@ -53,6 +54,12 @@ class ProactiveConfig:
     speed: float = 1.0           # >1 compresses tick waits for demos
     respect_lock: bool = True    # never speak into a locked screen
     cooldown_min: float = 600.0  # refractory: hold silence 10h after speaking
+    # A ceiling on a whole day, which the other gates cannot provide between them.
+    # The 60s floor bounds the GAP and the cooldown bounds the run after an ignored
+    # outreach, but neither bounds the total: a busy feed clearing the interrupt bar
+    # repeatedly could speak all day and break no rule. The reference agent carries the same
+    # guard (anyaction_daily_max_actions), which is what prompted looking for it.
+    daily_max: int = 12
     use_presence: bool = True    # let idle time modulate restlessness
 
 
@@ -160,6 +167,12 @@ def tick(
 
     # One read of the machine, shared by the lock gate and the idle factor.
     pres = presence if presence is not None else sensors.read()
+
+    # Gate -1 — the day's ceiling. Checked first because it is the cheapest and the
+    # most absolute: nothing below can buy an outreach once the day is spent.
+    if (config.daily_max > 0
+            and state.proactive_today >= config.daily_max):
+        return quiet(f"said enough today ({state.proactive_today}/{config.daily_max})")
 
     # Gate 0 — cooldown. If it just reached out and got no reply, hold silence;
     # otherwise low energy would make it pester on every tick.

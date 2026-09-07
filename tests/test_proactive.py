@@ -215,3 +215,59 @@ def test_only_the_recent_window_silences_a_line():
     stale = [f"line number {i}" for i in range(proactive.REPEAT_WINDOW + 3)]
     d = _tick(lambda s, u: old, recent=[old, *stale])
     assert d.spoke, "a line outside the window should no longer bind"
+
+
+# --- a ceiling on the day --- #
+
+def test_the_day_has_a_ceiling():
+    """The other gates bound the GAP between outreaches and the run after an
+    ignored one; none of them bounds the total. A feed clearing the interrupt bar
+    repeatedly could otherwise speak all day and break no rule. The reference agent carries the
+    same guard as anyaction_daily_max_actions."""
+    cfg = proactive.ProactiveConfig(cooldown_min=0.0, use_presence=False,
+                                    daily_max=3)
+    state = proactive.ProactiveState(minutes_since_user=120.0, recent_msg_count=0,
+                                     proactive_today=3)
+    d = proactive.tick(state, generate=lambda s, u: "line", config=cfg,
+                       presence=sensors.Presence(idle_seconds=60.0,
+                                                 screen_locked=False),
+                       rng=_AlwaysRoll(0.0))
+    assert not d.spoke and "said enough today" in d.reason
+
+
+def test_below_the_ceiling_it_may_still_speak():
+    cfg = proactive.ProactiveConfig(cooldown_min=0.0, use_presence=False,
+                                    daily_max=3)
+    state = proactive.ProactiveState(minutes_since_user=120.0, recent_msg_count=0,
+                                     proactive_today=2)
+    d = proactive.tick(state, generate=lambda s, u: "The ice is going out.",
+                       config=cfg, presence=sensors.Presence(idle_seconds=60.0,
+                                                             screen_locked=False),
+                       rng=_AlwaysRoll(0.0))
+    assert d.reason != "said enough today (2/3)"
+
+
+def test_a_relevant_source_item_cannot_buy_past_the_ceiling():
+    """The one gate a watched item is allowed to weight is the restlessness roll.
+    The day's ceiling is not negotiable, or the world could talk its way in."""
+    cfg = proactive.ProactiveConfig(cooldown_min=0.0, use_presence=False,
+                                    daily_max=2)
+    state = proactive.ProactiveState(minutes_since_user=120.0, recent_msg_count=0,
+                                     proactive_today=2)
+    d = proactive.tick(state, generate=lambda s, u: "line", config=cfg,
+                       presence=sensors.Presence(idle_seconds=60.0,
+                                                 screen_locked=False),
+                       rng=_AlwaysRoll(0.0), pending=_item(1.0))
+    assert not d.spoke and "said enough today" in d.reason
+
+
+def test_zero_means_no_ceiling():
+    cfg = proactive.ProactiveConfig(cooldown_min=0.0, use_presence=False,
+                                    daily_max=0)
+    state = proactive.ProactiveState(minutes_since_user=120.0, recent_msg_count=0,
+                                     proactive_today=999)
+    d = proactive.tick(state, generate=lambda s, u: "The ice is going out.",
+                       config=cfg, presence=sensors.Presence(idle_seconds=60.0,
+                                                             screen_locked=False),
+                       rng=_AlwaysRoll(0.0))
+    assert "said enough today" not in d.reason
