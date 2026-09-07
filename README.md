@@ -74,11 +74,16 @@ showing `was` then `now`:
 
 ![The trace: an unbidden line, an A2A consultation, and the injected memory showing what changed](docs/screenshots/trace.png)
 
-**The dashboard shows what it decided *not* to say.** Thirteen items scanned
-against memory: two clear the bar, and the rest, including this repo's own recent
-commits, are scored and dropped. The rejecting is the point.
+**The dashboard shows what it decided *not* to say.** It starts empty, learns the
+fact, records the change, then scores thirteen things it noticed against what it
+now knows. Two clear the bar. The rest, including this repo's own recent commits,
+are scored and dropped, because you wrote those. The rejecting is the point.
 
-![The dashboard: energy, memory counters, and the scored list of what it considered](docs/screenshots/dashboard.png)
+![The dashboard filling: counters moving as facts land, then thirteen items scored and mostly dropped](docs/screenshots/dashboard.gif)
+
+<sub>Recorded against a running instance with the Keeper's clock compressed
+(`speed 600`), which is the same knob the demo script uses, so an hour of its
+patience fits in seven seconds. Nothing else is sped up.</sub>
 
 ---
 
