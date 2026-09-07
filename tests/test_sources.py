@@ -263,3 +263,59 @@ def test_real_shape_commits_keep_distinct_stable_keys():
     b = sources.parse_tool_output(REAL_GIT_MCP, source="repo")
     assert [i.key for i in a] == [i.key for i in b]
     assert len({i.key for i in a}) == 2
+
+
+# --- the trace may only name a fact the store actually holds --- #
+
+class _Fact:
+    def __init__(self, text): self.text = text
+
+
+KEPT = [_Fact("Is a painter who stopped painting in March."),
+        _Fact("Has a brother named Sam.")]
+
+
+def test_a_shortened_fact_still_resolves_to_the_kept_one():
+    """The judge paraphrases. "Is a painter." is the same claim as the stored
+    line, so the trace should show the line the store actually holds."""
+    assert (relevance.attribute("Is a painter.", KEPT)
+            == "Is a painter who stopped painting in March.")
+
+
+def test_an_invented_fact_is_dropped_rather_than_shown():
+    """Regression, seen live: the judge copied the EXAMPLE out of its own prompt
+    onto every item in a scan, birds and filmmakers included, naming a fact the
+    store never held. An attribution memory cannot back is worse than none: the
+    whole point of `because` is to show the person why it thought this mattered."""
+    assert relevance.attribute("Enjoys competitive cycling.", KEPT) == ""
+
+
+def test_no_attribution_is_left_as_nothing():
+    assert relevance.attribute("", KEPT) == ""
+    assert relevance.attribute("   ", KEPT) == ""
+
+
+def test_attribution_survives_an_empty_store():
+    assert relevance.attribute("Is a painter.", []) == ""
+
+
+def test_a_silent_item_carries_no_reason(monkeypatch, tmp_path):
+    """Below the mention bar nothing is ever said, so a 'because' on that row is
+    noise in the scan table at best and a false claim at worst."""
+    store = memory.MemoryStore(tmp_path / "f.jsonl")
+    store.add("Is a painter who stopped painting in March.", kind="fact")
+    item = sources.SourceItem(source="feed", title="Bird photography awards")
+    score, because = relevance.score_item(
+        item, store, generate=lambda s, u: "2 - Is a painter.", embed=None)
+    assert score < relevance.MENTION
+    assert because == ""
+
+
+def test_a_relevant_item_keeps_its_reason(tmp_path):
+    store = memory.MemoryStore(tmp_path / "f.jsonl")
+    store.add("Is a painter who stopped painting in March.", kind="fact")
+    item = sources.SourceItem(source="feed", title="A painter's dense cityscapes")
+    score, because = relevance.score_item(
+        item, store, generate=lambda s, u: "8 - Is a painter.", embed=None)
+    assert score >= relevance.MENTION
+    assert because == "Is a painter who stopped painting in March."

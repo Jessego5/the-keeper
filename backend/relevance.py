@@ -106,7 +106,30 @@ def score_item(item, store: memory.MemoryStore, *,
         print(f"[relevance] judge failed, treating as irrelevant "
               f"({type(exc).__name__}: {exc})", flush=True)
         return 0.0, ""
-    return parse_verdict(raw)
+    score, because = parse_verdict(raw)
+    # The judge is told to copy a fact verbatim, and it does not always: watched
+    # live, it echoed the prompt's own example onto every item in a scan, birds
+    # and filmmakers included, naming a fact the store did not hold. An
+    # attribution memory cannot back is worse than none at all, because the whole
+    # purpose of `because` is to show the person WHY it thought this mattered.
+    return score, attribute(because, near) if score >= MENTION else ""
+
+
+def attribute(because: str, facts) -> str:
+    """The kept fact the judge meant, or "" if it named one that is not there.
+
+    A paraphrase still counts: "Is a painter." for "Is a painter who stopped in
+    March." is the same claim, shortened. An invention does not.
+    """
+    norm = (because or "").strip().strip(".").lower()
+    if not norm:
+        return ""
+    for f in facts:
+        text = f.text if hasattr(f, "text") else str(f)
+        other = text.strip().strip(".").lower()
+        if norm == other or norm in other or other in norm:
+            return text
+    return ""
 
 
 def worth_interrupting(score: float) -> bool:

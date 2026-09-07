@@ -87,25 +87,43 @@ keep a note: the gallery show is in July
 
 ## Act 4 — It has judgment about the world  *(~40s)*
 
-Terminal, from the feed poll:
+Terminal, from the poll:
 
 ```
+[sources] scanned 13, 11 judged not worth saying
 [sources] pending 'Denizens of a Crowded City Populate Erin Milez's Dense Paintings'
-          relevance=0.9 because='Is a painter.'
+          relevance=0.7 because='Is a painter who stopped painting in March.'
 ```
 
-Show the whole scored batch — this is the strongest beat in the demo, because you
-watch it **reject** things:
+Show the whole scored batch. This is the strongest beat in the demo, because you
+watch it **reject** things. A real run:
 
-| item | score | |
-|---|---|---|
-| dense paintings | 0.9 | interrupt |
-| art installation | 0.6–0.7 | mention only |
-| Audubon photography awards | 0.0 | silent |
-| 40 filmmakers | 0.0 | silent |
+| item | source | score | |
+|---|---|---|---|
+| dense paintings | feed | 0.7-0.9 | speaks |
+| Hans Op de Beeck installation | feed | 0.6 | mention only |
+| Audubon photography awards | feed | 0.2 | silent |
+| 40 filmmakers | feed | 0.0 | silent |
+| "Give the Keeper another agent to actually talk to" | **its own repo** | 0.2 | silent |
+| "Refuse a push a laptop can already tell is broken" | **its own repo** | 0.0 | silent |
+
+Two things to say over this.
+
+**It is not just reading feeds.** The bottom rows are real commits, pulled through
+the same MCP git server it uses in chat. Anything that genuinely pushes can be
+watched: a commit log, a folder, a calendar. Only the tool changes; the gate does
+not.
+
+**It refuses to tell you about your own work.** Every commit scores near zero, and
+that is correct, not a miss: you wrote them an hour ago. Something is only news if
+it is news *to this person*. That is the difference between a feed reader and a
+companion, and it is the same judgment that keeps the bird photography quiet.
 
 Two thresholds, not one: *worth mentioning* changes what it says when it was going
 to speak anyway; only *worth interrupting* lets the outside world make it speak.
+
+The `because` is the fact it turned on, copied from the store. On the silent rows
+it is empty, because nothing it keeps is the reason.
 
 ## Act 5 — Then close the browser  *(~60s)*
 
@@ -197,5 +215,10 @@ changes, and a machine that speaks first with the browser shut.
   so it never claims `turn` and there is nothing to demote. You need a message that
   genuinely sounds like a turn but that the store cannot back, which is why Act 1
   uses "everything is finally turning around for me".
-- Feed items are deduplicated permanently. To re-demo the same item,
-  `rm memory_store/sources_seen.jsonl`.
+- Feed items are deduplicated permanently, and so are watched commits. To re-demo
+  the same batch, `rm memory_store/sources_seen.jsonl`.
+- The top item's score moves between **0.7 and 0.9** run to run; the judge is a
+  model, not a lookup. At 0.7 it reads *mention*, not *interrupt*. Narrate it as
+  "worth saying" rather than promising the word on screen.
+- The **git watch will not make it speak.** A commit you wrote is not news to you,
+  so those rows are there to be rejected. Do not wait for one to become a line.
