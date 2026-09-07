@@ -107,29 +107,35 @@ def score_item(item, store: memory.MemoryStore, *,
               f"({type(exc).__name__}: {exc})", flush=True)
         return 0.0, ""
     score, because = parse_verdict(raw)
-    # The judge is told to copy a fact verbatim, and it does not always: watched
-    # live, it echoed the prompt's own example onto every item in a scan, birds
-    # and filmmakers included, naming a fact the store did not hold. An
-    # attribution memory cannot back is worse than none at all, because the whole
-    # purpose of `because` is to show the person WHY it thought this mattered.
-    return score, attribute(because, near) if score >= MENTION else ""
+    if score < MENTION:
+        return score, ""       # nothing is said, so nothing is the reason
+    return score, attribute(because, near)
 
 
 def attribute(because: str, facts) -> str:
-    """The kept fact the judge meant, or "" if it named one that is not there.
+    """The kept fact behind a score, guaranteed to be one the store actually holds.
 
-    A paraphrase still counts: "Is a painter." for "Is a painter who stopped in
-    March." is the same claim, shortened. An invention does not.
+    The judge is asked to copy a fact word for word and does not reliably: the
+    example in this prompt is itself a plausible fact, and watched live the judge
+    copied THAT onto every item in a scan, birds and filmmakers included, naming a
+    line the store did not hold. Replacing the example with an obvious placeholder
+    fixed the copying but cost most of the gate's separation, so the example stays
+    and the check lives here instead.
+
+    A paraphrase resolves to the line it paraphrases ("Is a painter." for "Is a
+    painter who stopped in March."). Anything else falls back to the fact that
+    ranked highest, which is the one the judge was most prominently shown. That is
+    a real fact rather than the judge's invention, which is the property that
+    matters: `because` exists to show the person why it thought this mattered, and
+    a fact they never gave it is a plausible lie.
     """
+    ranked = [f.text if hasattr(f, "text") else str(f) for f in facts]
     norm = (because or "").strip().strip(".").lower()
-    if not norm:
-        return ""
-    for f in facts:
-        text = f.text if hasattr(f, "text") else str(f)
+    for text in ranked:
         other = text.strip().strip(".").lower()
-        if norm == other or norm in other or other in norm:
+        if norm and (norm == other or norm in other or other in norm):
             return text
-    return ""
+    return ranked[0] if ranked else ""
 
 
 def worth_interrupting(score: float) -> bool:
