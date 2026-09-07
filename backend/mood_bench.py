@@ -29,6 +29,11 @@ DATA = json.loads((Path(__file__).resolve().parent.parent /
                    "evals" / "register_dataset.json").read_text())
 TRAIN, TEST = DATA["train"], DATA["test"]
 TAGS = DATA["tags"]
+# The floor's lower bound is 0.15 and the tuner picks it for both anchors, which
+# looks like a boundary the grid is cutting off. It is not: extending the grid down
+# to 0.0 changes nothing, because no case has a top similarity that low, so the
+# floor is simply not the binding constraint in that range and the 0.03 margin is
+# doing the separating. Checked so the next person does not chase it.
 FLOOR_GRID = [round(0.15 + 0.03 * i, 2) for i in range(15)]
 
 
