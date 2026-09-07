@@ -43,9 +43,27 @@ Embedder = Callable[[list[str]], list[list[float]]]
 # Above this cosine, two facts are "the same thing said differently" (semantic dedup).
 _SEMANTIC_DUP = 0.86
 # Related-but-not-duplicate band: a candidate for SUPERSESSION (the judge decides).
-# Floor kept low — real embeddings put "same topic, opposite state" pairs around
-# 0.5; the LLM judge, not the cosine, is the real gate against false positives.
-_SUPERSEDE_LOW = 0.45
+# The floor's only job is to choose which single fact the judge is asked about; it
+# is NOT a decision, and setting it as though it were cost real updates.
+#
+# Measured over 7 genuine updates and 7 pairs that must both stay true, the two
+# classes OVERLAP on cosine (updates 0.364-0.622, distinct 0.039-0.579), so no
+# floor separates them and picking one that tries to is the mistake. The judge,
+# asked about every pair, was right 14 times out of 14.
+#
+# At 0.45 three real updates were never put to it, because distillation writes an
+# update as an EVENT while the old fact is a STATE, and the two drift apart:
+#
+#     "Lives in Portland."  <-  "Moved to Chicago last month."   0.364  missed
+#     "Has a cat named Mira."  <-  "Mira died last week."         0.367  missed
+#     "Is engaged to Alex."  <-  "The engagement is off."         0.419  missed
+#
+# Both facts then stayed active and recall handed the composer a contradiction.
+# 0.30 puts all seven updates in front of the judge. It also admits a few weakly
+# related pairs, which is the intended cost: the judge answered DISTINCT for every
+# one. Only ONE call is made per new fact either way (the best candidate in band),
+# so this buys coverage rather than spending calls.
+_SUPERSEDE_LOW = 0.30
 
 _SUPERSEDE_SYSTEM = """Two facts about the same person, OLD and NEW. Does the NEW fact \
 UPDATE or REPLACE the OLD one — same subject, but a changed situation or state (e.g. \
