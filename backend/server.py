@@ -195,6 +195,10 @@ class AppState:
     llm_mood_signal: Optional[object] = None   # live-model register read; None => local
     seen_sources: Optional[object] = None      # delivery keys already sent
     pending_item: Optional[object] = None      # scored, unsent, waiting for a tick
+    # The whole last scoring pass, winners and rejects alike. The rejecting is the
+    # interesting half — it is what separates a companion from a feed reader — and
+    # until now only the winner was ever visible, in a log line.
+    last_scan: list = field(default_factory=list)
     last_poll_at: Optional[float] = None
     wake: Optional[asyncio.Event] = None   # set to interrupt the loop's sleep
     mcp: Optional[tools.MCPManager] = None  # passive-loop tools; None until connected
@@ -673,6 +677,13 @@ async def _poll_sources() -> None:
              if u.strip()]
     if not feeds:
         return
+    # Nothing kept yet means nothing can be relevant yet: relevance is measured
+    # against what the Keeper knows about the person, so an empty store scores
+    # every item 0. Bailing BEFORE last_poll_at is stamped matters — otherwise the
+    # first poll, which happens moments after boot, burns the interval and records
+    # a scan of all zeros that stands for the next fifteen minutes.
+    if not any(f.active for f in STATE.store.facts):
+        return
     now = time.time()
     if (STATE.last_poll_at is not None
             and now - STATE.last_poll_at < SOURCE_POLL_S / max(STATE.config.speed, 1.0)):
@@ -680,6 +691,7 @@ async def _poll_sources() -> None:
     STATE.last_poll_at = now
 
     best = None
+    scanned: list = []
     for url in feeds:
         try:
             xml = await asyncio.to_thread(_fetch_text, url)
@@ -693,9 +705,22 @@ async def _poll_sources() -> None:
                 relevance.score_item, item, STATE.store,
                 generate=STATE.fast or STATE.generate, embed=STATE.embed)
             item.relevance, item.because = score, because
+            scanned.append({
+                "title": item.title,
+                "relevance": round(score, 2),
+                "because": because,
+                "verdict": ("interrupt" if relevance.worth_interrupting(score)
+                            else "mention" if relevance.worth_mentioning(score)
+                            else "silent"),
+            })
             if relevance.worth_mentioning(score) and (
                     best is None or score > best.relevance):
                 best = item
+    if scanned:
+        STATE.last_scan = sorted(scanned, key=lambda r: -r["relevance"])
+        kept = sum(1 for r in scanned if r["verdict"] != "silent")
+        print(f"[sources] scanned {len(scanned)}, {len(scanned) - kept} judged "
+              f"not worth saying", flush=True)
     if best is not None:
         STATE.pending_item = best
         print(f"[sources] pending {best.title[:50]!r} "
@@ -1019,6 +1044,7 @@ async def state():
         "speed": STATE.config.speed,
         "backend": "openai" if STATE.fast is not None else "stub",
         "listeners": len(STATE.listeners),
+        "considered": STATE.last_scan,
         "channels": STATE.delivery.names() if STATE.delivery else ["web"],
     }
 
