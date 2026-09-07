@@ -119,7 +119,11 @@ curl -s -X POST localhost:8790/config -H 'content-type: application/json' \
 - a **native banner** arrives with the Keeper's face — telling you about the
   painting show, *because* it knows you paint
 - `[goal] … EXECUTED via researcher` — it takes its own step, with tools
-- `[goal] … nudged` — it invites you to take yours
+- possibly `[goal] … nudged`, inviting you to take yours. **Do not promise this
+  one.** A nudge goes through the ordinary proactive composer, which may choose
+  silence, and in a full rehearsal it declined every time inside four minutes.
+  When it declines it now logs `nudge declined (chose silence)`, which is worth
+  showing in its own right: restraint is a designed outcome here, not a failure.
 - the background comparison returns on its own
 - Discord/Telegram get the same line, if configured
 
