@@ -91,6 +91,14 @@
         <div class="val" id="facts">—</div>
         <div class="sub">the drawers (semantic memory)</div>
       </div>
+      <!-- The tide. Supersession is one of the most distinctive things the memory
+           does, and it earns the `turn` register, yet it existed only in the raw
+           /state JSON and never on the page. -->
+      <div class="tile">
+        <div class="label">changes tracked</div>
+        <div class="val" id="changes">—</div>
+        <div class="sub" id="changes-sub">the tide (a fact that replaced another)</div>
+      </div>
       <div class="tile">
         <div class="label">reflections</div>
         <div class="val" id="reflections">—</div>
@@ -163,6 +171,10 @@
     document.getElementById("score-bar").style.width = pct(s.base_score);
     document.getElementById("pspeak").textContent = (s.speak_probability ?? 0).toFixed(2);
     document.getElementById("facts").textContent = s.facts_kept ?? 0;
+    document.getElementById("changes").textContent = s.changes_tracked ?? 0;
+    document.getElementById("changes-sub").textContent = (s.changes_tracked ?? 0)
+      ? "the tide turned: something it knew is no longer true"
+      : "the tide (a fact that replaced another)";
     document.getElementById("reflections").textContent = s.reflections ?? 0;
     document.getElementById("reminders").textContent = s.reminders_held ?? 0;
     document.getElementById("insights").textContent = s.insights_kept ?? 0;
