@@ -63,15 +63,44 @@ class ProactiveConfig:
     use_presence: bool = True    # let idle time modulate restlessness
 
 
+class Reason:
+    """Every outcome a tick can have, as a closed set.
+
+    The prose in `reason` is for a person reading a trace and will keep being
+    reworded; `code` is for anything that has to COUNT outcomes. Without it the
+    benchmark could say how often the Keeper stayed quiet but not why, which is
+    the only interesting half, and six tests were pinned to exact English like
+    `d.reason == "did not roll to speak"`, so rewording a log line broke them.
+    """
+
+    DAILY_MAX = "daily_max"              # the day's ceiling is spent
+    COOLDOWN = "cooldown"                # too soon after the last outreach
+    SCREEN_LOCKED = "screen_locked"      # nobody there to hear it
+    DICE = "dice"                        # restless enough to try, roll said no
+    COMPOSER_SILENT = "composer_silent"  # tried to write a line, had nothing
+    REPEAT = "repeat"                    # wrote one, but it echoed a recent line
+    SPOKE = "spoke"                      # an ordinary unbidden line
+    SPOKE_SOURCE = "spoke_source"        # a line about something it noticed
+
+
+QUIET_REASONS = frozenset({
+    Reason.DAILY_MAX, Reason.COOLDOWN, Reason.SCREEN_LOCKED,
+    Reason.DICE, Reason.COMPOSER_SILENT, Reason.REPEAT,
+})
+SPOKE_REASONS = frozenset({Reason.SPOKE, Reason.SPOKE_SOURCE})
+ALL_REASONS = QUIET_REASONS | SPOKE_REASONS
+
+
 @dataclass
 class TickDecision:
     spoke: bool
-    reason: str                  # why it spoke or stayed quiet
+    reason: str                  # why it spoke or stayed quiet, in words
     energy: float
     base_score: float
     wait_next_s: int             # seconds until the next tick (speed-adjusted)
     text: Optional[str] = None   # the line, if it spoke
     water_state: str = "tidal"
+    code: str = Reason.SPOKE     # the same thing, countable. See Reason.
 
 
 def presence_factor(idle_seconds: Optional[float]) -> float:
@@ -162,8 +191,8 @@ def tick(
         score, tick_fast=config.tick_fast, tick_slow=config.tick_slow,
         jitter=config.jitter, rng=rng) / max(config.speed, 1e-9))
 
-    def quiet(reason: str) -> TickDecision:
-        return TickDecision(False, reason, en, score, wait, None, water)
+    def quiet(code: str, reason: str) -> TickDecision:
+        return TickDecision(False, reason, en, score, wait, None, water, code)
 
     # One read of the machine, shared by the lock gate and the idle factor.
     pres = presence if presence is not None else sensors.read()
@@ -172,17 +201,18 @@ def tick(
     # most absolute: nothing below can buy an outreach once the day is spent.
     if (config.daily_max > 0
             and state.proactive_today >= config.daily_max):
-        return quiet(f"said enough today ({state.proactive_today}/{config.daily_max})")
+        return quiet(Reason.DAILY_MAX,
+                     f"said enough today ({state.proactive_today}/{config.daily_max})")
 
     # Gate 0 — cooldown. If it just reached out and got no reply, hold silence;
     # otherwise low energy would make it pester on every tick.
     if (state.minutes_since_proactive is not None
             and state.minutes_since_proactive < config.cooldown_min):
-        return quiet("in cooldown since last outreach")
+        return quiet(Reason.COOLDOWN, "in cooldown since last outreach")
 
     # Gate 1 — reachability. Don't speak to a locked screen.
     if config.respect_lock and pres.screen_locked:
-        return quiet("screen locked")
+        return quiet(Reason.SCREEN_LOCKED, "screen locked")
 
     # Gate 2 — restlessness, modulated by presence. Idle time nudges the score:
     # present-but-quiet is a good moment to reach out; long-gone is not.
@@ -196,7 +226,7 @@ def tick(
         factor *= SOURCE_BOOST
     if not energy.roll_speak(score * factor, rng=rng,
                              p_min=config.p_min, p_max=config.p_max):
-        return quiet("did not roll to speak")
+        return quiet(Reason.DICE, "did not roll to speak")
 
     # Gate 3 — content. With something new to say, say that; otherwise fall back to
     # what has always happened here, which is returning the person their own past.
@@ -220,7 +250,8 @@ def tick(
                                generate=fast_model or generate, memory=mem)
         if text and text.strip():
             return TickDecision(True, "spoke about something watched",
-                                en, score, wait, text.strip(), water)
+                                en, score, wait, text.strip(), water,
+                                Reason.SPOKE_SOURCE)
         # fall through to the ordinary line rather than losing the turn
 
     # Say what it has recently said, so the input actually differs. This is the
@@ -235,7 +266,7 @@ def tick(
         "proactive", water, generate=generate, fast_model=fast_model, memory=mem,
         context=ctx)
     if result.silent:
-        return quiet("rolled to speak, but chose silence")
+        return quiet(Reason.COMPOSER_SILENT, "rolled to speak, but chose silence")
 
     # And if it did anyway: say nothing. Silence is a first-class outcome here, and
     # a Keeper with nothing new is in character staying quiet — where one
@@ -243,9 +274,10 @@ def tick(
     # input barely changed, so the line barely would.
     echo = _too_similar(result.text or "", said)
     if echo is not None:
-        return quiet("would only repeat itself")
+        return quiet(Reason.REPEAT, "would only repeat itself")
 
-    return TickDecision(True, "spoke", en, score, wait, result.text, water)
+    return TickDecision(True, "spoke", en, score, wait, result.text, water,
+                        Reason.SPOKE)
 
 
 # --------------------------------------------------------------------------- #

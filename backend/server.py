@@ -356,8 +356,10 @@ async def _proactive_loop() -> None:
             # ticks constantly, and most ticks are the Keeper correctly saying
             # nothing. A quiet that was ABOUT something (it had a line and withheld
             # it) is worth keeping; ordinary restraint is not.
-            worth_tracing = decision.spoke or decision.reason in (
-                "would only repeat itself", "rolled to speak, but chose silence")
+            # Was matched against the English of the reason, so rewording a log
+            # line silently changed what got traced. Codes are the closed set.
+            worth_tracing = decision.spoke or decision.code in (
+                proactive.Reason.REPEAT, proactive.Reason.COMPOSER_SILENT)
             if worth_tracing:
                 STATE.traces.appendleft({
                     "ts": time.time(),
@@ -372,6 +374,7 @@ async def _proactive_loop() -> None:
                     "reply": decision.text or "",
                     "spoke": decision.spoke,
                     "reason": decision.reason,
+                    "code": decision.code,
                     "energy": round(decision.energy, 3),
                     "base_score": round(decision.base_score, 3),
                     "source_item": ({
