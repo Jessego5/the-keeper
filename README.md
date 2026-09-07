@@ -4,9 +4,10 @@
 
 <h1 align="center">The Keeper</h1>
 
-> A proactive AI companion that decides on its own when it has something worth
-> saying, remembers what has *changed* about you, and reaches you through a native
-> OS notification with the browser closed.
+> A local-first AI companion that decides on its own when to speak: long-term
+> memory that tracks what *changed* about you, tools over MCP, sandboxed code
+> execution, A2A interop with other agents, and a native OS notification that
+> reaches you with the browser closed.
 
 **[Features](FEATURES.md)** · **[Architecture](docs/ARCHITECTURE.md)** · **[Demo script](docs/DEMO.md)** · **[Voice spec](KEEPER_VOICE.md)** · **[Testing rules](tests/README.md)**
 
