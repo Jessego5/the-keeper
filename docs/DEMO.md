@@ -150,20 +150,35 @@ Open **`localhost:8790/.well-known/agent.json`** in a tab.
 > An **Agent Card**: name, skills, and an endpoint. This is the server half of
 > A2A — other agents can discover the Keeper and call it.
 
+Start the peer first, in another terminal:
+
+```bash
+.venv/bin/python -m uvicorn scripts.almanac_agent:app --port 8791
+```
+
+It is **The Almanac**: a painter's reference with no memory, no voice and no model
+behind it, sharing no code with the Keeper's own A2A module. Show its card at
+`localhost:8791/.well-known/agent.json` beside the Keeper's, and note it asks for
+no auth while the Keeper's requires a token — because answering there means
+reading someone's memory.
+
 Then, in chat:
 
 ```
-consult the agent at http://localhost:8790 and ask what it can help with
+consult the agent at http://localhost:8791 and ask what gouache is
 ```
 > The **trace** shows the client half:
 > ```
 > tool : consult_peer
-> args : {"url": "http://localhost:8790", "task": "What can you help with?"}
-> reply: [The Keeper] The tide brings many things...
+> args : {"url": "http://localhost:8791", "task": "What is gouache?"}
+> reply: [The Almanac] Gouache is watercolour made opaque, usually with added chalk...
 > ```
-> It discovers an agent by URL, sends it a task, and reads the reply. Here it is
-> pointed at itself for want of a second agent to hand — say so, and note the URL
-> could be anyone's.
+> Two independently written implementations agreeing about a wire format, which is
+> the only thing that actually demonstrates a protocol. The Keeper then answers in
+> its own voice using something it did not know a moment ago.
+
+Requires the origin to be allowed, since it is loopback:
+`KEEPER_A2A_ALLOW=http://localhost:8790,http://localhost:8791`
 
 ---
 

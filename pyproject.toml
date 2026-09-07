@@ -1,6 +1,8 @@
 [tool.pytest.ini_options]
 # backend/ on the path so tests import modules directly (persona, energy, ...).
-pythonpath = ["backend"]
+# backend/ so modules import bare (persona, energy, ...); the repo root so the
+# standalone peer agent in scripts/ is importable by its tests.
+pythonpath = ["backend", "."]
 testpaths = ["tests"]
 asyncio_mode = "auto"
 markers = [
