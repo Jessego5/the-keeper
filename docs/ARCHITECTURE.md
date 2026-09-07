@@ -5,7 +5,7 @@ system is built on. Edit freely.
 
 ## What it is
 
-The Keeper is a proactive, memory-driven AI companion. Two things make it an *agent*
+The Keeper is a proactive, memory-driven AI companion. Three things make it an *agent*
 rather than a chatbot:
 
 1. **It acts unbidden.** A background loop decides on its own when to reach out —
@@ -15,6 +15,9 @@ rather than a chatbot:
 2. **It remembers and reflects.** Durable facts are extracted from conversation,
    retrieved by a research-grade relevance function, periodically synthesized into
    higher-level insights, and compressed under memory pressure.
+3. **It notices.** It watches sources that genuinely push, RSS feeds and its own MCP
+   tools alike, so what it raises unbidden is not confined to the person's own past.
+   Each item is scored against memory before it may interrupt, and most never do.
 
 ## The two loops
 

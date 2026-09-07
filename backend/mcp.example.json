@@ -1,32 +1,87 @@
 {
-  "_comment": "Copy to backend/mcp.json and edit the absolute paths. mcp.json is gitignored. The manager applies a read-only filter by default; 'tools' is an explicit allowlist (only these pass), 'deny' blocks by name. uvx servers pin 'mcp<2' because the published fetch/time/git servers target the mcp 1.x API while the client uses mcp 2.x.",
+  "_comment": "Copy to backend/mcp.json and edit the paths. mcp.json is gitignored. ${KEEPER_ROOT} expands to the app root, so one config works on the host AND in the container. The manager applies a read-only filter by default; 'tools' is an explicit allowlist (only these pass), 'deny' blocks by name, and 'required' names the tools this server MUST provide - if one is missing the server shows as degraded in /state and on the dashboard instead of quietly going absent. uvx servers pin 'mcp<2' because the published fetch/time/git servers target the mcp 1.x API while the client uses mcp 2.x.",
   "servers": [
     {
       "name": "files",
       "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/absolute/path/to/keeper_sandbox"]
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-filesystem",
+        "${KEEPER_ROOT}/keeper_sandbox"
+      ],
+      "required": [
+        "read_text_file",
+        "list_directory"
+      ]
     },
     {
       "name": "fetch",
       "command": "uvx",
-      "args": ["--with", "mcp<2", "mcp-server-fetch"]
+      "args": [
+        "--with",
+        "mcp<2",
+        "mcp-server-fetch"
+      ],
+      "required": [
+        "fetch"
+      ]
     },
     {
       "name": "search",
       "command": "uvx",
-      "args": ["--with", "mcp<2", "duckduckgo-mcp-server"]
+      "args": [
+        "--with",
+        "mcp<2",
+        "duckduckgo-mcp-server"
+      ]
     },
     {
       "name": "time",
       "command": "uvx",
-      "args": ["--with", "mcp<2", "mcp-server-time"]
+      "args": [
+        "--with",
+        "mcp<2",
+        "mcp-server-time"
+      ],
+      "required": [
+        "get_current_time"
+      ]
     },
     {
       "name": "git",
       "command": "uvx",
-      "args": ["--with", "mcp<2", "mcp-server-git", "--repository", "/absolute/path/to/your/repo"],
+      "args": [
+        "--with",
+        "mcp<2",
+        "mcp-server-git",
+        "--repository",
+        "${KEEPER_ROOT}"
+      ],
       "read_only": true,
-      "tools": ["git_status", "git_log", "git_diff", "git_diff_staged", "git_diff_unstaged", "git_show"]
+      "tools": [
+        "git_status",
+        "git_log",
+        "git_diff",
+        "git_diff_staged",
+        "git_diff_unstaged",
+        "git_show"
+      ],
+      "required": [
+        "git_log",
+        "git_status"
+      ]
     }
-  ]
+  ],
+  "watch": [
+    {
+      "name": "repo",
+      "tool": "git__git_log",
+      "args": {
+        "repo_path": "${KEEPER_ROOT}",
+        "max_count": 5
+      },
+      "max_items": 5
+    }
+  ],
+  "_watch_comment": "Tools the proactive loop polls for what is NEW, scored against memory like any feed item. Only tools whose entries carry their own identity belong here (a commit log, a listing, a calendar); a web search returns the same results every time and would have the Keeper announce old news as a discovery. See sources.py."
 }

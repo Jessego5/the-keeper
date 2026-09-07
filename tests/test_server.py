@@ -244,3 +244,100 @@ def test_the_models_abstention_is_a_decision_not_a_gap():
     in to fix. Only an unavailable model may fall back."""
     assert _chain("go look into watercolor vs gouache", keyword=lambda m: None,
                   llm=lambda m: None, local=lambda m: "frozen") is None
+
+
+# --- watching an MCP tool for something new --- #
+
+import memory
+import sources
+
+_GIT_LOG = """commit 4f2a1b9c
+Author: Jess <jess@example.com>
+Date:   Thu Sep 4 19:02:11 2026
+
+    finished stretching the big canvas
+"""
+
+
+class _FakeMCP:
+    """Stands in for a connected manager. Only what _poll_sources touches."""
+
+    def __init__(self, text=_GIT_LOG, watches=None):
+        self.text = text
+        self.watches = watches if watches is not None else [
+            {"name": "repo", "tool": "git__git_log", "args": {"max_count": 5}}]
+        self.calls = []
+
+    async def call(self, tool, arguments):
+        self.calls.append((tool, arguments))
+        return self.text
+
+
+@pytest.fixture
+def polling(monkeypatch, tmp_path):
+    """STATE wired for a poll: one fact known, nothing seen yet, no feeds."""
+    st = server.STATE
+    store = memory.MemoryStore(tmp_path / "facts.jsonl")
+    store.add("Is a painter who stopped in March.", kind="fact")
+    monkeypatch.setattr(st, "store", store)
+    monkeypatch.setattr(st, "seen_sources", sources.SeenStore(tmp_path / "seen.jsonl"))
+    monkeypatch.setattr(st, "last_poll_at", None)
+    monkeypatch.setattr(st, "pending_item", None)
+    monkeypatch.setenv("KEEPER_FEEDS", "")
+    return st
+
+
+async def test_a_watched_tool_can_produce_a_pending_item(polling, monkeypatch):
+    """The feature in one line: with no feeds configured at all, something the
+    Keeper NOTICED through its own tools can still become what it speaks about."""
+    monkeypatch.setattr(server.relevance, "score_item",
+                        lambda *a, **k: (0.9, "they paint"))
+    fake = _FakeMCP()
+    monkeypatch.setattr(polling, "mcp", fake)
+    await server._poll_sources()
+    assert fake.calls == [("git__git_log", {"max_count": 5})]
+    assert polling.pending_item is not None
+    assert polling.pending_item.title == "finished stretching the big canvas"
+    assert polling.pending_item.source == "repo"
+
+
+async def test_a_watched_item_that_is_irrelevant_is_not_kept(polling, monkeypatch):
+    """Same gate as a feed item: noticing is not a reason to speak."""
+    monkeypatch.setattr(server.relevance, "score_item", lambda *a, **k: (0.05, ""))
+    monkeypatch.setattr(polling, "mcp", _FakeMCP())
+    await server._poll_sources()
+    assert polling.pending_item is None
+    assert polling.last_scan, "the scan should still be visible on the dashboard"
+
+
+async def test_a_broken_tool_contributes_nothing(polling, monkeypatch):
+    """mcp.call answers with a parenthetical instead of raising. That string must
+    never become an item the Keeper reports as news."""
+    monkeypatch.setattr(server.relevance, "score_item",
+                        lambda *a, **k: (0.99, "would speak"))
+    monkeypatch.setattr(polling, "mcp",
+                        _FakeMCP(text="(tool timed out after 20s: git__git_log)"))
+    await server._poll_sources()
+    assert polling.pending_item is None
+
+
+async def test_a_watched_item_is_delivered_only_once(polling, monkeypatch):
+    """The same commit is in the log every poll; only the first is new."""
+    monkeypatch.setattr(server.relevance, "score_item",
+                        lambda *a, **k: (0.9, "they paint"))
+    monkeypatch.setattr(polling, "mcp", _FakeMCP())
+    await server._poll_sources()
+    first = polling.pending_item
+    assert first is not None
+    polling.seen_sources.mark(first)          # as delivery does
+    polling.pending_item = None
+    polling.last_poll_at = None
+    await server._poll_sources()
+    assert polling.pending_item is None
+
+
+async def test_no_feeds_and_no_watches_does_nothing(polling, monkeypatch):
+    monkeypatch.setattr(polling, "mcp", _FakeMCP(watches=[]))
+    await server._poll_sources()
+    assert polling.pending_item is None
+    assert polling.last_poll_at is None, "the poll interval should not be burned"
