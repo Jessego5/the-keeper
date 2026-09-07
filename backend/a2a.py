@@ -18,7 +18,12 @@ distributed-task machinery a single-user companion doesn't need.
 
 from __future__ import annotations
 
+import asyncio
+import ipaddress
+import os
+import socket
 import uuid
+from urllib.parse import urlparse
 
 import httpx
 
@@ -86,9 +91,68 @@ def rpc_error(req_id, code: int, msg: str) -> dict:
 # Client — discover a peer, send it a message, read the reply.
 # --------------------------------------------------------------------------- #
 
+# --------------------------------------------------------------------------- #
+# Outbound safety. consult_peer takes a URL the MODEL chose from the conversation,
+# and the Keeper reads web pages, so a prompt injection in a page can name one.
+# Unchecked, that is a readable SSRF: the response comes back into the chat. It is
+# also a second path from untrusted text to arbitrary network requests, alongside
+# the fetch -> run_python chain sandbox.py documents — and unlike run_python this
+# one runs in the app process, so containerising does not contain it.
+# --------------------------------------------------------------------------- #
+
+ALLOW_ENV = "KEEPER_A2A_ALLOW"
+
+
+class PeerBlocked(Exception):
+    """An outbound peer URL that is not safe to fetch."""
+
+
+def _allowlist() -> set:
+    """Origins the operator has explicitly permitted, e.g. a loopback peer."""
+    raw = os.environ.get(ALLOW_ENV, "")
+    return {o.strip().rstrip("/").lower() for o in raw.split(",") if o.strip()}
+
+
+def check_peer_url(url: str) -> str:
+    """Return `url` if it is safe to fetch, else raise PeerBlocked.
+
+    Public addresses are allowed: consulting a real agent on the internet is the
+    point of the protocol. Private, loopback, link-local and reserved addresses are
+    refused unless their origin is listed in KEEPER_A2A_ALLOW, because those are
+    what an injection reaches for: cloud metadata at 169.254.169.254, a database on
+    localhost, anything on the LAN.
+
+    Resolution happens here rather than trusting the hostname, so a name that
+    resolves to 127.0.0.1 is caught too.
+    """
+    parsed = urlparse(url or "")
+    if parsed.scheme not in ("http", "https"):
+        raise PeerBlocked(f"only http and https are allowed, not {parsed.scheme!r}")
+    host = parsed.hostname
+    if not host:
+        raise PeerBlocked("no host in the peer URL")
+
+    origin = f"{parsed.scheme}://{parsed.netloc}".lower().rstrip("/")
+    if origin in _allowlist():
+        return url
+
+    port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    try:
+        infos = socket.getaddrinfo(host, port, proto=socket.IPPROTO_TCP)
+    except OSError as exc:
+        raise PeerBlocked(f"could not resolve {host}: {exc}") from exc
+    for info in infos:
+        ip = ipaddress.ip_address(info[4][0])
+        if not ip.is_global:
+            raise PeerBlocked(
+                f"{host} resolves to the non-public address {ip}. Add "
+                f"{origin} to {ALLOW_ENV} if you meant to reach it.")
+    return url
+
+
 async def fetch_card(base_url: str, timeout: float = 8.0) -> dict:
     """GET the peer's Agent Card from its well-known URL."""
-    url = base_url.rstrip("/") + WELL_KNOWN
+    url = await asyncio.to_thread(check_peer_url, base_url.rstrip("/") + WELL_KNOWN)
     async with httpx.AsyncClient(timeout=timeout) as client:
         resp = await client.get(url)
         resp.raise_for_status()
@@ -103,6 +167,9 @@ async def send_message(endpoint: str, text: str, timeout: float = 60.0) -> str:
         "method": "message/send",
         "params": {"message": make_message(text, role="user")},
     }
+    # Checked again: the endpoint comes from the peer's own card, so a hostile card
+    # could otherwise redirect a permitted base URL at an internal address.
+    endpoint = await asyncio.to_thread(check_peer_url, endpoint)
     async with httpx.AsyncClient(timeout=timeout) as client:
         resp = await client.post(endpoint, json=payload)
         resp.raise_for_status()

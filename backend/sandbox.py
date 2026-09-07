@@ -35,6 +35,12 @@ key, the whole home directory) is gone and what remains needs a real attack to r
 
 Running on the HOST has none of this containment. That is fine for development; it is
 not the posture to use while pointing the Keeper at pages you do not trust.
+
+A SECOND path from untrusted text to the network exists and is worth naming here,
+because it is not this module and is not contained by Docker: a2a.consult_peer
+fetches a URL the model chose from the conversation, in the app process. A page the
+Keeper reads can name one. That is guarded in a2a.check_peer_url, which refuses
+non-public addresses unless the operator lists the origin in KEEPER_A2A_ALLOW.
 """
 
 from __future__ import annotations
