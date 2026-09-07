@@ -43,6 +43,10 @@ def build_agent_card(base_url: str) -> dict:
         "url": f"{base}/a2a",
         "version": "1.0.0",
         "capabilities": {"streaming": False, "pushNotifications": False},
+        # Declared so a peer knows to present a token rather than discovering it
+        # from a 401. Omitted when unconfigured, since then the endpoint is closed.
+        **({"securitySchemes": {"bearer": {"type": "http", "scheme": "bearer"}},
+            "security": [{"bearer": []}]} if auth_token() else {}),
         "defaultInputModes": ["text/plain"],
         "defaultOutputModes": ["text/plain"],
         "skills": [
@@ -101,6 +105,30 @@ def rpc_error(req_id, code: int, msg: str) -> dict:
 # --------------------------------------------------------------------------- #
 
 ALLOW_ENV = "KEEPER_A2A_ALLOW"
+# Shared secret for the SERVER half. /a2a answers as the Keeper, and answering
+# means recalling memory, so an open endpoint lets any local process ask what it
+# knows about the person. TrustedHostMiddleware checks the Host HEADER, not the
+# source, so it stops a browser elsewhere and nothing else.
+AUTH_ENV = "KEEPER_A2A_TOKEN"
+
+
+def auth_token() -> str:
+    return os.environ.get(AUTH_ENV, "").strip()
+
+
+def outbound_headers(url: str) -> dict:
+    """Bearer header for a peer we are consulting, when there is one to send.
+
+    Sent ONLY to origins the operator explicitly allowlisted, which in practice
+    means the loopback peer. Presenting our own secret to an arbitrary public agent
+    would hand it our credential for nothing.
+    """
+    tok = auth_token()
+    if not tok:
+        return {}
+    parsed = urlparse(url or "")
+    origin = f"{parsed.scheme}://{parsed.netloc}".lower().rstrip("/")
+    return {"Authorization": f"Bearer {tok}"} if origin in _allowlist() else {}
 
 
 class PeerBlocked(Exception):
@@ -154,7 +182,7 @@ async def fetch_card(base_url: str, timeout: float = 8.0) -> dict:
     """GET the peer's Agent Card from its well-known URL."""
     url = await asyncio.to_thread(check_peer_url, base_url.rstrip("/") + WELL_KNOWN)
     async with httpx.AsyncClient(timeout=timeout) as client:
-        resp = await client.get(url)
+        resp = await client.get(url, headers=outbound_headers(url))
         resp.raise_for_status()
         return resp.json()
 
@@ -171,7 +199,8 @@ async def send_message(endpoint: str, text: str, timeout: float = 60.0) -> str:
     # could otherwise redirect a permitted base URL at an internal address.
     endpoint = await asyncio.to_thread(check_peer_url, endpoint)
     async with httpx.AsyncClient(timeout=timeout) as client:
-        resp = await client.post(endpoint, json=payload)
+        resp = await client.post(endpoint, json=payload,
+                                 headers=outbound_headers(endpoint))
         resp.raise_for_status()
         data = resp.json()
     if "error" in data:

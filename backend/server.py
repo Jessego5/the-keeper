@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import secrets
 import time
 from collections import deque
 from contextlib import asynccontextmanager
@@ -1114,7 +1115,20 @@ async def agent_card(req: Request):
 
 @app.post("/a2a")
 async def a2a_endpoint(req: Request):
-    """Handle an A2A message/send: a peer sends a message, the Keeper answers."""
+    """Handle an A2A message/send: a peer sends a message, the Keeper answers.
+
+    Closed unless KEEPER_A2A_TOKEN is set. Answering means recalling memory, so an
+    open endpoint lets any local process ask the Keeper what it knows about the
+    person and get it back in prose. TrustedHostMiddleware is not that control: it
+    validates the Host header, not who is calling.
+    """
+    token = a2a.auth_token()
+    if not token:
+        return a2a.rpc_error(None, -32001,
+                             "a2a is disabled: set KEEPER_A2A_TOKEN to enable it")
+    presented = (req.headers.get("authorization") or "")
+    if not secrets.compare_digest(presented.strip(), f"Bearer {token}"):
+        return a2a.rpc_error(None, -32002, "unauthorized")
     try:
         body = await req.json()
     except Exception:  # noqa: BLE001
