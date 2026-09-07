@@ -180,7 +180,14 @@ def within_reach_floor(last_proactive_at, now, min_gap: float = MIN_REAL_REACH_G
 @dataclass
 class AppState:
     store: memory.MemoryStore = field(default_factory=memory.MemoryStore)
-    history: list[dict] = field(default_factory=list)     # {role, content, ts}
+    # Bounded: traces have always been a deque, but this was a plain list appended
+    # on every turn AND every proactive line, never trimmed. Nothing read far enough
+    # back to need more, and since _recent_lines() reads it each tick an unbounded
+    # list is a slow leak in something meant to run for months.
+    history: deque = field(default_factory=lambda: deque(maxlen=200))
+    # When each outreach happened, for the day's ceiling. Bounded well above any
+    # sane daily_max so a long-running day cannot grow it without limit.
+    proactive_at: deque = field(default_factory=lambda: deque(maxlen=200))
     user_msg_times: list[float] = field(default_factory=list)
     last_user_at: Optional[float] = None
     last_proactive_at: Optional[float] = None
@@ -231,6 +238,17 @@ class AppState:
         cutoff = time.time() - RECENT_WINDOW_MIN * 60.0
         return sum(1 for t in self.user_msg_times if t >= cutoff)
 
+    def proactive_today(self) -> int:
+        """Outreaches so far today, on the REAL calendar.
+
+        Real days on purpose, even while the demo clock is compressed: the ceiling
+        exists to protect a person's actual day, and a knob that made it forget
+        would defeat it exactly when the loop is at its most talkative.
+        """
+        start = datetime.now().replace(hour=0, minute=0, second=0,
+                                       microsecond=0).timestamp()
+        return sum(1 for t in self.proactive_at if t >= start)
+
     def proactive_state(self) -> proactive.ProactiveState:
         # The demo knob compresses the battery TIMESCALE, not just tick spacing:
         # at speed=120, one real second decays the battery like two virtual
@@ -242,6 +260,7 @@ class AppState:
         return proactive.ProactiveState(
             minutes_since_user=None if ms_user is None else ms_user * s,
             recent_msg_count=self.recent_msg_count(),
+            proactive_today=self.proactive_today(),
             minutes_since_proactive=None if ms_pro is None else ms_pro * s,
         )
 
@@ -375,6 +394,7 @@ async def _proactive_loop() -> None:
                           f"because {STATE.pending_item.because!r})", flush=True)
                     STATE.pending_item = None
                 STATE.last_proactive_at = time.time()
+                STATE.proactive_at.append(STATE.last_proactive_at)
                 STATE.history.append({"role": "assistant", "content": decision.text,
                                       "ts": time.time()})
                 if STATE.current_key is not None:
@@ -755,6 +775,7 @@ async def _maybe_advance_goal() -> bool:
 async def _deliver_proactive(text: str) -> None:
     """Record + fan out one unbidden line (history, session, all channels)."""
     STATE.last_proactive_at = time.time()
+    STATE.proactive_at.append(STATE.last_proactive_at)
     STATE.history.append({"role": "assistant", "content": text, "ts": time.time()})
     if STATE.current_key is not None:
         STATE.sessions.append(STATE.current_key, "assistant", text)

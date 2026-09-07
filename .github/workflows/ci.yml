@@ -49,6 +49,13 @@ jobs:
       - name: Unit + integration
         run: python -m pytest -q
 
+      # The policy that decides whether to interrupt someone, measured. Offline and
+      # instant: the stub generator, fixed seeds, no key. It asserts the harness and
+      # the one finding worth protecting (the cooldown, not the coin, is what holds
+      # the Keeper quiet), never a verdict about the right rate.
+      - name: Proactive policy benchmark
+        run: python backend/proactive_bench.py --days 3 --runs 4
+
       - name: Confirm the eval tier still collects
         # Evals are excluded from the default run, so a broken eval file would
         # otherwise sit undetected until the nightly job. Collect-only is free.

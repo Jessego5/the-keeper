@@ -62,6 +62,16 @@ jobs:
         # rather than loosening an assertion.
         run: python -m pytest tests/evals -m eval -q
 
+      # Voice fidelity. It scores lines across every mode and prints a number, and
+      # until now nothing watched it: a prompt change could quietly degrade the
+      # voice and no check would notice. Printed rather than asserted, for the same
+      # reason mood_bench is — the number moves, and a threshold would either be
+      # meaningless or flaky.
+      - name: Voice fidelity harness
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: python backend/voice_test.py
+
       - name: Mood sensor benchmark
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
