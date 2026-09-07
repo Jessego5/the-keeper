@@ -773,7 +773,14 @@ async def _nudge_goal_step(goal, step, water) -> bool:
         memory=memory.recall(STATE.store, goal.title, k=3, embed=STATE.embed),
         context=context)
     if result.silent or not result.text:
+        # Say so. A declined nudge left no trace anywhere: the goal was quietly
+        # pushed forward and the only visible evidence was next_check_at moving,
+        # which reads identically to the loop never having considered it. Silence
+        # is a legitimate answer here, but an invisible one is indistinguishable
+        # from a bug.
         STATE.goals.touch(goal, _goal_check_interval())
+        print(f"[goal] {goal.id} nudge declined (chose silence) {goal.progress()[0]}"
+              f"/{goal.progress()[1]}: {step.text[:44]}", flush=True)
         return False
     STATE.goals.touch(goal, _goal_check_interval())   # nudge, don't complete
     await _deliver_proactive(result.text)
