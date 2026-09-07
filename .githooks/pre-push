@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# Refuse a push that a laptop can already tell is broken.
+#
+# Only the fast, offline checks: ruff and the unit tier, about five seconds
+# together. It exists because a push once went out with three tests already
+# failing locally, which nothing but attention was guarding against.
+#
+# It cannot catch everything, and is not meant to. Two of the three red runs in
+# this repo's history were platform differences (a pyobjc wheel that only builds
+# on macOS, a test that assumed a macOS notifier) which passed here and failed on
+# the Linux runner. That is CI's job. CHECK CI AFTER PUSHING.
+#
+# Install:  git config core.hooksPath .githooks
+# Bypass:   git push --no-verify
+set -euo pipefail
+cd "$(git rev-parse --show-toplevel)"
+
+PY=.venv/bin/python
+[ -x "$PY" ] || { echo "pre-push: no .venv, skipping"; exit 0; }
+
+echo "pre-push: ruff"
+"$PY" -m ruff check backend/ tests/ || {
+  echo "pre-push: lint failed. Fix it, or 'git push --no-verify' if you mean it."; exit 1; }
+
+echo "pre-push: unit tier"
+"$PY" -m pytest -q -m unit || {
+  echo "pre-push: unit tests failed. Fix them, or 'git push --no-verify' if you mean it."; exit 1; }
+
+echo "pre-push: ok (integration and evals still only run in CI / by hand)"

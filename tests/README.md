@@ -62,6 +62,22 @@ drives the real thing:
 Adding a fake generator to a Tier 1 test means adding its twin here too —
 otherwise the assertion is about output you invented.
 
+## Before you push
+
+```bash
+git config core.hooksPath .githooks     # once
+```
+
+`.githooks/pre-push` runs ruff and the unit tier, about five seconds, and refuses
+a push that fails either. It exists because a push once went out with three tests
+already failing locally.
+
+It deliberately does not try to catch everything. Two of the three red runs in
+this repo's history were platform differences that passed on macOS and failed on
+the Linux runner: a `pyobjc` wheel that only builds on macOS, and a test that
+assumed a macOS notifier exists. **Check CI after pushing.** The worst of those
+stayed red across four pushes because nobody looked.
+
 ## CI
 
 | Workflow | When | Runs |
