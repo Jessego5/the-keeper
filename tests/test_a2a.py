@@ -93,3 +93,30 @@ def test_a_hostile_card_cannot_redirect_to_an_internal_endpoint():
     public peer could otherwise hand back an internal address to post to."""
     with pytest.raises(a2a.PeerBlocked):
         a2a.check_peer_url("http://169.254.169.254/a2a")
+
+
+# --- the server half: /a2a answers by recalling memory --- #
+
+def test_no_token_configured_means_no_bearer_is_sent(monkeypatch):
+    monkeypatch.delenv(a2a.AUTH_ENV, raising=False)
+    monkeypatch.setenv(a2a.ALLOW_ENV, "http://localhost:8790")
+    assert a2a.outbound_headers("http://localhost:8790/a2a") == {}
+
+
+def test_the_token_goes_only_to_an_allowlisted_peer(monkeypatch):
+    """Presenting our own secret to an arbitrary public agent would hand it our
+    credential for nothing."""
+    monkeypatch.setenv(a2a.AUTH_ENV, "s3cret")
+    monkeypatch.setenv(a2a.ALLOW_ENV, "http://localhost:8790")
+    assert a2a.outbound_headers("http://localhost:8790/a2a") == {
+        "Authorization": "Bearer s3cret"}
+    assert a2a.outbound_headers("https://someone-else.example/a2a") == {}
+
+
+def test_the_card_advertises_bearer_only_when_configured(monkeypatch):
+    monkeypatch.delenv(a2a.AUTH_ENV, raising=False)
+    assert "securitySchemes" not in a2a.build_agent_card("http://localhost:8790")
+    monkeypatch.setenv(a2a.AUTH_ENV, "s3cret")
+    card = a2a.build_agent_card("http://localhost:8790")
+    assert card["securitySchemes"]["bearer"]["scheme"] == "bearer"
+    assert card["security"] == [{"bearer": []}]
