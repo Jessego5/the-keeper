@@ -341,3 +341,66 @@ async def test_no_feeds_and_no_watches_does_nothing(polling, monkeypatch):
     await server._poll_sources()
     assert polling.pending_item is None
     assert polling.last_poll_at is None, "the poll interval should not be burned"
+
+
+# --- a score is a claim about memory as it stands now --- #
+
+async def test_a_memory_change_rescores_without_refetching(polling, monkeypatch):
+    """The bug this exists for, seen live while capturing screenshots. The first
+    poll landed mid-conversation, when "Stopped painting in March." was the only
+    fact, and the judge correctly scored a painting show near zero for someone who
+    had stopped painting. The reversal arrived seconds later, but the all-silent
+    scan was already stamped and stood for the next fifteen minutes."""
+    fake = _FakeMCP()
+    monkeypatch.setattr(polling, "mcp", fake)
+    scores = iter([(0.05, ""), (0.9, "they paint")])
+    monkeypatch.setattr(server.relevance, "score_item",
+                        lambda *a, **k: next(scores))
+
+    await server._poll_sources()                 # polls mid-arc, judges it silent
+    assert polling.pending_item is None
+    assert len(fake.calls) == 1
+
+    polling.store.add("Started painting again.", kind="fact")   # the reversal lands
+    await server._poll_sources()
+
+    assert polling.pending_item is not None, "a changed memory did not re-score"
+    assert len(fake.calls) == 1, "it went back to the network to re-score"
+
+
+async def test_an_unchanged_memory_does_not_rescore(polling, monkeypatch):
+    """The other direction: without this, every tick would re-judge the same
+    items against the same facts and pay for a model call each time."""
+    monkeypatch.setattr(polling, "mcp", _FakeMCP())
+    calls = []
+    monkeypatch.setattr(server.relevance, "score_item",
+                        lambda *a, **k: (calls.append(1), (0.05, ""))[1])
+    await server._poll_sources()
+    first = len(calls)
+    await server._poll_sources()
+    assert len(calls) == first, "re-scored with nothing in memory changed"
+
+
+async def test_a_superseded_fact_counts_as_a_change(polling, monkeypatch):
+    """The fingerprint has to catch supersession, not just addition: the active
+    count can stay flat while what is known changes completely."""
+    before = server._memory_fingerprint()
+    old = polling.store.add("Lives in Portland.", kind="fact")
+    mid = server._memory_fingerprint()
+    assert mid != before
+    new = polling.store.add("Lives in Chicago.", kind="fact")
+    new.supersedes = old.id
+    old.valid_until = 1.0
+    assert server._memory_fingerprint() != mid
+
+
+async def test_the_fetch_interval_still_holds(polling, monkeypatch):
+    """Re-scoring must not become a way to hammer the feeds."""
+    fake = _FakeMCP()
+    monkeypatch.setattr(polling, "mcp", fake)
+    monkeypatch.setattr(server.relevance, "score_item", lambda *a, **k: (0.05, ""))
+    await server._poll_sources()
+    for i in range(3):
+        polling.store.add(f"Fact number {i}.", kind="fact")
+        await server._poll_sources()
+    assert len(fake.calls) == 1, f"refetched {len(fake.calls)} times inside the interval"

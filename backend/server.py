@@ -208,6 +208,11 @@ class AppState:
     # until now only the winner was ever visible, in a log line.
     last_scan: list = field(default_factory=list)
     last_poll_at: Optional[float] = None
+    # What the last fetch returned, kept so a change in MEMORY can re-score it
+    # without going back to the network, and a fingerprint of the memory those
+    # scores were computed against. See _memory_fingerprint.
+    last_items: list = field(default_factory=list)
+    scored_against: Optional[tuple] = None
     wake: Optional[asyncio.Event] = None   # set to interrupt the loop's sleep
     mcp: Optional[tools.MCPManager] = None  # passive-loop tools; None until connected
     reflections: drift.ReflectionLog = field(default_factory=drift.ReflectionLog)
@@ -707,25 +712,43 @@ async def _poll_sources() -> None:
         return
     # Nothing kept yet means nothing can be relevant yet: relevance is measured
     # against what the Keeper knows about the person, so an empty store scores
-    # every item 0. Bailing BEFORE last_poll_at is stamped matters — otherwise the
+    # every item 0. Bailing BEFORE last_poll_at is stamped matters, otherwise the
     # first poll, which happens moments after boot, burns the interval and records
     # a scan of all zeros that stands for the next fifteen minutes.
     if not any(f.active for f in STATE.store.facts):
         return
+
+    # FETCHING and SCORING are on different clocks, and conflating them was a bug.
+    # A score is a claim about the person as they are known RIGHT NOW, so it goes
+    # stale the moment memory changes, while a fetch is a network call that should
+    # stay polite. Seen live: the first poll landed mid-conversation, when
+    # "Stopped painting in March." was the only fact, and the judge quite correctly
+    # scored a painting exhibition near zero for someone who had stopped painting.
+    # The reversal arrived seconds later, but the all-silent scan was already
+    # stamped and stood for the next fifteen minutes.
     now = time.time()
-    if (STATE.last_poll_at is not None
-            and now - STATE.last_poll_at < SOURCE_POLL_S / max(STATE.config.speed, 1.0)):
+    fingerprint = _memory_fingerprint()
+    due_fetch = (STATE.last_poll_at is None
+                 or now - STATE.last_poll_at
+                 >= SOURCE_POLL_S / max(STATE.config.speed, 1.0))
+    stale_scores = bool(STATE.last_items) and fingerprint != STATE.scored_against
+    if not due_fetch and not stale_scores:
         return
-    STATE.last_poll_at = now
 
     batches: list[list] = []
-    for url in feeds:
+    if not due_fetch:
+        # Memory moved under scores we already have. Re-judge what was already
+        # fetched; do not go back to the network for it.
+        batches.append(list(STATE.last_items))
+        print(f"[sources] memory changed, re-scoring {len(STATE.last_items)} "
+              f"item(s) without refetching", flush=True)
+    for url in (feeds if due_fetch else []):
         try:
             xml = await asyncio.to_thread(_fetch_text, url)
             batches.append(sources.parse_feed(xml, source=url))
         except Exception as exc:  # noqa: BLE001 - a dead feed is never fatal
             print(f"[sources] {url} failed: {type(exc).__name__}: {exc}", flush=True)
-    for watch in watches:
+    for watch in (watches if due_fetch else []):
         tool = watch.get("tool", "")
         label = watch.get("name") or tool
         if not tool:
@@ -739,6 +762,11 @@ async def _poll_sources() -> None:
         except Exception as exc:  # noqa: BLE001 - a dead tool is never fatal
             print(f"[sources] watch {label} failed: {type(exc).__name__}: {exc}",
                   flush=True)
+
+    if due_fetch:
+        STATE.last_poll_at = now
+        # Keep what was fetched so a later change in memory can re-judge it.
+        STATE.last_items = [i for b in batches for i in b]
 
     best = None
     scanned: list = []
@@ -760,6 +788,9 @@ async def _poll_sources() -> None:
             if relevance.worth_mentioning(score) and (
                     best is None or score > best.relevance):
                 best = item
+    # These scores are now a claim about memory as it stands at `fingerprint`.
+    # Recording that is what lets the next tick notice they have gone stale.
+    STATE.scored_against = fingerprint
     if scanned:
         STATE.last_scan = sorted(scanned, key=lambda r: -r["relevance"])
         kept = sum(1 for r in scanned if r["verdict"] != "silent")
@@ -769,6 +800,20 @@ async def _poll_sources() -> None:
         STATE.pending_item = best
         print(f"[sources] pending {best.title[:50]!r} "
               f"relevance={best.relevance:.1f} because={best.because!r}", flush=True)
+
+
+def _memory_fingerprint() -> tuple:
+    """A cheap stand-in for "what the Keeper currently knows".
+
+    Relevance is judged against the active facts, so any change to them, a new
+    one distilled or an old one superseded, invalidates every score computed
+    before it. Counting active facts and recorded changes catches both, and both
+    are already in memory, so this costs nothing per tick.
+    """
+    if STATE.store is None:
+        return (0, 0)
+    active = sum(1 for f in STATE.store.facts if f.active)
+    return (active, len(STATE.store.changes()))
 
 
 def _fetch_text(url: str) -> str:
