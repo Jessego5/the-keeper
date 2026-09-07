@@ -1,162 +1,355 @@
 <p align="center">
-  <img src="backend/static/keeper.png" width="180" alt="The Keeper, a hooded figure with a small lamp at the brow, one hand open">
+  <img src="backend/static/keeper.png" width="150" alt="The Keeper, a hooded figure with a small lamp at the brow, one hand open">
 </p>
 
 <h1 align="center">The Keeper</h1>
 
-<p align="center">
-  <em>A proactive, memory-driven AI companion that reaches out on its own.</em><br>
-  <sub>Python · FastAPI · MCP · A2A · OpenAI · 440 tests · 60 LLM evals · CI</sub>
-</p>
+> A proactive AI companion that decides on its own when it has something worth
+> saying, remembers what has *changed* about you, and reaches you through a native
+> OS notification with the browser closed.
+
+**[Features](FEATURES.md)** · **[Architecture](docs/ARCHITECTURE.md)** · **[Demo script](docs/DEMO.md)** · **[Voice spec](KEEPER_VOICE.md)** · **[Testing rules](tests/README.md)**
+
+![CI](https://github.com/Jessego5/rusty-companion/actions/workflows/ci.yml/badge.svg)
+![tests](https://img.shields.io/badge/tests-440%20unit%20%2B%20integration-informational)
+![evals](https://img.shields.io/badge/LLM%20evals-60-informational)
+
+There is no hosted demo on purpose. It is single-user by design, it reads your
+idle time and screen-lock state, and it fires OS notifications. Those are the
+parts that make it a companion rather than a chat window, and none of them
+survive a shared web deployment. It runs locally in about a minute.
 
 ---
 
-Most assistants wait to be asked. The Keeper does not. A background loop decides
-when it has something worth saying, and says it, through a native OS notification,
-with the browser closed.
+## Demo
 
-It is an old, patient presence that tends someone the way a lighthouse keeper
-tends a coast: steadily, expecting nothing back. It has a fixed voice, a memory
-that outlives any single conversation, and hands. When something needs finding or
-working out, it goes and does it.
+Three messages. The Keeper learns a fact, records that it changed, and then earns
+a register it is not allowed to claim on wording alone. Captured verbatim from a
+clean store:
 
-## Three things make it an agent, not a chatbot
+```
+> i stopped painting in march
+  The water remains quiet. A goal might pull you back to your brush.
+  [register: tidal]  inherited (no signal in this message)
 
-**It acts unbidden.** The proactive loop is gated by an energy model, your
-presence (idle time, screen lock, focused app), and whether it actually has
-anything to say. Silence is a valid outcome, and a hard real-time floor stops it
-ever becoming a notification flood. Simulated over 7 days and 20 seeds, the
-cooldown accounts for 78% of the silences and the daily ceiling for none of them,
-which is measured rather than assumed ([`proactive_bench.py`](backend/proactive_bench.py)).
+> actually i started painting again
+  The tide returns color to the shore. Keep moving with it.
+  [register: tidal]  classified tidal
 
-**It notices.** What it can raise unbidden is not limited to your own past. It
-watches sources that genuinely push, RSS feeds and its own MCP tools alike, so a
-commit that landed or a file that changed can become the thing it mentions.
-Everything it notices is scored against what it knows about you before it earns
-the right to interrupt, and most of it never does. It will not tell you about
-your own commits, because you wrote them.
+> how is my painting going?
+  You have started painting again.
+  [register: turn]  turn earned by a recorded reversal: Has started painting again.
 
-**It remembers and reflects.** Facts are distilled from conversation and
-retrieved by relevance, recency and importance (the *Generative Agents* function).
-When something changes, the new fact **supersedes** the old one and the change is
-kept as history. Idle, it synthesizes higher-level insights about you; under
-memory pressure it consolidates the low-value tail (MemGPT).
+facts kept 1 · changes tracked 1
+```
 
-## It has hands, and it is not alone
+Facts stayed at **1**, not 2: the old fact was closed rather than deleted, and the
+change is kept as history. `turn` is the rarest register and cannot be produced by
+phrasing. Saying "everything is finally turning around for me" returns `tidal`
+with `turn not earned, nothing the store remembers changed`.
 
-**Tools, when asked.** The passive path reaches for MCP servers you configure
-(files, fetch, search, time, git) plus native tools of its own: reminders, a
-journal, and `run_python` for anything that has to be worked out rather than
-guessed. The proactive loop stays sealed and never touches the world unbidden.
-A server that fails to start, or comes up missing a tool it declared, shows as
-degraded in `/state` rather than the Keeper quietly never reaching for it.
+Left alone, it reaches out on its own instead:
 
-**Goals it tends over days.** A goal is decomposed into small steps, each labelled
-with who acts. The Keeper executes its own steps with its tools and returns to
-yours on its own schedule, which is what separates tending something from
-answering about it.
+```
+[sources] scanned 13, 10 judged not worth saying
+[sources] pending 'Denizens of a Crowded City Populate Erin Milez's Dense Paintings'
+          relevance=0.9 because='Started painting again.'
+[proactive] spoke_source  E=0.125 score=0.912
+```
 
-**Other agents.** It speaks [A2A](https://google.github.io/A2A/): it publishes an
-Agent Card at `/.well-known/agent.json` and consults peers over JSON-RPC.
-[`scripts/almanac_agent.py`](scripts/almanac_agent.py) is a second, genuinely
-separate agent to talk to. Outbound calls resolve the host and refuse anything
-that is not a global IP, so a peer URL cannot be used to reach your own network,
-and the Keeper's own endpoint requires a bearer token.
+---
 
-## The voice is a contract, not a vibe
-
-The Keeper speaks in one register at a time: `frozen` (the long cold), `tidal`
-(moving), or `turn` (the ice going out). [`voice_eval.py`](backend/voice_eval.py)
-scores every line against eleven rules, six mechanical (length, hedging,
-sentiment, motif) and five judged by a fast model (flat declarative, calm
-foreknowledge, ceremony). A line that fails is retried or replaced.
-
-`turn` is the rarest register and cannot be produced by wording alone. It is
-*earned* from the store, when a recorded reversal shows things genuinely
-improved. Saying "hello" cannot buy it, and neither can saying "everything is
-finally turning around for me" if nothing the store remembers changed.
-
-## Try it
+## Quickstart
 
 ```bash
-./run.sh                       # http://localhost:8790
-docker compose up -d           # or containerized (see Security)
+git clone https://github.com/Jessego5/rusty-companion.git && cd rusty-companion
+cp backend/.env.example backend/.env     # add OPENAI_API_KEY
+./run.sh                                 # http://localhost:8790
+```
 
-# optional, for the agent-to-agent demo
+Runs offline against a stub generator with no key, so the loop, the gates and the
+voice scoring all work before you spend anything.
+
+**Containerized** (see [Security](#security) for when to prefer this):
+
+```bash
+docker compose up -d
+```
+
+**Optional, for the agent-to-agent act:**
+
+```bash
 .venv/bin/python -m uvicorn scripts.almanac_agent:app --port 8791
 ```
 
-Needs `backend/.env` with `OPENAI_API_KEY`. Runs offline on a stub without one.
+**Requirements:** Python 3.11+, macOS for presence sensing and native banners
+(everything else is cross-platform), Node 20+ and `uv` only if you enable MCP
+tool servers.
 
-- **chat** `/` · **dashboard** `/dashboard` · **trace** `/trace-view` · **state** `/state`
-- [`FEATURES.md`](FEATURES.md), 58 features, each with a line to type to see it
-- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), the two loops, with diagrams
-- [`docs/DEMO.md`](docs/DEMO.md), a seven-act walkthrough
-- [`KEEPER_VOICE.md`](KEEPER_VOICE.md), the character spec
+Surfaces: **chat** `/` · **dashboard** `/dashboard` · **trace** `/trace-view` ·
+**state** `/state` · **agent card** `/.well-known/agent.json`
 
-The **trace** (`/trace-view`) is the thing to open first: per turn it shows what
-memory was injected, which register was chosen and why, every tool that fired,
-and the reply. It is how you tell whether the Keeper meant it.
+---
 
-## Testing
+## Architecture
 
-Three tiers, because an LLM system needs more than unit tests:
-
-| Tier | What | Needs |
-|---|---|---|
-| **unit** | pure logic: energy, voice scoring, recall, register, gating | nothing |
-| **integration** | real subsystems: OS sensors, MCP servers, the reach-out path | node + uv |
-| **eval** | LLM behaviour: voice fidelity, no invented events, memory contracts | an API key |
-
-```bash
-.venv/bin/pytest                      # unit + integration (evals excluded)
-.venv/bin/pytest tests/evals -m eval  # the live tier
-python backend/mood_bench.py          # benchmark the register classifier
-python backend/proactive_bench.py     # benchmark the interruption policy
+```mermaid
+flowchart TB
+    subgraph passive["Passive loop, when you speak"]
+        M[message] --> REG[register: LLM classifier<br/>keyword, then Model2Vec fallback]
+        REG --> REC[recall: relevance x recency x importance]
+        REC --> GEN[compose + tools]
+        GEN --> VE[voice_eval: 11 rules]
+        VE -->|fails| GEN
+        VE --> REPLY[reply]
+        REPLY --> DIS[distill facts] --> STORE[(facts.jsonl)]
+        DIS --> SUP{supersedes<br/>an old fact?}
+        SUP -->|judge says yes| STORE
+    end
+    subgraph proactive["Proactive loop, on its own clock"]
+        TICK[tick] --> G1{day spent?} --> G2{cooldown?} --> G3{screen locked?}
+        G3 --> G4{roll to speak?} --> G5{anything to say?}
+        G5 --> OUT[notification / SSE / Discord]
+    end
+    SRC[RSS + MCP tools] --> REL[relevance gate<br/>mention 0.45 / interrupt 0.75]
+    REL --> G4
+    STORE --> REC
+    STORE --> REL
 ```
 
-**Every fake has a real-model twin.** Several bugs were found where a unit test
-handed the code a fake model whose output the real one never produces, so every
-faked seam is now paired with an eval that drives the real thing. The rule is in
-[`tests/README.md`](tests/README.md).
+| Layer | Choice | Why |
+|---|---|---|
+| API | FastAPI, async throughout | model calls are I/O bound; the proactive loop shares the event loop |
+| Store | append-only JSONL | single user, tens of thousands of facts at most; a database would be ceremony |
+| Register | LLM classifier, benchmarked | won 97% against 83% for embeddings and 74% for keywords |
+| Retrieval | relevance x recency x importance | *Generative Agents*, with an embedding rerank |
+| Tools | MCP over stdio | the servers already exist; nothing bespoke to maintain |
+| Interop | A2A agent card + JSON-RPC | an open protocol rather than a private endpoint |
+| CI | GitHub Actions, ruff, three test tiers | evals kept off CI because the API key stays local |
 
-Design decisions are measured, not asserted:
+---
 
-- The register classifier is the **LLM classifier**, because `mood_bench.py`
-  scored four methods on a 100-case hand-labelled dataset with a held-out test
-  split, and it won at 97% against 74% for the keyword baseline. It falls back
-  to keywords, then to a local Model2Vec model, when the API is unavailable.
-- The supersede floor is `0.30` because a judge asked about 7 real updates and 7
-  unrelated pairs was right 14 times out of 14, while the previous floor of
-  `0.45` never put three of them to it at all.
-- Nearly a third of the register dataset is **replayed from real sessions**
-  rather than invented, because hand-written cases only hold the messages you
-  already thought of. That alone dropped one classifier's neutral accuracy from
-  100% to 75%, which is exactly the blind spot it existed to expose.
+## How it works
+
+Two loops share one store. When you speak, the **passive loop** reads a register
+from the message, recalls facts scored by relevance, recency and importance,
+composes a reply, scores that reply against eleven voice rules and retries if it
+fails, then distills durable facts back into the store. If a new fact updates an
+old one, a judge confirms it and the old fact is *closed*, not deleted, so the
+change itself becomes history the Keeper can point at later.
+
+Meanwhile the **proactive loop** runs on its own clock, gated by the day's
+ceiling, a refractory cooldown, your screen-lock state, a probability roll driven
+by an energy model, and finally by whether it has anything to say at all. It
+never gets tools: it can only speak from memory or from something it noticed.
+What it notices comes from sources that genuinely push, RSS feeds and MCP tool
+calls alike, each scored against your memory before it may interrupt.
+
+```
+backend/
+  server.py         HTTP surface, both loops, delivery
+  memory.py         facts, distillation, supersession, recall, consolidation
+  proactive.py      the gates; pure and unit-testable, no clock and no network
+  relevance.py      does this thing from the world matter to THIS person
+  sources.py        RSS and MCP tool output, normalised into scored items
+  compose.py        generation, retries, the offline stub
+  voice_eval.py     11 rules: 6 mechanical, 5 judged by a fast model
+  mood.py           register classification, with fallbacks
+  tools.py          MCP client: timeouts, health, read-only by default
+  a2a.py            agent card, peer consultation, SSRF checks
+  sandbox.py        run_python fences, and their documented limits
+  *_bench.py        measurement harnesses (register, interruption policy)
+tests/
+  test_*.py         unit + integration tiers
+  evals/            the live tier: real models, real prompts
+evals/              hand-labelled + replayed register dataset
+docs/               architecture, demo script
+```
+
+---
+
+## Results
+
+### System performance
+
+Local, single user, macOS on Apple silicon, `gpt-4o` and `gpt-4o-mini`.
+
+| Metric | p50 | p95 | Conditions |
+|---|---|---|---|
+| `/chat`, no tools | 2438 ms | 4246 ms | n=10, cold store |
+| `/chat`, with tools | 3361 ms | 6691 ms | n=4, MCP time + journal |
+| `/state` | 26 ms | 30 ms | n=12, includes a presence read |
+| Register classify | 381 ms | | LLM classifier, from `mood_bench.py` |
+| Register classify | 0 ms | | local Model2Vec fallback, same harness |
+
+Latency is dominated by the model, which is why the register classifier has a
+0 ms local fallback and why `/state` stays off the model path entirely.
+
+### Register classification
+
+Four methods on a 100-case hand-labelled dataset, floor tuned on train only,
+accuracy reported on a held-out test split of 35. Reproduce: `python backend/mood_bench.py`.
+
+| Method | Test acc | implicit | negation | neutral | Latency |
+|---|---|---|---|---|---|
+| Majority class | 42% | | | | sanity floor |
+| Keyword baseline | 74% | 44% | 33% | 100% | 0 ms |
+| Model2Vec anchors | 63% | 33% | 67% | 75% | 0 ms |
+| OpenAI anchors | 83% | 56% | 67% | 100% | 148 ms |
+| **LLM classifier** | **97%** | **89%** | **100%** | 100% | 381 ms |
+
+Nearly a third of the dataset is **replayed from real sessions** rather than
+invented, because hand-written cases only contain the messages you already
+thought of. Adding them dropped Model2Vec's neutral accuracy from 100% to 75%,
+which is exactly the blind spot they were collected to expose.
+
+### Interruption policy
+
+There is no ground truth for how often a companion should speak, so
+`proactive_bench.py` reports what a configuration *does* across simulated days
+rather than asserting it is right. 7 days, 20 seeds, three usage profiles.
+
+| Why each tick ended | Share |
+|---|---|
+| cooldown | 78.2% |
+| did not roll to speak | 16.0% |
+| spoke | 5.8% |
+| daily ceiling | 0% |
+
+The ten-hour refractory period *is* the policy. Removing it takes the shipped
+config from about 2 outreaches a day to 8 to 10, with bursts and night-time
+lines; `p_max` at 0.20 against 0.70 only moves the rate from 1.4 to 2.0. The
+daily ceiling never binds at shipped settings and is documented as a backstop
+rather than credited with the restraint the cooldown provides.
+
+### LLM evaluation
+
+- **Harness:** 60 evals in `tests/evals/`, plus 440 unit and integration tests.
+  Run on demand, not in CI, because the API key deliberately never goes to GitHub.
+- **Judges:** LLM-as-judge for relevance, supersession, and knowledge update;
+  `metrics.py` adds `token_f1` and `exact_match` alongside, since substring checks
+  cannot tell "stopped painting" from "started painting again".
+- **Knowledge update:** a LongMemEval-shaped eval that states a fact, replaces it,
+  then asks. It asserts both halves: the answer must use the new value **and** must
+  not also assert the old one. It was 5/12 when written and found a real bug.
+- **Failure modes it has caught**, each now pinned by a test: the supersede judge
+  spelling its own verdict `SUPERSCEDES` about one call in three; the relevance
+  judge copying the example out of its own prompt onto every item in a scan; a
+  similarity floor that hid event-phrased updates ("Moved to Chicago last month")
+  from the judge entirely; a voice rule matching "ache" inside "gouache".
+- **Guardrails:** MCP tools read-only by default with an explicit allowlist; every
+  MCP call on a deadline; the proactive loop sealed away from tools; outbound A2A
+  calls refusing any non-global IP; the Keeper's own A2A endpoint behind a bearer
+  token compared with `secrets.compare_digest`.
+
+---
+
+## Engineering decisions
+
+**The judge is the gate; the embedding only decides what it sees.**
+Supersession used a cosine floor of 0.45 to pick a candidate. Measured over 7 real
+updates and 7 pairs that must both stay true, the judge was right 14 times out of
+14 when asked, and the floor was never asking it about three of them, because
+distillation writes an update as an event ("Moved to Chicago last month") while
+the fact it replaces is a state ("Lives in Portland"), and the two drift apart.
+The classes overlap on cosine, so no floor separates them. Lowering it to 0.30
+puts every measured update in front of the judge. Tradeoff: a few weakly related
+pairs now reach the judge, which answered DISTINCT for all of them, and cost is
+unchanged because only one call is made per new fact either way.
+
+**An LLM classifier over local embeddings, despite the latency.**
+Anchors over a static Model2Vec model classify in 0 ms and cost nothing, which is
+why they were built first. They score 63% against the LLM classifier's 97%, and
+the gap is worst exactly where it matters: 33% against 89% on implicit register.
+Tradeoff: 381 ms and a per-message cost, so the local model stays as the last
+fallback and the failure is graceful rather than fatal.
+
+**The proactive loop gets no tools, ever.**
+Feed text is written by strangers, and this project has real code execution in
+`run_python`. Letting an unbidden loop act on untrusted text is the shape of a
+prompt-injection incident, so the loop can speak only from memory or from an item
+it already scored. Tradeoff: the Keeper cannot go and check something before
+mentioning it, which is a real capability given up on purpose.
+
+**What I would do differently.**
+Unit tests handed fakes to seams that talk to a model, and the fakes were always
+better behaved than the real thing: perfectly spelled verdicts, well-formed JSON,
+no prompt echo. Four separate bugs lived in exactly that gap. The rule now is
+that every fake has a real-model twin ([`tests/README.md`](tests/README.md)), and
+it should have been the rule from the first eval rather than the fourth bug.
+
+---
+
+## Testing and reliability
+
+```bash
+.venv/bin/pytest                       # unit + integration (440)
+.venv/bin/pytest tests/evals -m eval   # the live tier (60, needs a key)
+.venv/bin/ruff check backend tests
+python backend/mood_bench.py           # register classifier
+python backend/proactive_bench.py      # interruption policy
+```
+
+| Tier | What it covers | Needs |
+|---|---|---|
+| unit | gates, energy, voice scoring, recall, parsing | nothing |
+| integration | OS sensors, real MCP servers, the reach-out path over SSE | node + uv |
+| eval | voice fidelity, invented events, memory contracts, relevance | an API key |
+
+- **CI** runs ruff plus the unit and integration tiers on every push.
+- **A pre-push hook** (`.githooks/pre-push`) runs the same checks locally, added
+  after a push went out with three failing tests that were read past in the output.
+- **Silence is instrumented.** Every proactive decision carries a typed reason code
+  from a closed set, so the benchmark can count *why* it stayed quiet, and the
+  trace records withheld outreaches rather than only spoken ones.
+- **Degradation is visible.** `/state` reports which delivery surfaces are really
+  live and which MCP servers came up short of the tools they declared, instead of
+  advertising capabilities that are not there.
+
+---
+
+## Limitations and next steps
+
+- **No conversation history reaches the model.** Each turn is stateless apart from
+  distilled long-term memory, so a bare follow-up like "what about the other one?"
+  has nothing to resolve against. Memory is the mechanism by design, but this is a
+  real gap rather than a pure design choice.
+- **Model aliases are floating, not pinned.** `gpt-4o` and `gpt-4o-mini` can change
+  behaviour under the evals without a commit. Pinning to dated snapshots is the
+  correct fix and is not done.
+- **Presence sensing is macOS only.** In Docker all three sensors go null and the
+  native banner cannot fire; `/state` says so rather than pretending.
+- **No auth on the HTTP surface.** Anything that can reach `127.0.0.1:8790` can
+  drive it. Acceptable for a local single-user app behind a Host check, and the
+  first thing to fix if it were ever exposed.
+- **The register labels are one person's judgment**, on 100 cases. Directional,
+  not ground truth, and the dataset says so in its own description.
+- **Next:** pin the model snapshots; carry a short conversation window into the
+  passive path; structured outputs for the verdict parsers, which are lenient
+  free-text readers today precisely because models misspell their own answers.
+
+---
 
 ## Security
 
-`run_python` gives the Keeper real code execution, and it fetches web pages in
-the same turn, so a page it reads can influence the code it writes. The fences
-and their limits are documented honestly in
-[`backend/sandbox.py`](backend/sandbox.py).
+`run_python` gives the Keeper real code execution, and it fetches web pages in the
+same turn, so a page it reads can influence the code it writes. The fences and
+their limits are documented honestly in [`backend/sandbox.py`](backend/sandbox.py).
 
 `docker compose up` contains that: verified inside the container, there is no API
-key on disk and the host filesystem is unreachable. Use it if you point the Keeper
-at feeds or pages you do not trust, or to try the project without installing
-anything.
+key on disk and the host filesystem is unreachable. Prefer it if you point the
+Keeper at feeds or pages you do not trust. It is not the everyday posture, because
+the container loses presence sensing and the native banner.
 
-**It is not the everyday posture, though.** The container is Linux, so it loses
-presence sensing and the native banner, the two things that make this a companion
-rather than a chat window. Run it on the host to see what it actually is; run it
-in Docker when you want the fence more than the senses. `/state` reports which
-surfaces are really live either way, rather than claiming ones that are not.
+---
 
-## Credits
+## Acknowledgements
 
-The mythology (*The Keeping*), the voice rules and the character are original.
-Retrieval follows Park et al. 2023 (*Generative Agents*); consolidation follows
-Packer et al. 2023 (*MemGPT*); the change-aware memory is Zep/Graphiti-shaped.
-The knowledge-update eval borrows its shape from LongMemEval. Tooling is
-[MCP](https://modelcontextprotocol.io); agent interop is
-[A2A](https://google.github.io/A2A/).
+The mythology (*The Keeping*), the voice rules, the register system and the
+character are original to this project. Retrieval follows Park et al. 2023
+(*Generative Agents*); consolidation follows Packer et al. 2023 (*MemGPT*); the
+change-aware memory is Zep/Graphiti-shaped; the knowledge-update eval borrows its
+shape from LongMemEval. Tooling is [MCP](https://modelcontextprotocol.io); agent
+interop is [A2A](https://google.github.io/A2A/). Models are OpenAI's; the local
+register fallback is [Model2Vec](https://github.com/MinishLab/model2vec)
+`potion-base-8M`.
