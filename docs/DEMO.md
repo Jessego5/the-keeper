@@ -237,5 +237,14 @@ changes, and a machine that speaks first with the browser shut.
 - The top item's score moves between **0.7 and 0.9** run to run; the judge is a
   model, not a lookup. At 0.7 it reads *mention*, not *interrupt*. Narrate it as
   "worth saying" rather than promising the word on screen.
+- **Watch the dashboard, not the reply, when setting the goal.** Once in a
+  rehearsal the Keeper answered "I will hold this goal for you" and called no tool
+  at all, leaving the goals tile empty. The reply reads exactly like success, which
+  makes it the easiest failure to narrate straight past. It set the goal 3 times out
+  of 3 on retry, so if the tile stays empty, simply ask again.
+- **Act 1's opening register varies.** "i stopped painting in march" has come back
+  both as `tidal` (no signal, so it inherits) and as `frozen` (classified). Both are
+  defensible and `frozen` is arguably the truer reading of a stopped practice. Do
+  not re-take for it; the thing that must be right is **facts kept 1**.
 - The **git watch will not make it speak.** A commit you wrote is not news to you,
   so those rows are there to be rejected. Do not wait for one to become a line.
