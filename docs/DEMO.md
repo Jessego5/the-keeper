@@ -74,10 +74,16 @@ find a typical price for a beginner watercolour set and work out the cost per we
 > not a guessed one.
 
 ```
-go compare watercolour and gouache for a beginner and get back to me
+go and research watercolour versus gouache for a beginner, take your time and get back to me later
 ```
 > Immediate acknowledgement. Dashboard: **working on** populates. It has handed
 > the job to specialists and will return unprompted.
+
+> The long phrasing is deliberate. The shorter "go compare X and get back to me"
+> spawned in only 1 of 3 rehearsal attempts; the rest of the time the model chose
+> `delegate`, which answers in the same breath and leaves **working on** empty.
+> Naming the delay ("take your time", "later") spawned 4 times out of 4. Both are
+> reasonable readings of the request, so this is a script fix, not a bug.
 
 ## Act 3 — It holds things  *(~20s)*
 
