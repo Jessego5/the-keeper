@@ -14,6 +14,29 @@
 ![tests](https://img.shields.io/badge/tests-440%20unit%20%2B%20integration-informational)
 ![evals](https://img.shields.io/badge/LLM%20evals-60-informational)
 
+## What it can actually do
+
+- **Tools over [MCP](https://modelcontextprotocol.io).** Servers you configure,
+  launched over stdio: files, fetch, search, time, git. Read-only by default, with
+  an explicit allowlist, a per-call deadline, and a declared-tools check so a
+  server that comes up short shows as degraded instead of silently missing.
+- **Sandboxed code execution.** `run_python` runs in a separate process under a
+  5 s CPU cap, a 512 MB address-space limit, an 8 s wall clock and a 4 000-char
+  output cap. The fences and the places they leak are written down in
+  [`sandbox.py`](backend/sandbox.py) rather than claimed.
+- **Thirteen native tools of its own**, on top of whatever MCP provides:
+  reminders it hands back at the right moment, an append-only journal, and goals
+  broken into steps that are each assigned to you or to it.
+- **Specialists and background work.** A researcher, archivist, scribe and analyst,
+  reachable either with `delegate`, which answers in the same breath, or
+  `spawn_task`, which goes away and comes back unprompted when it is done.
+- **Agent to agent over [A2A](https://google.github.io/A2A/).** It publishes an
+  Agent Card, consults peers over JSON-RPC, refuses any peer URL that does not
+  resolve to a global IP, and gates its own endpoint behind a bearer token.
+- **Four delivery surfaces.** A native OS banner that reaches you with the browser
+  closed, live web events, Telegram and Discord. `/state` reports which are really
+  live rather than which are configured.
+
 There is no hosted demo on purpose. It is single-user by design, it reads your
 idle time and screen-lock state, and it fires OS notifications. Those are the
 parts that make it a companion rather than a chat window, and none of them
