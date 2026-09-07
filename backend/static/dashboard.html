@@ -11,9 +11,15 @@
     --serif:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
   }
   * { box-sizing:border-box; }
-  html,body { height:100%; margin:0; }
+  html,body { min-height:100%; margin:0; }
   body {
+    /* background-attachment:fixed maps the ramp to the VIEWPORT rather than the
+       document. Without it the gradient is stretched over the full scroll height,
+       so once the tiles overflow one screen the three stops smear into flat bands
+       and the deep end never arrives. The chat page does not need this because it
+       sets overflow:hidden and never scrolls. */
     background:linear-gradient(180deg,var(--surface),var(--sea) 40%,var(--deep));
+    background-attachment:fixed;
     color:var(--foam); font-family:var(--serif); -webkit-font-smoothing:antialiased;
     padding:2.5rem 1.5rem;
   }
