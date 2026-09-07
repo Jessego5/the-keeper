@@ -47,39 +47,38 @@ survive a shared web deployment. It runs locally in about a minute.
 
 ## Demo
 
-Three messages. The Keeper learns a fact, records that it changed, and then earns
-a register it is not allowed to claim on wording alone. Captured verbatim from a
-clean store:
+Three messages. The Keeper learns a fact, records that it *changed*, and then
+earns a register it is not allowed to claim on wording alone.
+
+![The chat surface: three messages and the Keeper's replies in its own register](docs/screenshots/chat.png)
 
 ```
-> i stopped painting in march
-  The water remains quiet. A goal might pull you back to your brush.
-  [register: tidal]  inherited (no signal in this message)
-
-> actually i started painting again
-  The tide returns color to the shore. Keep moving with it.
-  [register: tidal]  classified tidal
-
-> how is my painting going?
-  You have started painting again.
-  [register: turn]  turn earned by a recorded reversal: Has started painting again.
+> i stopped painting in march      [tidal]  inherited (no signal in this message)
+> actually i started painting again[tidal]  classified tidal
+> how is my painting going?        [turn]   turn earned by a recorded reversal:
+                                            Has started painting again.
 
 facts kept 1 · changes tracked 1
 ```
 
 Facts stayed at **1**, not 2: the old fact was closed rather than deleted, and the
-change is kept as history. `turn` is the rarest register and cannot be produced by
-phrasing. Saying "everything is finally turning around for me" returns `tidal`
-with `turn not earned, nothing the store remembers changed`.
+change itself is kept as history. `turn` is the rarest register and cannot be
+bought with phrasing. Say "everything is finally turning around for me" and it
+comes back `tidal`, with `turn not earned, nothing the store remembers changed`.
 
-Left alone, it reaches out on its own instead:
+**The trace is the thing to open first.** Per turn it shows the register and why,
+what memory was injected, every tool that fired with its arguments and result, and
+the reply. Here it holds an unbidden line (what it noticed, and which kept fact
+made it relevant), a consultation with a separate agent over A2A, and the tide
+showing `was` then `now`:
 
-```
-[sources] scanned 13, 10 judged not worth saying
-[sources] pending 'Denizens of a Crowded City Populate Erin Milez's Dense Paintings'
-          relevance=0.9 because='Started painting again.'
-[proactive] spoke_source  E=0.125 score=0.912
-```
+![The trace: an unbidden line, an A2A consultation, and the injected memory showing what changed](docs/screenshots/trace.png)
+
+**The dashboard shows what it decided *not* to say.** Thirteen items scanned
+against memory: two clear the bar, and the rest, including this repo's own recent
+commits, are scored and dropped. The rejecting is the point.
+
+![The dashboard: energy, memory counters, and the scored list of what it considered](docs/screenshots/dashboard.png)
 
 ---
 
