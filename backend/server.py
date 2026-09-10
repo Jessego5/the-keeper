@@ -495,7 +495,7 @@ async def lifespan(app: FastAPI):
                 pass
 
 
-app = FastAPI(title="Rusty Companion: the Keeper", lifespan=lifespan)
+app = FastAPI(title="The Keeper", lifespan=lifespan)
 
 # DNS-rebinding defense: only serve requests whose Host is localhost. A malicious
 # website that rebinds its domain to 127.0.0.1 would send its own Host header, so
@@ -1288,6 +1288,6 @@ async def root():
 
 @app.get("/info")
 async def info():
-    return {"name": "Rusty Companion, the Keeper",
+    return {"name": "The Keeper",
             "endpoints": ["/chat", "/events", "/state", "/config"],
             "facts_kept": len(STATE.store.facts)}

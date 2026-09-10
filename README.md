@@ -11,7 +11,7 @@
 
 **[Features](FEATURES.md)** · **[Architecture](docs/ARCHITECTURE.md)** · **[Demo script](docs/DEMO.md)** · **[Voice spec](KEEPER_VOICE.md)** · **[Testing rules](tests/README.md)**
 
-![CI](https://github.com/Jessego5/rusty-companion/actions/workflows/ci.yml/badge.svg)
+![CI](https://github.com/Jessego5/the-keeper/actions/workflows/ci.yml/badge.svg)
 ![tests](https://img.shields.io/badge/tests-457%20unit%20%2B%20integration-informational)
 ![evals](https://img.shields.io/badge/LLM%20evals-60-informational)
 
@@ -118,7 +118,7 @@ patience fits in seven seconds. Nothing else is sped up.</sub>
 ## Quickstart
 
 ```bash
-git clone https://github.com/Jessego5/rusty-companion.git && cd rusty-companion
+git clone https://github.com/Jessego5/the-keeper.git && cd the-keeper
 cp backend/.env.example backend/.env     # add OPENAI_API_KEY
 ./run.sh                                 # http://localhost:8790
 ```

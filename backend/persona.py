@@ -1,12 +1,12 @@
 """
-This is the persona for the Rusty Companion, **The Keeper**.
+This is the persona for **The Keeper**.
 
 Code implementation of the spec in ../KEEPER_VOICE.md. That file is the contract;
 this file is what actually reaches the model. Keep them in sync, if you change the
 voice, change the doc.
 
-Method behind it: ../VOICE_DISTILLATION.md, the voice as seven mechanical rules plus an
-original mythology (*The Keeping*).
+The method behind it: the voice as seven mechanical rules plus an original mythology
+(*The Keeping*). ../KEEPER_VOICE.md is the contract those rules are written in.
 
 A short identity string plus a longer rules block, both injected into the system prompt.
 Everything is a string or a plain container: no imports, no deps, so the voice can be

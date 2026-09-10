@@ -62,7 +62,7 @@ Keep the **trace** open (`/trace-view`) to watch every tool fire.
 - [ ] **Fetch a page** (MCP), *Try:* `read https://example.com and tell me what it's for`
 - [ ] **Git history** (MCP), *Try:* `what have i been building on this project lately?`
 - [ ] **Time / timezone** (MCP), *Try:* `what day is it, and what time in Tokyo?`
-- [ ] **Read-only safety**: writes/escapes are blocked. *Try (terminal):* the snippet in `TRY_IT.md §4` → `no such tool: files__write_file`.
+- [ ] **Read-only safety**: writes and escapes are blocked before the Keeper ever sees them. *Covered by:* `tests/test_mcp.py::test_read_only_blocks_mutating_tools`, and its opposite, `test_read_only_false_exposes_writes`.
 - [ ] **Run Python (code-as-action)**: computes exactly. *Try:* `if i save $45 a week, how much over 3 years? work it out exactly`
 - [ ] **Journal (its one write)**: append-only. *Try:* `keep a note: the gallery show is in July`, then `what's in your journal?`. *(Ask for the journal by name, a bare "what have you kept?" is ambiguous with the memory it also keeps, and answers from facts instead.)*
 
