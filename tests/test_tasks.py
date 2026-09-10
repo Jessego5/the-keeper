@@ -1,4 +1,7 @@
-"""Tier 1 — goal store + planner (tasks.py, planner.py). No key, no clock."""
+"""
+These are the Tier 1 tests for goal store + planner (tasks.py, planner.py). No key, no
+clock.
+"""
 import pytest
 import planner
 import tasks
@@ -249,7 +252,7 @@ async def test_advance_goal_no_match(nt):
 async def test_advance_goal_matches_the_persons_own_words(nt):
     # Regression, seen live: "i set out my paints" reached advance_goal as
     # key="paints" against the goal "get back to painting" and returned
-    # "no matching goal." — the goal never advanced and nothing surfaced the miss.
+    # "no matching goal.": the goal never advanced and nothing surfaced the miss.
     await nt.call("set_goal", {"title": "get back to painting"})
     out = await nt.call("advance_goal", {"key": "paints", "note": "set them out"})
     assert "no matching goal" not in out

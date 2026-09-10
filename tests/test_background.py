@@ -1,4 +1,7 @@
-"""Tier 1 — background task registry + spawn_task tool (async delegation)."""
+"""
+These are the Tier 1 tests for background task registry + spawn_task tool (async
+delegation).
+"""
 import pytest
 import background
 import native_tools

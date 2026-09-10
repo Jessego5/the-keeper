@@ -1,10 +1,11 @@
-"""tasks.py — goals the Keeper pursues over time. The Planning pattern's state.
+"""
+These are the goals the Keeper pursues over time, the Planning pattern's state.
 
 This is what turns the Keeper from a companion that reaches out into an AGENT that
 tends to things. A Goal is something the person wants help moving toward ("get back
 to painting", "sort things out with Sam"); the planner (planner.py) decomposes it
-into small concrete Steps; and the proactive loop advances it over days — taking a
-step with its tools, or checking in — instead of only emitting a mood line.
+into small concrete Steps; and the proactive loop advances it over days, taking a
+step with its tools, or checking in, instead of only emitting a mood line.
 
 State is a plain JSONL file (memory_store/goals.jsonl), like the fact and reminder
 stores. Each Goal carries its steps, its status, and when it is next due to be
@@ -40,7 +41,7 @@ class Step:
 # A plan step may arrive prefixed with who should do it, e.g. "[keeper] look up X".
 _ACTOR_RE = re.compile(r"^\s*\[(keeper|person|you|me)\]\s*", re.I)
 
-# Words too common to identify a goal by — "get back to painting" must not be found
+# Words too common to identify a goal by: "get back to painting" must not be found
 # by the key "back".
 _STOPWORDS = {"the", "and", "for", "with", "that", "this", "get", "back", "out",
               "into", "again", "some", "any", "one", "you", "your", "our", "his",
@@ -49,7 +50,7 @@ _STOPWORDS = {"the", "and", "for", "with", "that", "this", "get", "back", "out",
 
 def _stems(text: str) -> set[str]:
     """The content words of `text`, crudely stemmed so 'paints' and 'painting' meet
-    at 'paint'. Not a real stemmer — it only has to survive the plural/gerund gap
+    at 'paint'. Not a real stemmer: it only has to survive the plural/gerund gap
     between how a person reports progress and how their goal was titled."""
     out = set()
     for word in re.findall(r"[a-z]+", text.lower()):
@@ -131,7 +132,7 @@ class GoalStore:
         """By id, by a case-insensitive substring of the title, or by a shared word
         stem. The stem pass matters: the model keys off the person's words, not the
         goal's, so "i set out my paints" arrives as key="paints" against a goal
-        titled "get back to painting" — a substring match misses it and the step is
+        titled "get back to painting": a substring match misses it and the step is
         silently never advanced. Active goals win over ones already set down."""
         key_low = key.lower()
         for g in self.goals:
@@ -188,7 +189,7 @@ class GoalStore:
 
     def touch(self, goal: Goal, interval_s: float = DEFAULT_CHECK_INTERVAL_S,
               now: Optional[float] = None) -> None:
-        """Push a goal's next check out without completing a step — used when the
+        """Push a goal's next check out without completing a step, used when the
         agent only checked in rather than making progress."""
         goal.next_check_at = (now or time.time()) + interval_s
         self._save()

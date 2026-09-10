@@ -1,4 +1,5 @@
-"""metrics.py — score a free-text answer against a known one.
+"""
+This scores a free-text answer against a known one.
 
 Every eval in this repo checks answers by looking for a substring: `"paint" in
 reply.lower()`. That is fine for "did the fact survive distillation" and useless

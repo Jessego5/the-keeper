@@ -1,4 +1,7 @@
-"""Tier 1 — the Keeper's append-only journal (journal.py) + its tools."""
+"""
+These are the Tier 1 tests for the Keeper's append-only journal (journal.py) + its
+tools.
+"""
 import pytest
 import journal as journal_mod
 import native_tools

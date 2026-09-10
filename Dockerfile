@@ -1,4 +1,4 @@
-# The Keeper — containerized backend + UI.
+# The Keeper: containerized backend + UI.
 # Build:  docker build -t keeper .
 # Run:    docker run --env-file backend/.env -p 8790:8790 keeper
 FROM python:3.13-slim
@@ -7,7 +7,7 @@ WORKDIR /app
 
 # node for the MCP servers (files / fetch / search / time / git are all `npx`).
 # Without it every MCP server fails to spawn and the container silently loses the
-# whole tool layer — which is containment by amputation, not isolation.
+# whole tool layer: which is containment by amputation, not isolation.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends nodejs npm \
     && rm -rf /var/lib/apt/lists/*
@@ -38,7 +38,7 @@ EXPOSE 8790
 #
 # Running here is also the security posture: run_python cannot read the host
 # filesystem, and the API key arrives as an env var (never a file, see
-# .dockerignore) which sandbox.py strips from the child — so the fetch-a-page ->
+# .dockerignore) which sandbox.py strips from the child: so the fetch-a-page ->
 # write-code path documented in sandbox.py has no credential and no host to reach.
 # Presence sensing does NOT work here: those are macOS APIs. Startup logs say so.
 CMD ["python", "-m", "uvicorn", "server:app", "--app-dir", "backend", \

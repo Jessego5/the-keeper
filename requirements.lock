@@ -1,10 +1,10 @@
-# requirements.lock — the exact versions this Keeper was built and CALIBRATED on.
+# requirements.lock: the exact versions this Keeper was built and CALIBRATED on.
 #
 # Generated:  .venv/bin/python -m pip freeze --exclude-editable > requirements.lock
 # Install:    pip install -r requirements.lock
 #
 # Why a lock matters more here than in most projects: several constants are tuned
-# against specific model and library versions, not chosen on principle —
+# against specific model and library versions, not chosen on principle:
 #
 #   memory._REL_FLOOR = 0.17   the usable band measured only 0.138..0.199 against
 #                              text-embedding-3 at this dimensionality
@@ -19,7 +19,7 @@
 # requirements.txt stays loose and human-readable; this file is what CI installs.
 #
 # NOTE: pip freeze DROPS environment markers. The pyobjc lines below are macOS
-# only and had to have `; sys_platform == "darwin"` restored by hand — without it
+# only and had to have `; sys_platform == "darwin"` restored by hand: without it
 # Linux CI tries to build them and fails with "PyObjC requires macOS". Re-check
 # these after any regeneration.
 annotated-doc==0.0.5

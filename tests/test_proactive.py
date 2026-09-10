@@ -1,4 +1,7 @@
-"""Tier 1 — the reach-out decision (proactive.py). Gating only; no LLM, no key."""
+"""
+These are the Tier 1 tests for the reach-out decision (proactive.py). Gating only; no
+LLM, no key.
+"""
 import random
 import pytest
 import compose
@@ -83,7 +86,7 @@ def _item(score):
 
 class _AlwaysRoll(random.Random):
     """Fixes only the speak draw. Subclasses Random so uniform() and the rest still
-    work — next_tick_seconds jitters with uniform, and a bare stub breaks it."""
+    work: next_tick_seconds jitters with uniform, and a bare stub breaks it."""
     def __init__(self, draw):
         super().__init__(0)
         self._draw = draw
@@ -172,7 +175,7 @@ def _tick(gen, recent=None, draw=0.0):
 
 
 def test_a_repeat_becomes_silence_not_a_second_send():
-    """35% of real model lines were duplicates — one appeared twelve times. A
+    """35% of real model lines were duplicates: one appeared twelve times. A
     Keeper with nothing new is in character staying quiet; one paraphrasing itself
     to fill the gap is not."""
     line = "This is the part where the water holds still."

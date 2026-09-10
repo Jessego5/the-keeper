@@ -1,4 +1,7 @@
-"""Tier 1 — compose.revoice: tool answers re-voiced without losing facts."""
+"""
+These are the Tier 1 tests for compose.revoice: tool answers re-voiced without losing
+facts.
+"""
 import pytest
 import compose
 

@@ -1,4 +1,4 @@
-# Runs on every push and PR. The eval tier is NOT here — it costs money and needs
+# Runs on every push and PR. The eval tier is NOT here: it costs money and needs
 # a real key; see evals.yml, which runs nightly.
 name: CI
 
@@ -32,12 +32,12 @@ jobs:
       - name: Install pinned dependencies
         run: pip install -r requirements.lock ruff
 
-      # F + B only — see the rationale in pyproject.toml. Fast enough to run first,
+      # F + B only: see the rationale in pyproject.toml. Fast enough to run first,
       # so an obvious defect fails before the suite spends 20 minutes.
       - name: Lint
         run: ruff check backend/ tests/
 
-      # model2vec pulls minishlab/potion-base-8M on first use — ~100MB and slow
+      # model2vec pulls minishlab/potion-base-8M on first use: ~100MB and slow
       # enough to dominate the job if refetched every run.
       - name: Cache the Model2Vec weights
         uses: actions/cache@v4

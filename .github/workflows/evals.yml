@@ -1,7 +1,7 @@
 # The live tier: real models, real money, non-deterministic.
 #
 # MANUAL ONLY, by choice. Running this on a schedule would mean giving GitHub a
-# copy of the OPENAI_API_KEY as a repository secret, and the decision was not to —
+# copy of the OPENAI_API_KEY as a repository secret, and the decision was not to:
 # the credential stays on the machine that owns it. The nightly trigger is removed
 # rather than left failing, because a workflow that is always red teaches you to
 # ignore red.
@@ -18,7 +18,7 @@
 name: Evals
 
 on:
-  workflow_dispatch:            # on demand only — see above
+  workflow_dispatch:            # on demand only, see above
 
 jobs:
   evals:
@@ -42,14 +42,14 @@ jobs:
           key: hf-potion-base-8m-${{ runner.os }}
 
       # Every eval is marked skipif no OPENAI_API_KEY. Without this guard a missing
-      # secret produces a green run of zero tests — silence that looks like success,
+      # secret produces a green run of zero tests: silence that looks like success,
       # which is the exact failure this tier exists to catch.
       - name: Require the API key
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: |
           if [ -z "$OPENAI_API_KEY" ]; then
-            echo "::error::OPENAI_API_KEY is not set — every eval would skip and"
+            echo "::error::OPENAI_API_KEY is not set, every eval would skip and"
             echo "::error::this job would pass without testing anything."
             exit 1
           fi
@@ -65,7 +65,7 @@ jobs:
       # Voice fidelity. It scores lines across every mode and prints a number, and
       # until now nothing watched it: a prompt change could quietly degrade the
       # voice and no check would notice. Printed rather than asserted, for the same
-      # reason mood_bench is — the number moves, and a threshold would either be
+      # reason mood_bench is: the number moves, and a threshold would either be
       # meaningless or flaky.
       - name: Voice fidelity harness
         env:
@@ -75,6 +75,6 @@ jobs:
       - name: Mood sensor benchmark
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-        # Not an assertion — a printed record, so a decalibrated floor is visible
+        # Not an assertion: a printed record, so a decalibrated floor is visible
         # in the nightly log rather than discovered months later.
         run: python backend/mood_bench.py

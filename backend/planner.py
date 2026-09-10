@@ -1,8 +1,9 @@
-"""planner.py — the Planning pattern. Decompose a goal into steps the Keeper can work.
+"""
+This is the Planning pattern, decomposing a goal into steps the Keeper can work.
 
 Given something the person wants help moving toward, produce a short ordered list of
 small, concrete steps. Kept deliberately minimal: 2-5 steps, each a single doable
-thing, phrased as the companion helping — because the proactive loop will walk them
+thing, phrased as the companion helping, because the proactive loop will walk them
 one at a time, taking a step or checking in.
 
 The model is injected (compose.Generator), so planning is testable offline with a
@@ -17,17 +18,17 @@ from typing import Callable
 Generator = Callable[[str, str], str]
 
 _PLAN_SYSTEM = """You help a companion break a person's goal into a SHORT plan it can \
-help them move through over days. Output 2 to 5 small, concrete steps — each ONE \
+help them move through over days. Output 2 to 5 small, concrete steps: each ONE \
 doable thing, in order, phrased plainly. No sub-lists, no numbering, no preamble. \
 Prefer a gentle first step.
 
 Prefix EACH step with who does it:
-  [keeper] — the companion can do this itself with its tools: look something up on the \
+  [keeper]: the companion can do this itself with its tools: look something up on the \
 web, read the person's files/journal, check the time, look at their project history, \
 draft a message, or keep a note.
-  [person] — only the person can do it (a physical or personal act: set out paints, \
+  [person], only the person can do it (a physical or personal act: set out paints, \
 make a phone call, go somewhere, decide something).
-Be honest — only mark [keeper] when a tool could truly do it. Example:
+Be honest, only mark [keeper] when a tool could truly do it. Example:
   [keeper] Look up the gallery's phone number
   [person] Call the gallery
 Output only the labelled steps, one per line."""
@@ -38,7 +39,7 @@ _MAX_STEPS = 5
 def _plan_once(goal: str, generate: Generator, feedback: str = "") -> list[str]:
     """One decomposition pass. `feedback` (from a critique) steers a re-plan."""
     user = goal if not feedback else (
-        f"{goal}\n\nYour previous plan had this problem — fix it: {feedback}")
+        f"{goal}\n\nYour previous plan had this problem, fix it: {feedback}")
     raw = (generate(_PLAN_SYSTEM, user) or "").strip()
     steps: list[str] = []
     for line in raw.splitlines():
@@ -86,7 +87,7 @@ def plan(goal: str, generate: Generator, reflect: bool = False,
 
 _ADVANCE_SYSTEM = """You are a companion helping a person through one step of a plan. \
 You are given the overall goal and the specific next step. Decide, in one short line, \
-how to move it forward NOW — either something you can do or look up for them, or a \
+how to move it forward NOW: either something you can do or look up for them, or a \
 gentle check-in that invites them to take it. Speak to them directly, in one or two \
 sentences, warm and unhurried. Do not list the whole plan; just this step."""
 

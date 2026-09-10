@@ -1,9 +1,10 @@
-"""journal.py — the Keeper's kept notes. The one thing it can WRITE.
+"""
+These are the Keeper's kept notes, the one thing it can WRITE.
 
 Everything else the Keeper touches is read-only (MCP files/git/web are jailed and
 stripped of mutating tools). The journal is the deliberate exception: a place it can
-write, because a keeper keeps things. It is APPEND-ONLY by construction — keep() only
-ever adds a line; there is no overwrite and no delete — so the Keeper can never lose
+write, because a keeper keeps things. It is APPEND-ONLY by construction, keep() only
+ever adds a line; there is no overwrite and no delete, so the Keeper can never lose
 or clobber what it (or you) put here. That is what makes a write tool safe to hand an
 autonomous agent.
 
@@ -46,7 +47,7 @@ class Journal:
                 self.entries.append(Entry(**json.loads(line)))
 
     def keep(self, text: str) -> Entry | None:
-        """Append one note. The only mutation this module allows — never overwrites."""
+        """Append one note. The only mutation this module allows, never overwrites."""
         text = text.strip()
         if not text:
             return None

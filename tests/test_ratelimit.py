@@ -1,4 +1,6 @@
-"""Tier 1 — the notification-spam circuit breaker (server.within_reach_floor).
+"""
+These are the Tier 1 tests for the notification-spam circuit breaker
+(server.within_reach_floor).
 
 The demo `speed` knob compresses the Keeper's virtual clock; this real-time floor
 guarantees it can't translate into a banner flood no matter how high speed goes.
@@ -47,7 +49,7 @@ import tasks
 def test_goal_check_interval_compresses_with_speed():
     """Regression: tasks.DEFAULT_CHECK_INTERVAL_S is 6 REAL hours, and the `speed`
     knob compressed the battery and the drift clock but not this one. So after a
-    goal's first step it went quiet for 6 real hours whatever the speed — which made
+    goal's first step it went quiet for 6 real hours whatever the speed: which made
     the documented "crank speed to see autonomous execution / nudges" trigger
     impossible, and a [person] step was never nudged in a demo."""
     original = server.STATE.config.speed
@@ -56,7 +58,7 @@ def test_goal_check_interval_compresses_with_speed():
         assert server._goal_check_interval() == tasks.DEFAULT_CHECK_INTERVAL_S
         server.STATE.config.speed = 600.0
         assert server._goal_check_interval() == tasks.DEFAULT_CHECK_INTERVAL_S / 600.0
-        # 6h at 600x is 36s — inside a demo window, which is the whole point
+        # 6h at 600x is 36s: inside a demo window, which is the whole point
         assert server._goal_check_interval() < 60
     finally:
         server.STATE.config.speed = original
@@ -131,8 +133,8 @@ def test_a_broken_store_never_costs_the_turn(monkeypatch):
 
 
 def test_the_classifier_alone_cannot_produce_a_turn(monkeypatch):
-    """The greeting bug, structurally. "hello" classifies as turn — the rarest
-    register — because a lone sentence was being asked to carry a reversal. With
+    """The greeting bug, structurally. "hello" classifies as turn: the rarest
+    register: because a lone sentence was being asked to carry a reversal. With
     nothing in the store behind it, turn is demoted rather than trusted."""
     _with_store(monkeypatch, [])
     assert server._resolve_turn("hello", "", "turn")[0] == "tidal"

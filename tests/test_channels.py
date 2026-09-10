@@ -1,4 +1,6 @@
-"""Tier 1 — delivery channels (channels.py). No network, no key."""
+"""
+These are the Tier 1 tests for delivery channels (channels.py). No network, no key.
+"""
 import pytest
 import channels
 
@@ -11,12 +13,14 @@ class _RecordChannel:
         self.name = name
         self._wants = wants_kind
         self.delivered = []
+        self.states = []
 
     def wants(self, kind):
         return kind == self._wants
 
-    async def deliver(self, role, content, kind):
+    async def deliver(self, role, content, kind, state=None):
         self.delivered.append((role, content, kind))
+        self.states.append(state)
 
 
 async def test_delivery_fans_out_to_wanting_channels():
@@ -89,7 +93,7 @@ async def test_telegram_builds_correct_request():
 def test_build_default_has_web_and_native(monkeypatch):
     """The native banner is conditional on a notifier existing, so this pins the
     macOS case explicitly rather than assuming the host it runs on. Asserting it
-    unconditionally passed on a developer Mac and failed on Linux CI — which is
+    unconditionally passed on a developer Mac and failed on Linux CI: which is
     exactly the platform assumption CI is there to catch."""
     monkeypatch.delenv("TELEGRAM_BOT_TOKEN", raising=False)
     monkeypatch.delenv("DISCORD_WEBHOOK_URL", raising=False)
@@ -109,7 +113,7 @@ def test_native_banner_is_offered_when_the_notifier_exists(monkeypatch):
 
 def test_native_banner_is_withheld_where_it_cannot_fire(monkeypatch):
     """Regression: inside the Linux container /state advertised
-    channels: ["web", "native"] while notifier.available() was "none" — a surface
+    channels: ["web", "native"] while notifier.available() was "none", a surface
     that silently swallowed every line sent to it. Claiming a capability you do
     not have reads as working until something depends on it."""
     monkeypatch.setattr(channels.notifier, "available", lambda: "none")
@@ -163,3 +167,22 @@ def test_a_configured_discord_joins_the_default_surfaces(monkeypatch):
     monkeypatch.setenv("DISCORD_WEBHOOK_URL", "https://discord.com/api/webhooks/x")
     names = channels.build_default(set()).names()
     assert "discord" in names and "web" in names
+
+
+async def test_the_register_reaches_the_channels():
+    """The banner wears the register the line was composed in, so the state has to
+    survive the fan-out rather than stopping at Delivery."""
+    a = _RecordChannel("a", wants_kind="proactive")
+    d = channels.Delivery([a])
+    await d.push("assistant", "the ice is going out", "proactive", "turn")
+    assert a.states == ["turn"]
+
+
+async def test_a_line_with_no_register_still_delivers():
+    """State is optional everywhere: a caller that does not know the register must
+    not break delivery for the channels that ignore it anyway."""
+    a = _RecordChannel("a", wants_kind="proactive")
+    d = channels.Delivery([a])
+    await d.push("assistant", "still lands", "proactive")
+    assert a.delivered == [("assistant", "still lands", "proactive")]
+    assert a.states == [None]

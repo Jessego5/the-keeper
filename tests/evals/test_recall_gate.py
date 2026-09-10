@@ -1,17 +1,19 @@
-"""Tier 3 — the relevance gate, against the REAL embedder. Run explicitly:
+"""
+These are the Tier 3 tests for the relevance gate, against the REAL embedder. Run
+explicitly:
 
     .venv/bin/pytest tests/evals -m eval
 
 The gate is an absolute cosine floor (memory._REL_FLOOR), and absolute thresholds
 drift when the embedding model changes. It has to do two opposite jobs at once:
 
-  * let a genuine semantic hit through even with NO shared word
-    ("what do i do for work" -> "Is a painter.")
-  * recall NOTHING for a vague request that matches nothing
-    ("help me write things down" -> the model must not recite an unrelated memory)
+It has to let a genuine semantic hit through even when no word is shared, so that
+"what do i do for work" reaches "Is a painter.", while recalling nothing at all for
+a vague request that matches nothing, so that "help me write things down" does not
+make the model recite an unrelated memory.
 
 At 0.25 it was failing the first job. The usable band measured only ~0.138-0.199,
-so the margin either side of the floor is thin by nature — which is exactly why
+so the margin either side of the floor is thin by nature: which is exactly why
 both directions are pinned here rather than left to a comment.
 """
 import os
@@ -65,7 +67,7 @@ def test_a_vague_cue_recalls_nothing(store, emb, cue):
 
 
 def test_an_ambient_fact_ignores_the_gate(tmp_path, emb):
-    """Importance >= 8 is deliberately exempt — a life-defining fact stays in mind
+    """Importance >= 8 is deliberately exempt: a life-defining fact stays in mind
     whatever the cue. Lowering the floor must not have changed that."""
     s = memory.MemoryStore(tmp_path / "facts.jsonl")
     s.add("Their mother is in the hospital.", "state", embed=emb, importance=9.0)

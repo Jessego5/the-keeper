@@ -1,4 +1,5 @@
-"""native_tools.py — the Keeper's own action tools (not MCP).
+"""
+These are the Keeper's own action tools, the ones that are not MCP.
 
 Gives the Keeper things it can DO when asked: hold a reminder and give it back
 when it's due, list what it's holding, mark one done. Shaped exactly like
@@ -6,7 +7,7 @@ tools.MCPManager (openai_tools() + async call()) so compose.tool_reply can take
 both providers side by side and route each tool call to the right one.
 
 Times: the model converts natural language ("tomorrow 9am") into an ISO 8601
-timestamp using the current time in its prompt — no date-parsing dependency, and
+timestamp using the current time in its prompt: no date-parsing dependency, and
 the time reasoning is the model's, which is itself a small agentic step.
 """
 
@@ -101,17 +102,21 @@ class NativeTools:
                 "function": {
                     "name": "set_goal",
                     "description": "Take on a GOAL to help the person move toward "
-                                   "over time — something they want to work toward "
+                                   "over time, something they want to work toward "
                                    "or get unstuck on (not a one-time reminder). You "
                                    "will break it into small steps and help them "
                                    "through it across days. Use their own words for "
-                                   "the goal.",
+                                   "the goal. Only when they ASK for help moving "
+                                   "toward something. Telling you a thing they lost "
+                                   "or stopped is a fact to keep, not a goal to take "
+                                   "on, do not infer the wish from the loss.",
                     "parameters": {
                         "type": "object",
                         "properties": {
                             "title": {"type": "string",
                                       "description": "the goal, in their words "
-                                                     "(e.g. 'get back to painting')"},
+                                                     "(e.g. 'help me get back to "
+                                                     "running')"},
                         },
                         "required": ["title"],
                     },
@@ -130,7 +135,7 @@ class NativeTools:
                 "type": "function",
                 "function": {
                     "name": "advance_goal",
-                    "description": "Mark the CURRENT step of a goal done — when the "
+                    "description": "Mark the CURRENT step of a goal done, when the "
                                    "person reports they've done it, or you did it for "
                                    "them. Moves the goal to its next step (or finishes "
                                    "it if that was the last).",
@@ -166,7 +171,7 @@ class NativeTools:
                 "type": "function",
                 "function": {
                     "name": "keep_note",
-                    "description": "Write a note into your journal — the one thing you "
+                    "description": "Write a note into your journal, the one thing you "
                                    "can keep in writing. Use it when they ask you to "
                                    "hold a thought, or when you want to record "
                                    "something you found or worked out. Append-only; it "
@@ -194,7 +199,7 @@ class NativeTools:
                 "type": "function",
                 "function": {
                     "name": "run_python",
-                    "description": "Run a short Python snippet to work something out — "
+                    "description": "Run a short Python snippet to work something out, "
                                    "a calculation, a date/time computation, parsing or "
                                    "transforming data, anything a fixed tool can't do. "
                                    "PRINT the answer. Runs fenced (timeout, no lasting "
@@ -217,8 +222,8 @@ class NativeTools:
                     "name": "spawn_task",
                     "description": "Set your specialists working on something LONGER in "
                                    "the background, and bring the result back later "
-                                   "(you'll return with it on your own). Use this — not "
-                                   "delegate — when a task needs real digging that "
+                                   "(you'll return with it on your own). Use this, not "
+                                   "delegate, when a task needs real digging that "
                                    "shouldn't hold up the conversation. Describe it "
                                    "fully. You will tell them you're on it now.",
                     "parameters": {
@@ -285,9 +290,9 @@ class NativeTools:
         if name == "remind_me":
             due = _parse_iso(args.get("due_iso", ""))
             if due is None:
-                return "(could not read the time — need an ISO datetime)"
+                return "(could not read the time, need an ISO datetime)"
             repeat = args.get("repeat")
-            # "every day at 9am", said in the afternoon, arrives as TODAY's 9am —
+            # "every day at 9am", said in the afternoon, arrives as TODAY's 9am:
             # already past. Stored as-is it fires instantly, once, before the re-arm.
             # Roll a RECURRING reminder to its next real slot; leave a one-shot alone,
             # since a genuinely overdue one-shot should still be returned.
@@ -298,7 +303,7 @@ class NativeTools:
             r = self.store.add(args.get("text", "").strip(), due, repeat=repeat)
             when = datetime.fromtimestamp(r.due_at).strftime("%a %b %d, %H:%M")
             cadence = f", then {r.repeat}" if r.repeat else ""
-            return f"kept: \"{r.text}\" — will return it {when}{cadence} (id {r.id})"
+            return f"kept: \"{r.text}\", will return it {when}{cadence} (id {r.id})"
         if name == "list_reminders":
             pend = self.store.pending()
             if not pend:
@@ -322,7 +327,7 @@ class NativeTools:
                 steps = ["Take the first small step toward it."]
             g = self.goals.add(title, steps)
             plan = "\n".join(f"  {i+1}. {s.text}" for i, s in enumerate(g.steps))
-            return (f"taken on: \"{g.title}\" (id {g.id}) — the plan I'll help with:\n"
+            return (f"taken on: \"{g.title}\" (id {g.id}), the plan I'll help with:\n"
                     f"{plan}")
         if name == "list_goals":
             if self.goals is None:
@@ -349,7 +354,7 @@ class NativeTools:
                 return f"\"{g.title}\" has no open steps."
             done, total = g.progress()
             if g.status == "done":
-                return f"that completes \"{g.title}\" — all {total} steps done."
+                return f"that completes \"{g.title}\": all {total} steps done."
             return (f"marked done: \"{step.text}\" ({done}/{total}). "
                     f"next: {g.next_step().text}")
         if name == "complete_goal":
@@ -396,7 +401,7 @@ class NativeTools:
             task = args.get("task", "").strip()
             if not task:
                 return "(need a task to delegate)"
-            # Specialists get native tools WITHOUT delegate — no recursion.
+            # Specialists get native tools WITHOUT delegate: no recursion.
             sub_native = NativeTools(
                 self.store, goals=self.goals, planner_generate=self._plan_gen,
                 journal=self.journal, allow_delegate=False)

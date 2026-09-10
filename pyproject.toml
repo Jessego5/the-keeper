@@ -7,7 +7,7 @@ testpaths = ["tests"]
 asyncio_mode = "auto"
 markers = [
     "unit: fast, deterministic, no key/network/OS (Tier 1)",
-    "integration: real subsystems — OS sensors, MCP, running app (Tier 2)",
+    "integration: real subsystems, OS sensors, MCP, running app (Tier 2)",
     "eval: LLM behavior, needs OPENAI_API_KEY, non-deterministic rates (Tier 3)",
     "mac: requires macOS hardware signals",
 ]
@@ -15,8 +15,8 @@ markers = [
 # Run them explicitly with:  .venv/bin/pytest tests/evals -m eval
 #
 # -W error: a warning from our own code fails the run. The single ignore is a
-# third-party leak — huggingface leaves config.json unclosed when model2vec loads
-# — and narrowing it to ResourceWarning keeps every other warning fatal.
+# third-party leak: huggingface leaves config.json unclosed when model2vec loads,
+# and narrowing it to ResourceWarning keeps every other warning fatal.
 addopts = "-m 'not eval' -W error -W ignore::ResourceWarning"
 
 
@@ -26,12 +26,12 @@ target-version = "py313"
 
 [tool.ruff.lint]
 # Deliberately narrow. Adopting lint late on 9k lines, the full default set found
-# 253 issues — 122 of them Optional[X] -> X | None and 57 line-length. That is a
+# 253 issues: 122 of them Optional[X] -> X | None and 57 line-length. That is a
 # large diff that buries real signal and rewrites history for style.
 #
 # F (pyflakes) and B (bugbear) are the rules that find DEFECTS. On the first run
 # they found 14, and two were real: dead code in a test, and a benchmark that
-# unpacked its tuned floor and never printed it — the very number that had
+# unpacked its tuned floor and never printed it: the very number that had
 # silently drifted out of step with production.
 #
 # Widen this later if you want the modernization pass; do it as its own commit.

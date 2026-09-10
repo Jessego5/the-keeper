@@ -1,11 +1,13 @@
-"""Tier 3 — the supersession judge, on the real model. Run explicitly:
+"""
+These are the Tier 3 tests for the supersession judge, on the real model. Run
+explicitly:
 
     .venv/bin/pytest tests/evals -m eval
 
 Why this exists: `test_memory.py` drives supersession through `_supersede_judge`, a
 fake that returns a perfectly-spelled "SUPERSEDES". The real judge does not. It
 answered "SUPERSCEDES" in roughly one call in three, which the old exact-substring
-check read as DISTINCT — so "i stopped painting in march" then "actually i started
+check read as DISTINCT, so "i stopped painting in march" then "actually i started
 painting again" left BOTH facts active, `changes_tracked` stuck at 0, and recall
 feeding the Keeper a contradiction it then recited flat:
 "You have started painting again. You stopped painting in March."
@@ -51,7 +53,7 @@ def test_a_real_change_is_read_as_superseding_every_time(judge):
     # A dropped call (empty string) is an availability problem, not a parse one;
     # requiring a majority to answer keeps this test about the PARSER without
     # making it fail when the tier is running hot. Measured over 15 calls the judge
-    # returned SUPERSEDES 12x, SUPERSCEDES 2x and SUPERVSEDES once — three
+    # returned SUPERSEDES 12x, SUPERSCEDES 2x and SUPERVSEDES once: three
     # spellings, all of which must read as a supersession.
     assert len(answered) >= (TRIALS // 2) + 1, f"judge mostly silent: {verdicts}"
     missed = [v for v in answered if not memory._reads_as_supersedes(v)]
@@ -59,7 +61,7 @@ def test_a_real_change_is_read_as_superseding_every_time(judge):
 
 
 def test_two_unrelated_facts_are_not_read_as_superseding(judge):
-    """The other direction — the loosened parser must not turn every verdict into a
+    """The other direction: the loosened parser must not turn every verdict into a
     supersession and start erasing facts that are still true."""
     verdicts = [_verdict(judge, "Has a brother, Sam.", "Works as a nurse.")
                 for _ in range(TRIALS)]

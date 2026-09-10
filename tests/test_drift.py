@@ -1,4 +1,7 @@
-"""Tier 1 — drift / idle self-reflection (drift.py). No key: stub generator."""
+"""
+These are the Tier 1 tests for drift / idle self-reflection (drift.py). No key: stub
+generator.
+"""
 import re
 import time
 import pytest
@@ -130,11 +133,11 @@ def test_maybe_drift_synthesizes_when_rich(rich_store, log):
 
 def test_insight_prompt_carries_no_gendered_example():
     """Regression: the prompt's one-shot example read "She keeps circling back to what
-    she left unfinished", and the model copied the gender — every insight it wrote
+    she left unfinished", and the model copied the gender: every insight it wrote
     called the person "he". Those land in facts.jsonl as kind=insight and feed back
     through recall, so an invented fact about the person compounds every turn."""
     prompt = drift._INSIGHT_SYSTEM
-    # "never he, she, his or her" is the instruction naming them — strip the ban line
+    # "never he, she, his or her" is the instruction naming them: strip the ban line
     instruction = prompt[prompt.find("The person's gender is NOT known"):]
     leaked = re.findall(r"\b(he|she|his|her|him|hers)\b",
                         prompt.replace(instruction, ""), re.I)
@@ -147,7 +150,7 @@ def test_insight_prompt_carries_no_gendered_example():
 
 def test_synthesize_drops_water_poetry_insights(tmp_path):
     """Regression: distill filters the Keeper's own motif lines out of facts, but
-    reflection reaches the store by a different door and skipped that guard — so
+    reflection reaches the store by a different door and skipped that guard, so
     "The tide brought back what you gave the water in spring" was landing as
     kind=insight, the voice stored as a read of the person and recalled back to it."""
     store = memory.MemoryStore(tmp_path / "facts.jsonl")

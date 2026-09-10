@@ -1,15 +1,16 @@
-"""sandbox.py — run short Python the agent writes, safely enough. Code-as-action.
+"""
+This runs short Python the agent writes, safely enough. Code-as-action.
 
 The most powerful action space is code. This lets the Keeper (and its analyst
-sub-agent) COMPUTE — calculate, transform, parse, reason numerically — the things
+sub-agent) COMPUTE, calculate, transform, parse, reason numerically: the things
 fixed tools can't. It's the reference agent's shell.py, scoped down to Python and fenced.
 
-Threat model, stated plainly. The fences — a separate process in isolated mode (`-I`),
+Threat model, stated plainly. The fences: a separate process in isolated mode (`-I`),
 a hard wall-clock timeout, CPU + memory rlimits, a throwaway temp working directory, a
-stripped environment (HOME points at that temp dir), and capped output — stop runaways
+stripped environment (HOME points at that temp dir), and capped output, stop runaways
 and accidents: infinite loops, memory blowups, floods of output.
 
-What they do NOT do: block the filesystem or the network. Measured, not assumed — code
+What they do NOT do: block the filesystem or the network. Measured, not assumed, code
 run here can read backend/.env (which holds the API key) by absolute path, list the
 real home directory, and open outbound sockets. The temp cwd/HOME only redirect
 relative paths and `~`.
@@ -22,14 +23,14 @@ a fetched page reaches the same model that then writes this code. A prompt injec
 a page is therefore a path to reading local secrets and sending them out.
 
 DOCKER CLOSES THE SEVERE PART, and is how this is meant to be run. Measured inside
-the container: no .env exists on disk (see .dockerignore — the key arrives as an env
+the container: no .env exists on disk (see .dockerignore, the key arrives as an env
 var, and the child environment is stripped), and the host filesystem is unreachable.
 So the fetch -> write-code path has no credential and no host to reach.
 
 Accepted residual, deliberately: the container still has outbound network, and
 memory_store is mounted so the person's facts and journal are readable inside it. A
 compromised run_python could therefore still read those and send them out. Closing
-that needs an egress allowlist, which partly fights the feature set — web search and
+that needs an egress allowlist, which partly fights the feature set, web search and
 fetch need broad egress by nature. The judgement is that the severe exposure (an API
 key, the whole home directory) is gone and what remains needs a real attack to reach.
 
@@ -73,7 +74,7 @@ class Result:
     def as_text(self) -> str:
         """A compact rendering for a tool result."""
         if self.timed_out:
-            return "(timed out — the code took too long)"
+            return "(timed out: the code took too long)"
         if self.ok:
             return self.stdout.strip() or "(ran, no output)"
         return f"(error)\n{(self.stderr or self.stdout).strip()}"
@@ -97,7 +98,7 @@ def _apply_limits() -> None:  # pragma: no cover - runs in the child process
 
 
 def _autoprint(code: str) -> str:
-    """If the last top-level statement is a bare expression, print its value — so
+    """If the last top-level statement is a bare expression, print its value, so
     REPL-style code the model naturally writes ('cost_per_week' on the last line, like
     Jupyter) actually returns something, instead of running silently. A trailing `print`
     or an assignment is left alone."""

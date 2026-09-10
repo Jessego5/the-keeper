@@ -1,14 +1,15 @@
-"""voice_test.py — does a real model actually sound like the Keeper?
+"""
+This asks whether a real model actually sounds like the Keeper.
 
 Generates a spread of lines across every mode and water state through the real
 compose loop, prints each with its score, and reports the aggregate that no single
 line can tell you: mean fidelity, pass rate, hard-fail rate, how often it needed a
-retry or a fallback, how often proactive chose silence, and — corpus-wide — how
+retry or a fallback, how often proactive chose silence, and, corpus-wide, how
 often it stated hope outright (which the voice wants kept rare).
 
 Run:  OPENAI_API_KEY in backend/.env, then  `.venv/bin/python backend/voice_test.py`
 Falls back to the offline stub if no key, so it always runs (stub numbers are not
-meaningful — they just prove the harness).
+meaningful: they just prove the harness).
 """
 
 from __future__ import annotations
@@ -93,7 +94,7 @@ def _report(rows: list[Row], fast) -> None:
     print(f"  proactive silence    {pct(len(silent), len(proactive))}   (of proactive)")
     print(f"  overt-hope rate      {pct(overt, len(sent))}   (keep this LOW)")
     if fast is None:
-        print("\n  note: semantic layer OFF (no fast model) — scores are")
+        print("\n  note: semantic layer OFF (no fast model), scores are")
         print("  deterministic-only. Set OPENAI_API_KEY for the full rubric.")
 
 

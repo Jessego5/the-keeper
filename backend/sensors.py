@@ -1,23 +1,22 @@
-"""sensors.py — the Keeper's senses. Read-only macOS presence signals.
+"""
+These are the Keeper's senses, read-only macOS presence signals.
 
-Answers three cheap questions, none of which trip a permission dialog:
+It answers three cheap questions, none of which trips a permission dialog:
+idle_seconds, how long since the human last touched keyboard or mouse;
+screen_locked, whether they have stepped away; and frontmost_app, which app has
+focus, by name only and never by window contents.
 
-    idle_seconds   how long since the human last touched keyboard/mouse
-    screen_locked  is the screen locked (they've stepped away)
-    frontmost_app  which app has focus (name only, never window contents)
+Three rules govern it. It is read-only, observing and never acting. It asks for no
+frightening permissions, because NSWorkspace.frontmostApplication() gives the app
+NAME without Accessibility access, and only reading INSIDE windows would need
+that, which it deliberately never does: that boundary is the whole privacy story.
+And it degrades to an empty dict off macOS or when a framework is missing, so
+nothing downstream has to special-case the platform.
 
-Design rules:
-  - Read-only. This module observes; it never acts.
-  - No scary permissions. `NSWorkspace.frontmostApplication()` gives the app NAME
-    without Accessibility access; only reading INSIDE windows would need it, and we
-    deliberately never do. That boundary is the whole privacy story.
-  - Degrade to {} off macOS or if a framework is missing, so nothing downstream has
-    to special-case the platform.
-
-What this feeds:
-  - the water-state read (idle at 2am -> frozen; active daytime -> tidal),
-  - the proactive gate (never speak into a locked screen),
-  - the Keeper's voice (the focused app is a concrete, on-voice detail).
+What it feeds is the water-state read, where idle at 2am reads frozen and an
+active daytime reads tidal; the proactive gate, which never speaks into a locked
+screen; and the Keeper's voice, for which the focused app is a concrete, on-voice
+detail.
 """
 
 from __future__ import annotations
@@ -122,7 +121,7 @@ def read_screen_locked() -> bool | None:
 
 
 def read_frontmost_app() -> str | None:
-    """Localized name of the focused app (e.g. 'Safari'). Name only — never
+    """Localized name of the focused app (e.g. 'Safari'). Name only, never
     window titles or contents, so no Accessibility prompt."""
     if not _IS_MAC or NSWorkspace is None:
         return None
@@ -170,13 +169,13 @@ if __name__ == "__main__":
 
 
 def capabilities() -> dict[str, str]:
-    """Which presence signals this machine can actually provide — {name: status},
+    """Which presence signals this machine can actually provide, {name: status},
     where status is "live" or the reason it is not.
 
     The individual readers return None on failure and stay SILENT on purpose: the
     proactive loop reads presence every few seconds, so logging per failure would
     flood the log. The cost of that silence is that a permanently blind sensor is
-    invisible — the "house" panel just shows defaults and looks like it works. This
+    invisible: the "house" panel just shows defaults and looks like it works. This
     is read once at startup and logged, the way the mood classifier reports itself.
     """
     if not _IS_MAC:

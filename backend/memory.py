@@ -1,4 +1,5 @@
-"""memory.py — the drawers. What the Keeper keeps, and how it hands things back.
+"""
+These are the drawers: what the Keeper keeps, and how it hands things back.
 
 Two jobs:
 
@@ -14,7 +15,7 @@ across the candidate set and summed, exactly as in the paper's retrieval functio
 Consolidation under memory pressure follows MemGPT (Packer et al., 2023): when the
 store grows past a budget, old low-importance facts are summarized and archived.
 
-Storage is a plain JSONL file (memory_store/facts.jsonl) — no vector DB; cosine is
+Storage is a plain JSONL file (memory_store/facts.jsonl): no vector DB; cosine is
 pure Python, fine at this scale (hundreds of facts). Swap in a vector store to grow.
 
 Lesson baked in from the first voice test: facts are stored as clean third-person
@@ -66,7 +67,7 @@ _SEMANTIC_DUP = 0.86
 _SUPERSEDE_LOW = 0.30
 
 _SUPERSEDE_SYSTEM = """Two facts about the same person, OLD and NEW. Does the NEW fact \
-UPDATE or REPLACE the OLD one — same subject, but a changed situation or state (e.g. \
+UPDATE or REPLACE the OLD one, same subject, but a changed situation or state (e.g. \
 OLD 'hasn't painted since March', NEW 'started painting again')? If NEW supersedes OLD, \
 answer SUPERSEDES. If it's a separate, still-true fact, answer DISTINCT. One word only."""
 
@@ -75,7 +76,7 @@ def _reads_as_supersedes(verdict: str) -> bool:
     """Did the judge say SUPERSEDES? Deliberately loose about spelling.
 
     The judge is a cheap model answering in free text, and it misspells its own
-    verdict often enough to matter — "SUPERSCEDES" turned up in roughly one call in
+    verdict often enough to matter, "SUPERSCEDES" turned up in roughly one call in
     three, and an exact `"SUPERSEDE" in verdict` test reads that as DISTINCT, so a
     real change is silently dropped. DISTINCT is the safe default: it is checked
     first, and anything unrecognised falls through to it.
@@ -129,7 +130,7 @@ _W_IMPORTANCE = 1.0
 _W_RELEVANCE = 1.0
 _RECENCY_DECAY = 0.995
 # Relevance gate: on a cued turn, a fact must clear this dense-cosine floor (or share a
-# word, or be this important) to be surfaced — so a vague request in a sparse store
+# word, or be this important) to be surfaced: so a vague request in a sparse store
 # doesn't pull back an unrelated memory the model then recites.
 #
 # 0.25 was too high to be a gate on MEANING: it also blocked real semantic hits that
@@ -141,7 +142,7 @@ _RECENCY_DECAY = 0.995
 #   "what's the weather like"   -> best fact              0.082   must NOT pass
 #
 # so the floor belongs between 0.138 and 0.199. The margin either side is only ~0.03,
-# which is thin for an absolute cosine — tests/evals/test_recall_gate.py pins both
+# which is thin for an absolute cosine: tests/evals/test_recall_gate.py pins both
 # directions against the real embedder so a model change can't drift through it.
 _REL_FLOOR = 0.17
 _AMBIENT_IMPORTANCE = 8.0
@@ -153,7 +154,7 @@ class Fact:
 
     `kind` is 'insight' for the Keeper's OWN synthesized understanding (from
     reflection), which recall renders separately so it is never recited back as
-    something the person said — see recall() and drift.synthesize().
+    something the person said, see recall() and drift.synthesize().
     """
 
     text: str
@@ -168,7 +169,7 @@ class Fact:
     valid_until: Optional[float] = None        # None => still true; else when it changed
     supersedes: Optional[str] = None           # id of the fact this one replaced
     # Direction of that change, judged once when it happens (never on the hot
-    # path). True only for a reversal INTO something better — the thing the
+    # path). True only for a reversal INTO something better: the thing the
     # persona calls the ice going out. See recent_warmings().
     warmed: Optional[bool] = None
 
@@ -191,13 +192,13 @@ class Fact:
 
 
 # --------------------------------------------------------------------------- #
-# Store — load / append / dedup. A thin wrapper over a JSONL file.
+# Store: load / append / dedup. A thin wrapper over a JSONL file.
 # --------------------------------------------------------------------------- #
 
 class MemoryStore:
     def __init__(self, path: Path = STORE_PATH):
         self.path = path
-        # Archived (consolidated-away) facts live beside the active store — MemGPT's
+        # Archived (consolidated-away) facts live beside the active store: MemGPT's
         # recall/archival tier: out of the working set, never lost.
         self.archive_path = path.parent / (path.stem + "_archive.jsonl")
         self.facts: list[Fact] = []
@@ -225,7 +226,7 @@ class MemoryStore:
 
         With an embedder, dedup is SEMANTIC (cosine): "has a brother, Sam" and
         "her brother is named Sam" collapse. A related-but-changed fact ("hasn't
-        painted since March" -> "started painting again") is not a duplicate — with a
+        painted since March" -> "started painting again") is not a duplicate, with a
         `judge`, it SUPERSEDES the old one: the old fact is closed (valid_until set,
         kept as history) and the new one records what it replaced. `importance` is the
         1-10 poignancy; a resurfacing fact keeps the higher score. Returns the Fact.
@@ -244,7 +245,7 @@ class MemoryStore:
                 # keyword-only for good. Retry already happened inside the embedder;
                 # reaching here means it really failed, and that must be on record.
                 print(f"[memory] fact stored WITHOUT an embedding "
-                      f"({type(exc).__name__}: {exc}) — {text[:60]!r}", flush=True)
+                      f"({type(exc).__name__}: {exc}), {text[:60]!r}", flush=True)
                 vec = None
         dupe = self._find_similar(text, vec)
         if dupe is not None:
@@ -303,7 +304,7 @@ class MemoryStore:
         except Exception as exc:  # noqa: BLE001
             # A transient failure (a 429, a timeout) must not look like DISTINCT
             # without a word: the change is lost and the store keeps contradicting
-            # itself. Still non-fatal — storing the new fact matters more.
+            # itself. Still non-fatal: storing the new fact matters more.
             print(f"[memory] supersede judge failed: {type(exc).__name__}: {exc}",
                   flush=True)
             return None
@@ -311,7 +312,7 @@ class MemoryStore:
 
     def recent_warmings(self, within_s: float = 7 * 86400.0,
                         now: Optional[float] = None) -> list:
-        """Facts that recently replaced a bleaker one — reversals INTO something
+        """Facts that recently replaced a bleaker one, reversals INTO something
         better, most recent first.
 
         This is what earns the `turn` register. A reversal cannot be seen in a
@@ -326,7 +327,7 @@ class MemoryStore:
 
     def changes(self, within_s: Optional[float] = None,
                 now: Optional[float] = None) -> list:
-        """(old, new) pairs where a newer fact superseded an older one — the record of
+        """(old, new) pairs where a newer fact superseded an older one: the record of
         how the person has changed. Most recent first; optionally limited to a window."""
         now = now or time.time()
         by_id = {f.id: f for f in self.facts}
@@ -376,13 +377,13 @@ class MemoryStore:
 
 
 # --------------------------------------------------------------------------- #
-# Recall — surface the facts that matter for this turn.
+# Recall: surface the facts that matter for this turn.
 # --------------------------------------------------------------------------- #
 
 _RERANK_SYSTEM = """You re-rank a person's remembered facts by how RELEVANT each is to \
 a cue, for a companion deciding what to keep in mind. Given the cue and a numbered list \
 of facts, output the numbers of the most relevant ones, best first, comma-separated \
-(e.g. 3,1,5). Judge relevance to the cue only — not how recent or important the fact \
+(e.g. 3,1,5). Judge relevance to the cue only, not how recent or important the fact \
 is. Output only numbers."""
 
 
@@ -423,7 +424,7 @@ def recall(store: MemoryStore, cue: str = "", k: int = 5,
 
     Ranking is the Generative Agents retrieval function (see rank_facts) with HYBRID
     relevance. When `rerank_generate` is given, it's retrieve-then-rerank: hybrid
-    retrieval casts a wider net (3k), then an LLM reranker narrows to the best k — the
+    retrieval casts a wider net (3k), then an LLM reranker narrows to the best k: the
     combo that tops retrieval benchmarks. Insights are rendered under a separate
     heading so they're never returned as something the person said. Empty if the store
     is empty.
@@ -454,7 +455,7 @@ def recall(store: MemoryStore, cue: str = "", k: int = 5,
     changed = [(by_id[f.supersedes].text, f.text)
                for f in kept if f.supersedes and f.supersedes in by_id]
     if changed:
-        blocks.append("what has changed (the tide turned — was, then became):\n"
+        blocks.append("what has changed (the tide turned, was, then became):\n"
                       + "\n".join(f"- was: {o}  →  now: {n}" for o, n in changed))
     return "\n\n".join(blocks)
 
@@ -468,7 +469,7 @@ def rank_facts(facts: list[Fact], cue: str = "", k: int = 5,
 
     Each of the three components is min-max normalized to [0,1] across the candidate
     set before weighting (as in Park et al. 2023). `relevance` is HYBRID: dense
-    (embedding cosine) and sparse (BM25) signals fused with Reciprocal Rank Fusion —
+    (embedding cosine) and sparse (BM25) signals fused with Reciprocal Rank Fusion:
     the combo that dominates retrieval benchmarks. With no embedder it's BM25-only;
     with no cue it's dropped and ranking rests on recency + importance (the
     proactive/drift case).
@@ -483,7 +484,7 @@ def rank_facts(facts: list[Fact], cue: str = "", k: int = 5,
     importance = [f.importance / 10.0 for f in facts]
 
     # HYBRID relevance: a DENSE signal (embedding cosine) and a SPARSE signal (BM25),
-    # fused with Reciprocal Rank Fusion — the combo that dominates retrieval benchmarks
+    # fused with Reciprocal Rank Fusion: the combo that dominates retrieval benchmarks
     # (lexical catches exact terms/names dense recall misses; dense catches paraphrase).
     dense: Optional[list[float]] = None
     if embed is not None and cue.strip() and any(f.embedding for f in facts):
@@ -504,7 +505,7 @@ def rank_facts(facts: list[Fact], cue: str = "", k: int = 5,
         if cue_toks:
             sparse = _bm25(cue_toks, facts)
 
-    # Fuse only signals that actually discriminate — a flat (all-equal) ranker carries
+    # Fuse only signals that actually discriminate: a flat (all-equal) ranker carries
     # no information and would just dilute a strong one through RRF.
     signals = [s for s in (dense, sparse) if s is not None and max(s) - min(s) > 1e-12]
     if len(signals) == 2:
@@ -518,8 +519,8 @@ def rank_facts(facts: list[Fact], cue: str = "", k: int = 5,
     imp_n = _minmax(importance)
     rel_n = _minmax(relevance) if relevance is not None else [0.0] * len(facts)
 
-    # Relevance gate (cued turns only): a fact must be actually relevant — a dense hit,
-    # a shared word, or high importance — to surface. Stops reciting an unrelated memory
+    # Relevance gate (cued turns only): a fact must be actually relevant, a dense hit,
+    # a shared word, or high importance: to surface. Stops reciting an unrelated memory
     # when nothing matches. With no cue (proactive/drift) the gate is off: presence rules.
     gated = gate and cue.strip() and (dense is not None or sparse is not None)
 
@@ -554,7 +555,7 @@ def _minmax(xs: list[float]) -> list[float]:
 def _bm25(cue_toks: set[str], facts: list[Fact],
           k1: float = 1.5, b: float = 0.75) -> list[float]:
     """Okapi BM25 lexical score of each fact against the query terms. Pure Python,
-    computed over the (small) fact corpus each call — the sparse half of hybrid."""
+    computed over the (small) fact corpus each call: the sparse half of hybrid."""
     docs = [_token_list(f.text) for f in facts]
     n = len(docs)
     if n == 0:
@@ -584,7 +585,7 @@ def _bm25(cue_toks: set[str], facts: list[Fact],
 def _rrf(*rankings: list[float], k: int = 60) -> list[float]:
     """Reciprocal Rank Fusion of several score lists over the same items: convert each
     to ranks (best = 1) and sum 1/(k+rank). Robust fusion that ignores raw score
-    scales — the standard way to combine dense + sparse retrieval."""
+    scales: the standard way to combine dense + sparse retrieval."""
     n = len(rankings[0])
     fused = [0.0] * n
     for scores in rankings:
@@ -595,7 +596,7 @@ def _rrf(*rankings: list[float], k: int = 60) -> list[float]:
 
 
 def _cosine(a: list[float], b: list[float]) -> float:
-    """Cosine similarity of two vectors. Pure Python — no heavy deps, fine at this
+    """Cosine similarity of two vectors. Pure Python: no heavy deps, fine at this
     scale (hundreds of facts x ~1k dims). Swap in numpy / a vector DB to scale."""
     dot = 0.0
     na = 0.0
@@ -610,13 +611,13 @@ def _cosine(a: list[float], b: list[float]) -> float:
 
 
 # --------------------------------------------------------------------------- #
-# Distill — turn a finished conversation into durable facts.
+# Distill: turn a finished conversation into durable facts.
 # --------------------------------------------------------------------------- #
 
 # The Keeper's OWN water-poetry sometimes gets mis-captured as a fact about the person
 # ("The tide brought back what you gave the water in spring"). The distill prompt asks
 # the model to skip these; this is the deterministic backstop. A curated subset of
-# voice_eval's vocabulary — the DISTINCTLY watery nouns, minus the double-meaning words
+# voice_eval's vocabulary: the DISTINCTLY watery nouns, minus the double-meaning words
 # ("still", "keep", "hold", "draw") that also appear in ordinary facts.
 _WATER_WORDS = {
     "tide", "tides", "water", "waters", "shore", "salt", "thaw", "frost", "ice",
@@ -657,18 +658,18 @@ they've dropped, a relationship shifting, a move, a job ending. "Stopped paintin
 in March" is exactly the kind of fact to keep. A "passing mood" means how they feel \
 in this moment ("tired today"), not something in their life that changed.
 
-Write each fact as ONE short third-person statement of the fact itself — the thing \
+Write each fact as ONE short third-person statement of the fact itself: the thing \
 that is true, not the act of saying it. Write "Has a brother, Sam; not spoken since \
 spring," never "Mentioned a brother."
 
-NEVER capture the companion's OWN words — its metaphors, its tide/water imagery, its \
-reflections or comfort ("the tide brought back what you gave the water") — as facts. \
+NEVER capture the companion's OWN words: its metaphors, its tide/water imagery, its \
+reflections or comfort ("the tide brought back what you gave the water"), as facts. \
 Those are the companion speaking, not facts about the person. Store only concrete, \
 literal facts about the PERSON.
 
 Prefix each line with [kind|importance]: kind is one of identity, state, event, \
 preference; importance is 1-10 for how poignant/significant this is to the person's \
-life — 1 is mundane (their coffee order), 10 is life-defining (a loss, a diagnosis, \
+life: 1 is mundane (their coffee order), 10 is life-defining (a loss, a diagnosis, \
 a core relationship). Example: [identity|8] Has a brother, Sam; not spoken since spring.
 
 One fact per line, no bullets, no numbering. If there is nothing worth keeping, \
@@ -708,7 +709,7 @@ def distill(messages: list[dict], generate: Generator,
     """Extract durable facts from a conversation and, if a store is given, keep them.
 
     messages: [{"role": "user"|"assistant", "content": str}, ...]
-    generate: the injected model call (use a cheap one — the fast_model is ideal).
+    generate: the injected model call (use a cheap one, the fast_model is ideal).
     embed:    optional embedder; extracted facts are embedded for semantic recall.
 
     Returns the Facts extracted (already stored if `store` was provided).
@@ -738,13 +739,13 @@ def distill(messages: list[dict], generate: Generator,
 
 
 # --------------------------------------------------------------------------- #
-# Consolidation — MemGPT memory pressure: compress the low-value tail.
+# Consolidation: MemGPT memory pressure: compress the low-value tail.
 # --------------------------------------------------------------------------- #
 
 _CONSOLIDATE_SYSTEM = """You compress a companion's old, minor memories about a \
 person to keep its long-term store tight. You are given a small cluster of related \
 facts. Merge them into ONE concise third-person fact that preserves what still \
-matters and drops the trivial. Keep it faithful — do not invent anything not present. \
+matters and drops the trivial. Keep it faithful, do not invent anything not present. \
 Output only the single merged fact, no preamble."""
 
 
@@ -758,7 +759,7 @@ def consolidate(store: MemoryStore, generate: Generator, *,
     external storage under recursive summarization. Here: once the active store
     exceeds `budget`, take the lowest-value tail (low importance + old + rarely
     recurred), cluster it by similarity, and summarize each cluster of >=2 into one
-    fact — archiving the originals (never deleting). Insights (the Keeper's own
+    fact: archiving the originals (never deleting). Insights (the Keeper's own
     conclusions) are left untouched. Returns the consolidated Facts created.
     """
     if len(store.facts) <= budget:
@@ -792,7 +793,7 @@ def consolidate(store: MemoryStore, generate: Generator, *,
 
 
 def _cluster(facts: list[Fact]) -> list[list[Fact]]:
-    """Greedy single-link clustering of facts by similarity — embedding cosine when
+    """Greedy single-link clustering of facts by similarity, embedding cosine when
     vectors are present, else keyword jaccard. Coherent merges only."""
     clusters: list[list[Fact]] = []
     for f in facts:
@@ -834,7 +835,7 @@ def _jaccard(a: set[str], b: set[str]) -> float:
 
 
 if __name__ == "__main__":
-    # Recall demo — pure logic, no model needed. Uses a temp store.
+    # Recall demo: pure logic, no model needed. Uses a temp store.
     import tempfile
 
     tmp = Path(tempfile.mkdtemp()) / "facts.jsonl"

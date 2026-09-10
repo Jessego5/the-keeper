@@ -26,7 +26,7 @@ in 8 proactive lines", "sad → frozen", "a plain question contains the real ans
 
 ## The workflow for a change
 
-1. `pytest -m unit` — start green.
+1. `pytest -m unit`, start green.
 2. Make the change.
 3. **Write or update a test that captures the behavior** (a regression if it was a bug).
 4. Run the relevant tier.
@@ -34,16 +34,16 @@ in 8 proactive lines", "sad → frozen", "a plain question contains the real ans
 
 ## What's covered (regressions from real bugs)
 
-- `test_voice_eval.py::test_invented_event_reportage_fails` — "your brother reached out"
-- `test_register.py::test_continuity_holds_frozen_through_neutral_followup` — "what should i do" after sadness
-- `test_evals ... test_plain_question_gets_true_answer` — facts survive the voice gate
-- `test_mcp.py::test_sandbox_escape_refused` / `test_read_only_blocks_mutating_tools` — MCP safety
-- `test_server.py::test_proactive_loop_reaches_out` — the battery actually delivers a line
+- `test_voice_eval.py::test_invented_event_reportage_fails`, "your brother reached out"
+- `test_register.py::test_continuity_holds_frozen_through_neutral_followup`, "what should i do" after sadness
+- `test_evals ... test_plain_question_gets_true_answer`, facts survive the voice gate
+- `test_mcp.py::test_sandbox_escape_refused` / `test_read_only_blocks_mutating_tools`, MCP safety
+- `test_server.py::test_proactive_loop_reaches_out`, the battery actually delivers a line
 
 ## Every fake has a real-model twin
 
 Three bugs this week lived where a Tier 1 test replaced the model with a fake that
-returned output the real model does not produce — distill, the supersede judge,
+returned output the real model does not produce, distill, the supersede judge,
 and the goal matcher. The machinery was fine each time; the boundary was wrong,
 and the suite stayed green.
 
@@ -59,7 +59,7 @@ drives the real thing:
 | embedder (`_fake_embed`) | `evals/test_recall_gate.py` |
 | `rerank`, `route`, `critique_plan`, `plan`, `_decompose` | `evals/test_model_seams.py` |
 
-Adding a fake generator to a Tier 1 test means adding its twin here too —
+Adding a fake generator to a Tier 1 test means adding its twin here too,
 otherwise the assertion is about output you invented.
 
 ## Before you push
@@ -89,7 +89,7 @@ Two deliberate details. `-W error` is set in `pyproject.toml`, so a warning from
 our own code fails the run (one narrow `ResourceWarning` ignore covers a
 huggingface file-handle leak we do not own). And the eval job **fails if
 `OPENAI_API_KEY` is missing** rather than skipping: every eval is `skipif` on that
-key, so without the guard a run with no key would pass zero tests — silence that
+key, so without the guard a run with no key would pass zero tests, silence that
 looks exactly like success, which is the failure this tier exists to catch.
 
 The eval tier is **not scheduled**: that would require handing GitHub a copy of

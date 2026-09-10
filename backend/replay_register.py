@@ -1,7 +1,8 @@
-"""replay_register.py — turn real conversations into register-dataset candidates.
+"""
+This turns real conversations into register-dataset candidates.
 
 evals/register_dataset.json is hand-written and small (45 train / 24 test), which
-means every classifier decision is judged at about 4% per case — too coarse to
+means every classifier decision is judged at about 4% per case, too coarse to
 settle anything. It also missed a whole SHAPE of message: it had no search /
 fetch / file / run_python phrasings, so the neutral tag read 100% while the live
 Keeper was labelling "look up watercolor brands" as frozen.
@@ -9,7 +10,7 @@ Keeper was labelling "look up watercolor brands" as frozen.
 Hand-writing more cases repeats that blind spot, because you invent the messages
 you already think of. Replaying what was actually said does not. This reads the
 persisted sessions, runs each real user message through BOTH register layers, and
-writes the ones worth labelling — the model's guess included, so the human job is
+writes the ones worth labelling: the model's guess included, so the human job is
 to correct a label rather than compose an example.
 
     python backend/replay_register.py                  # summarise
@@ -155,7 +156,7 @@ def main() -> None:
         if not args.force and _has_labels(args.out):
             raise SystemExit(
                 f"  refusing to overwrite {args.out}: it already carries labels.\n"
-                f"  Labelling is the expensive part — merge it into the dataset "
+                f"  Labelling is the expensive part, merge it into the dataset "
                 f"first, or pass --force to discard it.")
         _warn_if_tracked(args.out)
         # Dataset shape, with `register` left EMPTY: a human sets it. `predicted`

@@ -1,7 +1,8 @@
-"""sessions.py — persistent conversation history for the Keeper.
+"""
+This is persistent conversation history for the Keeper.
 
 Gives the Keeper's own stack what the external bridge borrowed: multiple
-conversations, each stored to disk, listable and switchable — so the UI sidebar is
+conversations, each stored to disk, listable and switchable, so the UI sidebar is
 real and conversations survive a restart (closing the in-memory-history gap).
 
 One JSON file per conversation under memory_store/sessions/. The store is the

@@ -1,18 +1,19 @@
-"""a2a.py — the Agent-to-Agent (A2A) protocol. The Keeper as a peer among agents.
+"""
+This is the Agent-to-Agent (A2A) protocol, the Keeper as a peer among agents.
 
 MCP lets the Keeper use TOOLS; A2A lets it interoperate with other AGENTS. It is an
 open standard (Google's A2A, now under the Linux Foundation): an agent publishes an
 **Agent Card** at /.well-known/agent.json describing who it is and what it can do, and
 exposes an endpoint that accepts a **message/send** JSON-RPC call and returns the reply.
 
-This module is both halves of a faithful core subset:
-  - build_agent_card()  — the Keeper's card, served so other agents can discover it
-  - the request/response envelope helpers for message/send (server + client)
-  - consult()           — the CLIENT: discover a remote agent by its card, send it a
-                          message, read its reply.
+This module is both halves of a faithful core subset. build_agent_card() builds
+the Keeper's own card, served so other agents can discover it; the envelope
+helpers carry a message/send call in either direction, as server and as client;
+and consult() is the client end, discovering a remote agent by its card, sending
+it a message and reading the reply.
 
 Scope kept honest: the synchronous message/send core, text parts, no streaming or
-push-notification task states — the parts that prove interoperability without the
+push-notification task states: the parts that prove interoperability without the
 distributed-task machinery a single-user companion doesn't need.
 """
 
@@ -37,7 +38,7 @@ def build_agent_card(base_url: str) -> dict:
     return {
         "protocolVersion": PROTOCOL_VERSION,
         "name": "The Keeper",
-        "description": ("A proactive companion agent — keeps long-term memory, pursues "
+        "description": ("A proactive companion agent, keeps long-term memory, pursues "
                         "goals, and can research, compute, and dig through its own "
                         "materials via specialist sub-agents."),
         "url": f"{base}/a2a",
@@ -64,7 +65,7 @@ def build_agent_card(base_url: str) -> dict:
 
 
 # --------------------------------------------------------------------------- #
-# message/send envelope — shared by the server (parse in / build out) and client.
+# message/send envelope: shared by the server (parse in / build out) and client.
 # --------------------------------------------------------------------------- #
 
 def text_of(message: dict) -> str:
@@ -92,7 +93,7 @@ def rpc_error(req_id, code: int, msg: str) -> dict:
 
 
 # --------------------------------------------------------------------------- #
-# Client — discover a peer, send it a message, read the reply.
+# Client: discover a peer, send it a message, read the reply.
 # --------------------------------------------------------------------------- #
 
 # --------------------------------------------------------------------------- #
@@ -100,7 +101,7 @@ def rpc_error(req_id, code: int, msg: str) -> dict:
 # and the Keeper reads web pages, so a prompt injection in a page can name one.
 # Unchecked, that is a readable SSRF: the response comes back into the chat. It is
 # also a second path from untrusted text to arbitrary network requests, alongside
-# the fetch -> run_python chain sandbox.py documents — and unlike run_python this
+# the fetch -> run_python chain sandbox.py documents: and unlike run_python this
 # one runs in the app process, so containerising does not contain it.
 # --------------------------------------------------------------------------- #
 

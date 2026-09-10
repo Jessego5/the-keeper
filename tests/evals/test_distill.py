@@ -1,11 +1,12 @@
-"""Tier 3 — distillation evals. Needs OPENAI_API_KEY; run explicitly:
+"""
+These are the Tier 3 distillation evals. Needs OPENAI_API_KEY; run explicitly:
 
     .venv/bin/pytest tests/evals -m eval
 
 Why these exist: every Tier 1 memory test injects the fact directly
 (`store.add("Stopped painting in March.", ...)`) or hands distill a FAKE generator
 that returns a pre-tagged line. Nothing exercised the real prompt on real words, and
-that gap hid a live bug — "i stopped painting in march", the opening line of the
+that gap hid a live bug, "i stopped painting in march", the opening line of the
 documented agent arc in FEATURES.md, distilled to NONE every single time. Nothing
 was stored, so recall stayed empty and the temporal-change flow ("the tide") had no
 old fact to supersede.
@@ -29,7 +30,7 @@ pytestmark = [
 TRIALS = 4
 
 # The Keeper's own voice, in the same transcript as the fact. Distill is told never
-# to capture the companion's metaphors — it must not over-apply that and drop the
+# to capture the companion's metaphors: it must not over-apply that and drop the
 # person's fact along with them.
 POETIC_REPLY = (
     "The tide recedes. Paints rest still, colors held beneath the surface. "
@@ -82,7 +83,7 @@ def test_a_passing_mood_is_still_skipped(gen):
 
 
 def test_a_plain_durable_fact_still_lands(gen):
-    """Control — the case that always worked, guarding against a regression in the
+    """Control: the case that always worked, guarding against a regression in the
     opposite direction."""
     runs = [_distill(gen, ("user", "i'm a painter and i have a brother named Sam"))
             for _ in range(TRIALS)]

@@ -1,4 +1,6 @@
-"""Tier 3 — knowledge update, end to end on the real model. Run explicitly:
+"""
+These are the Tier 3 tests for knowledge update, end to end on the real model. Run
+explicitly:
 
     .venv/bin/pytest tests/evals/test_knowledge_update.py -m eval
 

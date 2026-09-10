@@ -1,12 +1,13 @@
-"""tools.py — the Keeper's tools, via MCP. Passive loop only.
+"""
+These are the Keeper's tools, via MCP, on the passive loop only.
 
 The Keeper reaches for a tool only when the person addresses it (the /chat path).
-The proactive loop stays sealed — it never gets tools and never touches the world
+The proactive loop stays sealed: it never gets tools and never touches the world
 unbidden. That boundary is deliberate: tools make the Keeper *useful when asked*
 without breaking the "no window on the world" identity that governs its own voice.
 
-This connects the standalone server to MCP servers YOU configure (backend/mcp.json)
-— it does not and cannot borrow any host's MCP connectors. Servers are launched
+This connects the standalone server to MCP servers YOU configure (backend/mcp.json):
+ it does not and cannot borrow any host's MCP connectors. Servers are launched
 over stdio; their tools are exposed to the model in OpenAI's tool-call format and
 executed back through MCP.
 
@@ -45,7 +46,12 @@ STARTUP_TIMEOUT_S = _env_float("KEEPER_MCP_STARTUP_TIMEOUT_S", 60.0)
 
 # When set, a server that fails to start or is missing a tool it declared under
 # "required" aborts startup instead of being reported. Off by default: the Keeper
-# is meant to survive a missing tool. On in CI, where silence is the bug.
+# is meant to survive a missing tool.
+#
+# Worth turning on wherever silence is the bug rather than the mercy: ci.yml notes
+# that without npx and uvx the MCP tests skip instead of failing, "and a green run
+# would mean less than it looks". Neither workflow sets this today, so that is an
+# opt-in, not something CI already does.
 STRICT = bool(os.environ.get("KEEPER_MCP_STRICT"))
 
 # Where the Keeper's files live. mcp.json can write ${KEEPER_ROOT} instead of an

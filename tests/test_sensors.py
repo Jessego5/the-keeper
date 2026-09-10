@@ -1,4 +1,5 @@
-"""Tier 2 — OS presence sensing (sensors.py).
+"""
+These are the Tier 2 tests for OS presence sensing (sensors.py).
 
 Logic (context rendering, gate wiring) is deterministic via injected Presence.
 The live-read probe touches real macOS APIs and skips off-mac.

@@ -1,22 +1,21 @@
-"""proactive.py — the loop that lets the Keeper reach out on its own.
+"""
+This is the loop that lets the Keeper reach out on its own.
 
-Each tick asks, in order:
+Each tick asks three questions in order: whether the person is even reachable, which the
+sensors answer by skipping a locked screen; whether the Keeper is restless enough to
+try, which energy answers by becoming a base_score and then a random roll; and whether
+it actually has something to say, which compose answers and may still decline. Only if
+all three pass does a line go out. This is the proper fix for the "spoke every time"
+problem from the first voice test: silence is the default at TWO gates, the roll usually
+says no, and even when it says yes, compose can decline. A line is earned, not
+scheduled.
 
-    1. Is the person even reachable?      (sensors: skip if the screen is locked)
-    2. Am I restless enough to try?       (energy -> base_score -> a random roll)
-    3. Do I actually have something?       (compose proactive; it may still fall silent)
+There are two ways to run it. tick() makes one decision given the current state,
+pure and testable with no waiting, and simulate() fast-forwards virtual time so
+the loop can be watched firing in seconds, which is what the demo uses.
 
-Only if all three pass does a line go out. This is the proper fix for the "spoke
-every time" problem from the first voice test: silence is the default at TWO gates
-— the roll usually says no, and even when it says yes, compose can decline. A line
-is earned, not scheduled.
-
-Two ways to run it:
-    tick()      one decision, given the current state. Pure, testable, no waiting.
-    simulate()  fast-forward virtual time to WATCH it fire in seconds (the demo).
-
-The `speed` knob compresses real tick intervals for a live demo (REFERENCE.md §4:
-proactivity must be demoable without waiting minutes/hours).
+The `speed` knob compresses real tick intervals for a live demo, because
+proactivity has to be demonstrable without waiting minutes or hours for a tick.
 """
 
 from __future__ import annotations
@@ -106,7 +105,7 @@ class TickDecision:
 def presence_factor(idle_seconds: Optional[float]) -> float:
     """How the person's idle time nudges the urge to speak.
 
-    A companion's reach-out lands best when they are HERE but quiet — so catch
+    A companion's reach-out lands best when they are HERE but quiet, so catch
     them (a small boost). If they have been idle a long while they are away, and
     a line just waits in an empty room, so ease off. This is the "are you even
     here right now?" signal that message-timing alone can't provide.
@@ -128,7 +127,7 @@ def derive_state(minutes_since_user: Optional[float]) -> str:
     """Pick a register for an unbidden message from how long they've been gone.
 
     A long silence reads as the cold; recent contact reads as the moving water.
-    Coarse on purpose — proactive has no fresh user signal to detect from.
+    Coarse on purpose, proactive has no fresh user signal to detect from.
     """
     if minutes_since_user is None or minutes_since_user > 2 * 24 * 60:
         return "frozen"
@@ -136,7 +135,7 @@ def derive_state(minutes_since_user: Optional[float]) -> str:
 
 
 # How much a genuinely relevant item may weight the coin. p_max still binds, so a
-# busy feed cannot push the Keeper past its own ceiling — this shortens the wait
+# busy feed cannot push the Keeper past its own ceiling: this shortens the wait
 # for news that matters, it does not remove the gate.
 SOURCE_BOOST = 3.0
 
@@ -154,7 +153,7 @@ def _too_similar(text: str, recent: list) -> Optional[str]:
     """The recent line `text` merely repeats, or None.
 
     Proactive lines repeat because the composer is handed identical input every
-    tick — same prompt, same register, and recall("") returns the same facts — so a
+    tick: same prompt, same register, and recall("") returns the same facts, so a
     near-deterministic model returns the same sentence. Measured across real
     sessions, 35% of model-written lines were duplicates; one appeared twelve
     times.
@@ -197,24 +196,24 @@ def tick(
     # One read of the machine, shared by the lock gate and the idle factor.
     pres = presence if presence is not None else sensors.read()
 
-    # Gate -1 — the day's ceiling. Checked first because it is the cheapest and the
+    # Gate -1: the day's ceiling. Checked first because it is the cheapest and the
     # most absolute: nothing below can buy an outreach once the day is spent.
     if (config.daily_max > 0
             and state.proactive_today >= config.daily_max):
         return quiet(Reason.DAILY_MAX,
                      f"said enough today ({state.proactive_today}/{config.daily_max})")
 
-    # Gate 0 — cooldown. If it just reached out and got no reply, hold silence;
+    # Gate 0: cooldown. If it just reached out and got no reply, hold silence;
     # otherwise low energy would make it pester on every tick.
     if (state.minutes_since_proactive is not None
             and state.minutes_since_proactive < config.cooldown_min):
         return quiet(Reason.COOLDOWN, "in cooldown since last outreach")
 
-    # Gate 1 — reachability. Don't speak to a locked screen.
+    # Gate 1: reachability. Don't speak to a locked screen.
     if config.respect_lock and pres.screen_locked:
         return quiet(Reason.SCREEN_LOCKED, "screen locked")
 
-    # Gate 2 — restlessness, modulated by presence. Idle time nudges the score:
+    # Gate 2: restlessness, modulated by presence. Idle time nudges the score:
     # present-but-quiet is a good moment to reach out; long-gone is not.
     factor = presence_factor(pres.idle_seconds) if config.use_presence else 1.0
     # Something worth interrupting for weights the coin. This is the ONLY route by
@@ -228,14 +227,14 @@ def tick(
                              p_min=config.p_min, p_max=config.p_max):
         return quiet(Reason.DICE, "did not roll to speak")
 
-    # Gate 3 — content. With something new to say, say that; otherwise fall back to
+    # Gate 3: content. With something new to say, say that; otherwise fall back to
     # what has always happened here, which is returning the person their own past.
     mem = memory.recall(store, "", k=3) if store is not None else ""
 
     if pending is not None and relevance.worth_mentioning(
             getattr(pending, "relevance", 0.0)):
         # RE-VOICED, not composed. compose() writes spare mood lines, and handed an
-        # item it produced "The tide brings the brush back to your hand" — in voice,
+        # item it produced "The tide brings the brush back to your hand": in voice,
         # and carrying none of the news. revoice() exists to put a factual answer
         # into the Keeper's register while preserving every fact, which is exactly
         # this job: the point of a source is telling someone something they did not
@@ -269,7 +268,7 @@ def tick(
         return quiet(Reason.COMPOSER_SILENT, "rolled to speak, but chose silence")
 
     # And if it did anyway: say nothing. Silence is a first-class outcome here, and
-    # a Keeper with nothing new is in character staying quiet — where one
+    # a Keeper with nothing new is in character staying quiet: where one
     # paraphrasing itself to fill the gap is not. Retrying is not worth a call: the
     # input barely changed, so the line barely would.
     echo = _too_similar(result.text or "", said)
@@ -281,7 +280,7 @@ def tick(
 
 
 # --------------------------------------------------------------------------- #
-# Demo — fast-forward a day of silence and watch when the Keeper speaks.
+# Demo: fast-forward a day of silence and watch when the Keeper speaks.
 # --------------------------------------------------------------------------- #
 
 @dataclass

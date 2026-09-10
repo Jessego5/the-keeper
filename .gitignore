@@ -13,8 +13,8 @@ evals/results/
 backend/notify/
 memory_store_backup_*/
 
-# Replay output. register_candidates.json is derived FROM memory_store/ — which is
-# ignored above precisely because conversation content is private — so tracking it
+# Replay output. register_candidates.json is derived FROM memory_store/, which is
+# ignored above precisely because conversation content is private, so tracking it
 # would route real user messages around that rule. It is a working file for
 # labelling; only the reviewed evals/register_dataset.json belongs in git.
 evals/register_candidates.json

@@ -1,4 +1,5 @@
-"""mood_bench.py — pick the mood sensor with data, not vibes.
+"""
+This picks the mood sensor with data, not vibes.
 
 Benchmarks three register classifiers on a hand-labeled dataset
 (evals/register_dataset.json) with a proper TRAIN/TEST split:
@@ -155,7 +156,7 @@ def run() -> None:
         rows.append((name, acc, tag, floor, avg_latency_ms(embed)))
 
     # The fourth option: ask a model instead of measuring distance in an embedding
-    # space. No floor to tune — it either names a register or it does not.
+    # space. No floor to tune: it either names a register or it does not.
     try:
         import compose
         _, fast = compose.make_generator()
@@ -178,19 +179,19 @@ def run() -> None:
         if acc is None:
             print(f"  {name:17} {'skipped'}")
             continue
-        def pc(d, k): return f"{d.get(k, 0)*100:.0f}%" if d and k in d else "  —"
-        lt = f"{lat:.0f}ms" if lat else "  —"
+        def pc(d, k): return f"{d.get(k, 0)*100:.0f}%" if d and k in d else "-"
+        lt = f"{lat:.0f}ms" if lat else "-"
         # The tuned floor is printed because it is the number that DRIFTS: it is
         # chosen here on TRAIN, and copied by hand into mood.build_local_mood_signal.
         # Those two silently disagreed once already; showing it makes that visible.
-        fl = f"{floor:.2f}" if floor else "   —"
+        fl = f"{floor:.2f}" if floor else "-"
         print(f"  {name:17} {acc*100:>4.0f}% {pc(tag,'implicit'):>9} "
               f"{pc(tag,'negation'):>9} {pc(tag,'neutral'):>8} {fl:>6} {lt:>9}")
     print("=" * 73)
 
     scored = [(n, a, lat) for n, a, _, _, lat in rows if a is not None]
     win = max(scored, key=lambda x: (x[1], -(x[2] or 0)))
-    print(f"  winner (test acc, then latency): {win[0]}  —  {win[1]*100:.0f}%\n")
+    print(f"  winner (test acc, then latency): {win[0]}, {win[1]*100:.0f}%\n")
 
 
 if __name__ == "__main__":

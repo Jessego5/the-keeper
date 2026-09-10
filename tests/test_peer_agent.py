@@ -1,4 +1,5 @@
-"""Tier 1 — the Almanac, a separate A2A agent the Keeper can consult.
+"""
+These are the Tier 1 tests for the Almanac, a separate A2A agent the Keeper can consult.
 
 It shares no code with backend/a2a.py on purpose: a consult that works is then two
 independent implementations agreeing about the wire format, which is the only

@@ -1,16 +1,16 @@
-# The Keeper — Architecture
+# The Keeper: Architecture
 
-A draft you can lift into the README. Diagram + module map + the research the memory
-system is built on. Edit freely.
+How the Keeper is put together: the two loops it runs, the module each decision
+lives in, and the research the memory system is built on.
 
 ## What it is
 
 The Keeper is a proactive, memory-driven AI companion. Three things make it an *agent*
 rather than a chatbot:
 
-1. **It acts unbidden.** A background loop decides on its own when to reach out —
+1. **It acts unbidden.** A background loop decides on its own when to reach out,
    gated by an energy model, the person's presence, and whether it actually has
-   something to say — and delivers via a native OS notification that works with the
+   something to say, and delivers via a native OS notification that works with the
    browser closed.
 2. **It remembers and reflects.** Durable facts are extracted from conversation,
    retrieved by a research-grade relevance function, periodically synthesized into
@@ -25,7 +25,7 @@ rather than a chatbot:
 flowchart TB
     user([You])
 
-    subgraph passive["Passive loop — you speak"]
+    subgraph passive["Passive loop: you speak"]
         chat["POST /chat"]
         recall1["memory.recall<br/>(GA retrieval)"]
         compose1["compose<br/>generate → score → retry"]
@@ -34,7 +34,7 @@ flowchart TB
         compose1 -.after.-> distill
     end
 
-    subgraph proactive["Proactive loop — it decides to speak"]
+    subgraph proactive["Proactive loop: it decides to speak"]
         tickclock{{"every N seconds"}}
         reminders["reminders.due<br/>(recurring, re-armed)"]
         routine["routines<br/>welcome_back / heads_down / wind_down"]
@@ -73,27 +73,27 @@ Two papers, mapped to code:
 | Paper | Idea | Where it lives |
 |---|---|---|
 | **Generative Agents** (Park et al., 2023) | Retrieval = **recency · decay + importance + relevance**, each min-max normalized then summed | `memory.rank_facts` |
-| | **Importance / poignancy** (1–10) assigned when a memory forms | `memory.distill` (inline `[kind\|N]`) |
+| | **Importance / poignancy** (1-10) assigned when a memory forms | `memory.distill` (inline `[kind\|N]`) |
 | | **Reflection**: salient questions → retrieve → synthesize higher-level insights, stored back as retrievable memories | `drift.synthesize` |
 | **MemGPT** (Packer et al., 2023) | **Memory pressure**: evict old, low-value content to external storage under recursive summarization | `memory.consolidate` → `*_archive.jsonl` |
-| **Hybrid retrieval** | dense (embedding cosine) + sparse (BM25) fused with **Reciprocal Rank Fusion** — the combo that tops retrieval benchmarks | `memory.rank_facts` (`_bm25`, `_rrf`) |
+| **Hybrid retrieval** | dense (embedding cosine) + sparse (BM25) fused with **Reciprocal Rank Fusion**: the combo that tops retrieval benchmarks | `memory.rank_facts` (`_bm25`, `_rrf`) |
 | **Retrieve-then-rerank** | cast a wide net cheaply, then an LLM reranker narrows to the best k | `memory.rerank` |
 | **Zep / Graphiti** (temporal KG) | **change-aware** facts: a new fact SUPERSEDES an outdated one (LLM-judged); the old is closed but kept as history; only current facts are retrievable | `memory.Fact.valid_until` / `supersedes`, `_find_supersedable`, `changes` |
 
-Temporal note: superseding is framed as **the tide** — recall shows the Keeper "what has
+Temporal note: superseding is framed as **the tide**, recall shows the Keeper "what has
 changed (was, then became)" so it speaks the turn knowingly. The water-states *are* change
 over time, so the frontier memory direction and the persona are the same idea.
 
 Persona guardrail: synthesized insights are stored as `kind="insight"` and rendered
-under *"what you've come to understand"* — retrievable like any memory (faithful to
+under *"what you've come to understand"*, retrievable like any memory (faithful to
 the paper) but never recited back as the person's own words.
 
 ## Planning: autonomous goal pursuit
 
 The pattern that makes the Keeper an *agent* rather than a reactive companion. When
 the person expresses something they want to move toward, the Keeper takes it on as a
-**Goal**, an LLM **planner** decomposes it into 2–5 concrete steps, and the proactive
-loop **works the plan over time** — advancing one step per due cycle, reaching out in
+**Goal**, an LLM **planner** decomposes it into 2-5 concrete steps, and the proactive
+loop **works the plan over time**: advancing one step per due cycle, reaching out in
 voice to help with or invite it, then scheduling the next check. This maps to the
 canonical *Planning* agentic pattern (decompose → act → observe → repeat), on top of
 the *Tool Use* and *Memory* patterns already present.
@@ -109,8 +109,8 @@ the *Tool Use* and *Memory* patterns already present.
 | Nudge | a `[person]` step: help/invite it; done only when they report it | `server._nudge_goal_step` |
 
 The agent-vs-human split is the core: a `[keeper]` step (look something up, read a file,
-draft, keep a note) the Keeper **executes itself** via `tool_reply` — real ReAct: call a
-tool, observe, advance — and delivers the result re-voiced. A `[person]` step it nudges
+draft, keep a note) the Keeper **executes itself** via `tool_reply`, real ReAct: call a
+tool, observe, advance, and delivers the result re-voiced. A `[person]` step it nudges
 and waits for `advance_goal`. On honest failure a keeper step is handed back to the person.
 
 Outreach priority each tick (when the real-time breaker allows): **due goal → house
@@ -118,7 +118,7 @@ routine → restless energy**. Purposeful work comes before mood.
 
 ## Multi-agent: sub-agents + supervisor
 
-For a task too involved for one tool call, the Keeper delegates to a **sub-agent** — a
+For a task too involved for one tool call, the Keeper delegates to a **sub-agent**: a
 focused specialist that runs its *own* tool loop with only the tools it needs, then
 returns a result the Keeper speaks from. This is the reference agent's supervisor + sub-agent
 pattern kept legible: three roles, not a fleet framework.
@@ -130,39 +130,39 @@ pattern kept legible: three roles, not a fleet framework.
 | scribe | drafts a message, note, or short plan | journal |
 | analyst | works answers out by writing + running code | run_python (sandbox) |
 
-**Code-as-action** (`sandbox.py`): the Keeper — and the analyst — can `run_python`, a
+**Code-as-action** (`sandbox.py`): the Keeper, and the analyst, can `run_python`, a
 snippet executed in a fenced subprocess (isolated mode, wall-clock timeout, CPU+memory
 rlimits, throwaway cwd, capped output). It stops runaways and accidents, not malicious
-code — stated plainly in the module. The reference agent's `shell.py`, scoped to Python.
+code: stated plainly in the module. The reference agent's `shell.py`, scoped to Python.
 
-**Orchestrator-workers** (`subagents.orchestrate`) is the deep path — not just routing:
+**Orchestrator-workers** (`subagents.orchestrate`) is the deep path, not just routing:
 
-1. **Decompose** — a lead-agent prompt splits the task into 1–4 independent subtasks.
-2. **Fan out (parallel)** — each subtask is routed to a specialist and the workers run
+1. **Decompose**: a lead-agent prompt splits the task into 1-4 independent subtasks.
+2. **Fan out (parallel)**: each subtask is routed to a specialist and the workers run
    **concurrently** (`asyncio.gather`), each with its own scoped tool view (`_FilteredMCP`).
-3. **Synthesize** — a lead step combines the workers' findings into one answer.
+3. **Synthesize**: a lead step combines the workers' findings into one answer.
 
 It degrades to a single specialist when the task doesn't split. `OrchestrationResult`
 carries the worker trace (`who()`, `trace()`). Exposed two ways: the **`delegate` tool**
 the Keeper calls in chat, and the **goal executor**, which orchestrates every `[keeper]`
-step. Recursion is blocked — a sub-agent can't spawn sub-agents. (`route` + `run` remain
+step. Recursion is blocked: a sub-agent can't spawn sub-agents. (`route` + `run` remain
 the single-worker primitives underneath.)
 
 Verified live: *"find a price, then compute the weekly cost"* fanned out to **researcher
 + analyst** in parallel and synthesized their results.
 
 **Two delegation modes:**
-- **Synchronous** (`delegate` tool / goal executor) — the Keeper waits with you and
+- **Synchronous** (`delegate` tool / goal executor): the Keeper waits with you and
   answers in the same turn. Best for quick work.
-- **Asynchronous** (`spawn_task` tool → `background.py`) — for LONGER work: the Keeper
+- **Asynchronous** (`spawn_task` tool → `background.py`), for LONGER work: the Keeper
   says it's on it, runs the orchestration in the background (`asyncio.create_task`), and
   delivers the result *later* through the proactive channels (chat + native banner), like
   a kept promise. `/state.working_on` shows what's in flight. This is the reference agent's
-  SpawnTool + Poller model — fire-and-forget, report on completion.
+  SpawnTool + Poller model, fire-and-forget, report on completion.
 
 **Graceful step budgets** (`compose.tool_reply`): as a worker's tool-round budget runs
 low it's nudged to wrap up, then forced to a graceful final answer ("answer with what you
-found, note what's incomplete") — never a bare mid-thought cutoff. The reference agent's budget
+found, note what's incomplete"), never a bare mid-thought cutoff. The reference agent's budget
 warnings + forced-cleanup.
 
 ## A2A: an interoperable agent
@@ -170,32 +170,35 @@ warnings + forced-cleanup.
 MCP lets the Keeper use tools; **A2A** (Agent-to-Agent, the Google/Linux-Foundation
 standard) lets it interoperate with other **agents**. The Keeper speaks it **both ways**:
 
-- **As a server** — it publishes an **Agent Card** at `/.well-known/agent.json` (name,
+- **As a server**: it publishes an **Agent Card** at `/.well-known/agent.json` (name,
   skills, endpoint) so any A2A client can discover it, and answers `message/send` at
   `/a2a`, routed through a *safe* tool subset (no delegate/spawn from external callers).
-- **As a client** — the `consult_peer` tool discovers a remote agent by its card and
+- **As a client**: the `consult_peer` tool discovers a remote agent by its card and
   sends it a message (`a2a.consult`), so the Keeper can call other agents.
 
-Scope is an honest core subset: synchronous `message/send` with text parts — no
+Scope is an honest core subset: synchronous `message/send` with text parts, no
 streaming or push-notification task states (the distributed-task machinery a single-user
 companion doesn't need). Verified live in both directions, including a loopback where the
 Keeper's client consulted its own server. `a2a.py` is the whole protocol layer.
 
 ## The house: agentic OS integration
 
-- **Recurring reminders** — `daily` / `weekly` / `weekdays` / `every N …`, re-armed to
+- **Recurring reminders**: `daily` / `weekly` / `weekdays` / `every N …`, re-armed to
   the next future occurrence on delivery (`reminders.next_occurrence`), catch-up-storm
   safe.
-- **Presence-driven routines** — a stateful engine watches the idle signal across
+- **Presence-driven routines**: a stateful engine watches the idle signal across
   ticks to catch *transitions* a single read can't: `welcome_back` (returned from
   away), `heads_down` (long unbroken focus), `wind_down` (late evening). Fires in the
   Keeper's voice ahead of the random restlessness roll (`routines.RoutineEngine`).
-- **Native notifications** — backend-fired macOS banners via a rebranded `Keeper.app`
+- **Native notifications**: backend-fired macOS banners via a rebranded `Keeper.app`
   (built by `scripts/build_keeper_notifier.sh`) so the Keeper's own icon and name are
-  the primary badge; reaches you with the browser closed (`notifier`).
-- **Delivery channels** — a proactive line fans out to every enabled surface at once
+  the primary badge; reaches you with the browser closed (`notifier`). The badge is
+  baked into the bundle at build time, so wearing a register means a bundle per
+  register: `frozen`, `tidal` and `turning` each carry their own pose, and anything
+  unbuilt falls back to `Keeper.app` with the register as a thumbnail.
+- **Delivery channels**: a proactive line fans out to every enabled surface at once
   behind one `Channel` contract (the reference agent's `infra/channels` pattern): the web page
-  (SSE), the native banner, and — opt-in with a bot token — a Telegram message on your
+  (SSE), the native banner, and, opt-in with a bot token, a Telegram message on your
   phone. Adding a surface is adding a `Channel`; the loop that decides *when* to speak
   never changes (`channels`).
 
@@ -210,19 +213,19 @@ Keeper's client consulted its own server. `a2a.py` is the whole protocol layer.
 | `memory.py` | Fact store, GA retrieval, distillation, MemGPT consolidation, archive tier |
 | `embedder.py` | OpenAI embeddings for semantic recall/dedup (injectable) |
 | `drift.py` | Idle reflection: a private note, or GA insight synthesis |
-| `energy.py` | Multi-timescale "battery" — how restless it is |
+| `energy.py` | Multi-timescale "battery", how restless it is |
 | `proactive.py` | One proactive decision: presence + energy + roll gates |
 | `routines.py` | Presence-driven house routines |
-| `tasks.py` | Goal/Step store — persistent plan state; steps labelled keeper/person |
+| `tasks.py` | Goal/Step store, persistent plan state; steps labelled keeper/person |
 | `planner.py` | Decomposes + labels a goal's steps; reflection (evaluator-optimizer) |
-| `journal.py` | The Keeper's one WRITE capability — append-only kept notes |
+| `journal.py` | The Keeper's one WRITE capability, append-only kept notes |
 | `subagents.py` | Specialists (researcher/archivist/scribe/analyst) + router + supervisor |
-| `sandbox.py` | Fenced Python execution (code-as-action) — timeout, rlimits, isolation |
+| `sandbox.py` | Fenced Python execution (code-as-action), timeout, rlimits, isolation |
 | `background.py` | Registry for async background delegations (spawn/track/finish) |
-| `a2a.py` | Agent-to-Agent protocol — Agent Card + message/send envelope + client |
+| `a2a.py` | Agent-to-Agent protocol, Agent Card + message/send envelope + client |
 | `reminders.py` | Reminder store + recurrence |
 | `native_tools.py` | The Keeper's own action tools (remind / list / complete) |
-| `tools.py` | MCP manager — connects configured servers (files, fetch, search, time, git), applies a read-only filter + per-server allowlist |
+| `tools.py` | MCP manager, connects configured servers (files, fetch, search, time, git), applies a read-only filter + per-server allowlist |
 | `sensors.py` | Read-only macOS presence (idle, lock, frontmost app) |
 | `sessions.py` | Persistent per-conversation history (the sidebar) |
 | `channels.py` | Delivery-surface abstraction: web (SSE) + native banner + opt-in Telegram, fanned out best-effort |

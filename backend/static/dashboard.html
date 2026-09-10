@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>The Keeper — state</title>
+<title>The Keeper, state</title>
 <style>
   :root {
     --deep:#081316; --sea:#0d2327; --surface:#14383a; --foam:#cfe0da;
@@ -79,29 +79,29 @@
 </head>
 <body>
   <div class="wrap">
-    <h1>the keeper — state</h1>
+    <h1>the keeper, state</h1>
 
     <div class="grid">
       <div class="tile">
         <div class="label">energy (battery)</div>
-        <div class="val" id="energy">—</div>
+        <div class="val" id="energy">,</div>
         <div class="meter"><span id="energy-bar" style="width:0%"></span></div>
         <div class="sub">just talked = full → leaves you alone</div>
       </div>
       <div class="tile">
         <div class="label">restlessness</div>
-        <div class="val" id="score">—</div>
+        <div class="val" id="score">,</div>
         <div class="meter"><span id="score-bar" style="width:0%"></span></div>
         <div class="sub">base score → urge to reach out</div>
       </div>
       <div class="tile">
         <div class="label">P(speak) / tick</div>
-        <div class="val" id="pspeak">—</div>
+        <div class="val" id="pspeak">,</div>
         <div class="sub">chance it reaches out this tick</div>
       </div>
       <div class="tile">
         <div class="label">facts kept</div>
-        <div class="val" id="facts">—</div>
+        <div class="val" id="facts">,</div>
         <div class="sub">the drawers (semantic memory)</div>
       </div>
       <!-- The tide. Supersession is one of the most distinctive things the memory
@@ -109,27 +109,27 @@
            /state JSON and never on the page. -->
       <div class="tile">
         <div class="label">changes tracked</div>
-        <div class="val" id="changes">—</div>
+        <div class="val" id="changes">,</div>
         <div class="sub" id="changes-sub">the tide (a fact that replaced another)</div>
       </div>
       <div class="tile">
         <div class="label">reflections</div>
-        <div class="val" id="reflections">—</div>
+        <div class="val" id="reflections">,</div>
         <div class="sub">drift notes (inner life)</div>
       </div>
       <div class="tile">
         <div class="label">insights</div>
-        <div class="val" id="insights">—</div>
+        <div class="val" id="insights">,</div>
         <div class="sub">its own conclusions (retrievable)</div>
       </div>
       <div class="tile">
         <div class="label">reminders held</div>
-        <div class="val" id="reminders">—</div>
+        <div class="val" id="reminders">,</div>
         <div class="sub" id="reminders-sub">things to return when due</div>
       </div>
       <div class="tile">
         <div class="label">quiet for</div>
-        <div class="val" id="since">—</div>
+        <div class="val" id="since">,</div>
         <div class="sub">virtual minutes since you spoke</div>
       </div>
     </div>
@@ -161,16 +161,16 @@
     </div>
 
     <div class="badges">
-      <span class="badge" id="b-backend">backend —</span>
-      <span class="badge" id="b-embed">memory —</span>
-      <span class="badge" id="b-speed">speed —</span>
+      <span class="badge" id="b-backend">backend, </span>
+      <span class="badge" id="b-embed">memory, </span>
+      <span class="badge" id="b-speed">speed, </span>
       <!-- The demo clock, on the page instead of in a terminal. Everything the
            Keeper does on its own runs on this clock; compressing it is the only way
            to watch an hour of patience in a minute. -->
       <button class="badge btn" id="crank" title="compress the Keeper's clock so its slow behaviour happens in seconds">crank clock</button>
       <button class="badge btn" id="uncrank" title="back to real time">real time</button>
-      <span class="badge" id="b-listeners">listeners —</span>
-      <span class="badge" id="b-tools">tools —</span>
+      <span class="badge" id="b-listeners">listeners, </span>
+      <span class="badge" id="b-tools">tools, </span>
     </div>
     <div class="foot"><a href="/">← back to the water</a> · <a href="/trace-view">trace ↗</a> · refreshes every 3s</div>
   </div>
@@ -179,7 +179,7 @@
   function esc(s) { const d = document.createElement("div"); d.textContent = s || ""; return d.innerHTML; }
   function pct(x) { return Math.max(0, Math.min(100, Math.round((x||0)*100))) + "%"; }
   function fmtMin(m) {
-    if (m == null) return "—";
+    if (m == null) return "-";
     if (m < 90) return Math.round(m) + "m";
     if (m < 60*48) return Math.round(m/60) + "h";
     return Math.round(m/1440) + "d";
@@ -237,7 +237,7 @@
     if (house.last_routine) bits.push("last routine: " + house.last_routine.replace(/_/g, " "));
     document.getElementById("house-last").textContent = bits.join("  ·  ");
 
-    // what it's tending — goals the agent is pursuing
+    // what it's tending, goals the agent is pursuing
     const goals = s.goals || [];
     const gc = document.getElementById("goals");
     if (!goals.length) {
@@ -270,9 +270,9 @@
       : '<span class="none">nothing watched yet.</span>';
     const rt = document.getElementById("reflection-text");
     if (s.latest_reflection) rt.textContent = s.latest_reflection;
-    else rt.innerHTML = '<span class="none">nothing kept yet — it has not drifted.</span>';
-    document.getElementById("b-backend").textContent = "backend " + (s.backend || "—");
-    document.getElementById("b-embed").textContent = "memory " + (s.embedder || "—");
+    else rt.innerHTML = '<span class="none">nothing kept yet: it has not drifted.</span>';
+    document.getElementById("b-backend").textContent = "backend " + (s.backend || "-");
+    document.getElementById("b-embed").textContent = "memory " + (s.embedder || "-");
     document.getElementById("b-speed").textContent = "speed " + (s.speed ?? 1) + "×";
     document.getElementById("crank").disabled = (s.speed ?? 1) > 1;
     document.getElementById("uncrank").disabled = (s.speed ?? 1) <= 1;

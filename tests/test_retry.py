@@ -1,5 +1,6 @@
-"""Tier 1 — the transient-failure retry policy (retry.py). No key, no network:
-a fake sleep and hand-rolled exceptions, so these run instantly and pin the
+"""
+These are the Tier 1 tests for the transient-failure retry policy (retry.py). No key, no
+network: a fake sleep and hand-rolled exceptions, so these run instantly and pin the
 DECISION (retry or not) rather than any timing.
 """
 import pytest
@@ -10,7 +11,7 @@ pytestmark = pytest.mark.unit
 
 
 class RateLimitError(Exception):
-    """Shaped like the SDK's — matched by class name, not by import."""
+    """Shaped like the SDK's, matched by class name, not by import."""
 
 
 class BadRequestError(Exception):

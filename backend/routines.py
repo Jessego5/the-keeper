@@ -1,19 +1,20 @@
-"""routines.py — the housekeeper's routines. Presence-driven reasons to reach out.
+"""
+These are the housekeeper's routines, presence-driven reasons to reach out.
 
-The generic proactive loop (proactive.py) reaches out from restlessness — a random
+The generic proactive loop (proactive.py) reaches out from restlessness: a random
 roll gated by energy. Routines are the opposite: specific, earned moments the Keeper
 watches for and responds to in character.
 
     welcome_back  they've just returned after being away a while
-    heads_down    they've been focused, unbroken, for a long stretch — a breath
-    wind_down     it's late in their evening — a soft close to the day
+    heads_down    they've been focused, unbroken, for a long stretch: a breath
+    wind_down     it's late in their evening: a soft close to the day
 
 Each routine is a pure trigger over a RoutineContext plus a cooldown so it can't
 nag. The engine is the only stateful part: it watches the idle signal across ticks
 to notice TRANSITIONS (away -> back, and how long they've been continuously active),
 which a single instantaneous sensor read can't tell you. When a routine fires, the
 server composes the line with the routine's intent passed as compose() `context`, so
-it comes out in the Keeper's voice — never a canned string.
+it comes out in the Keeper's voice, never a canned string.
 
 All time is injectable (`now`), so the whole thing is testable offline with no clock.
 """
@@ -73,7 +74,7 @@ def default_routines() -> list[Routine]:
         Routine(
             key="heads_down",
             intent="They've been heads-down and focused for a long unbroken stretch. "
-                   "Offer one quiet invitation to pause or breathe — no pressure.",
+                   "Offer one quiet invitation to pause or breathe: no pressure.",
             cooldown_min=120.0,
             trigger=lambda c: c.present and c.active_minutes >= HEADS_DOWN_MIN),
         Routine(
@@ -135,7 +136,7 @@ class RoutineEngine:
     def check(self, presence: sensors.Presence, now: float,
               minutes_since_user: Optional[float] = None) -> Optional[Routine]:
         """Observe, then return the first eligible routine (off cooldown, trigger
-        true), or None. Does NOT mark it fired — call fire() once its line lands."""
+        true), or None. Does NOT mark it fired, call fire() once its line lands."""
         self.observe(presence, now)
         ctx = self.context(presence, now, minutes_since_user)
         for r in self.routines:

@@ -1,19 +1,17 @@
-"""proactive_bench.py — hold the interruption policy to evidence, not taste.
+"""
+This holds the interruption policy to evidence, not taste.
 
 The register classifier was chosen with data: mood_bench.py compares four methods
 on a held-out split and reports accuracy and latency. The policy that decides
-whether to INTERRUPT SOMEONE was chosen by intuition — a dozen constants, none
-measured:
-
-    alpha 0.50 / beta 0.35 / gamma 0.15     the three decay horizons
-    w_hunger 0.7 / w_context 0.3            hunger against recent context
-    p_min 0.05 / p_max 0.45                 the coin's bounds
-    cooldown_min 600                        silence after an ignored outreach
-    daily_max 12                            the day's ceiling
+whether to INTERRUPT SOMEONE was chosen by intuition, a dozen constants and none
+of them measured: alpha 0.50, beta 0.35 and gamma 0.15 for the three decay
+horizons, w_hunger 0.7 against w_context 0.3 for hunger versus recent context,
+p_min 0.05 and p_max 0.45 for the coin's bounds, cooldown_min 600 for the silence
+after an ignored outreach, and daily_max 12 for the day's ceiling.
 
 That asymmetry is backwards: a wrong threshold in the classifier gives a reply the
 wrong tone, while a wrong constant here pesters a person all day. (the reference agent tunes
-the same kind of numbers by hand too, so this is not a gap peculiar to us — it is
+the same kind of numbers by hand too, so this is not a gap peculiar to us: it is
 just one worth closing.)
 
 Nothing here asserts a policy is CORRECT; there is no ground truth for how often a
@@ -28,31 +26,29 @@ arrive on a jittered fixed rhythm, which is a cartoon of real use. What the
 simulation is good for is COMPARING configurations under identical conditions, not
 forecasting a real week.
 
-Three things it said on first run, none of which were obvious beforehand:
-
-  * the cooldown is doing almost all the work. Removing it takes the shipped
-    policy from ~2 outreaches a day to 8-10, with bursts and night-time lines.
-  * p_max barely matters next to it. 0.20 against 0.70 moves the rate from 1.4 to
-    2.0 a day, because a ten-hour refractory dominates the coin.
-  * the daily ceiling never binds at shipped settings — even a ceiling of 4 is
-    identical to no ceiling. It is a backstop against a pathological case such as a
-    busy feed, not a shaper of ordinary behaviour, and it should be described that
-    way rather than credited with restraint the cooldown is providing.
+It said three things on first run, none of them obvious beforehand. The cooldown
+is doing almost all the work: removing it takes the shipped policy from about two
+outreaches a day to eight or ten, with bursts and night-time lines. Next to that
+p_max barely matters, 0.20 against 0.70 moving the rate only from 1.4 to 2.0 a
+day, because a ten-hour refractory dominates the coin. And the daily ceiling never
+binds at shipped settings, a ceiling of 4 being identical to no ceiling at all: it
+is a backstop against a pathological case such as a busy feed, not a shaper of
+ordinary behaviour, and it should be described that way rather than credited with
+restraint the cooldown is providing.
 
 Since every decision now carries a proactive.Reason code, the run also reports
 which gate ended each tick, which turns the first finding above from an inference
 into a count. Pooled across all three profiles at shipped settings:
 
-    cooldown  78.2%     dice  16.0%     spoke  5.8%
-
-and daily_max, composer_silent and repeat do not appear at all. The ceiling really
+cooldown ends 78.2% of ticks, the dice 16.0%, and 5.8% end in speech, while
+daily_max, composer_silent and repeat do not appear at all. The ceiling really
 never binds; the coin is a minor character; the refractory period IS the policy.
 (The two composer outcomes are absent because the simulation runs on the offline
 stub, which never declines and never repeats itself. Those gates are real, they
 just cannot be exercised without a live model.)
 
-    python backend/proactive_bench.py
-    python backend/proactive_bench.py --days 14 --runs 40
+Run it with python backend/proactive_bench.py, or python backend/proactive_bench.py
+--days 14 --runs 40 for a longer sweep.
 """
 
 from __future__ import annotations

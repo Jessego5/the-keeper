@@ -1,4 +1,6 @@
-"""Tier 1 — MCP deadlines and health reporting (tools.py). No node, no network.
+"""
+These are the Tier 1 tests for MCP deadlines and health reporting (tools.py). No node,
+no network.
 
 Why these exist: an MCP server that hung, died, or quietly stopped offering a tool
 used to leave exactly one line on stdout. Nothing reached the trace, /state, or the
