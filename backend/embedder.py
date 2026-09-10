@@ -1,4 +1,5 @@
-"""embedder.py — turn text into vectors for semantic memory.
+"""
+This turns text into vectors for semantic memory.
 
 A thin, injectable wrapper over an embedding model, mirroring compose.py's
 generator pattern: production passes a real embedder; tests pass None and memory

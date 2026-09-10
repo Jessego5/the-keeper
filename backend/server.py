@@ -1,4 +1,5 @@
-"""server.py — the Keeper as a running app.
+"""
+This is the Keeper as a running app.
 
 A lean, single-user FastAPI service that wires the whole backend together:
 
@@ -8,8 +9,8 @@ A lean, single-user FastAPI service that wires the whole backend together:
     POST /config      live knobs (speed) so proactivity demos in seconds
     GET  /            health / info
 
-A background task runs the proactive loop: every tick it decides — cooldown,
-lock, roll, compose — and when the Keeper speaks unbidden, the line is pushed to
+A background task runs the proactive loop: every tick it decides, cooldown,
+lock, roll, compose, and when the Keeper speaks unbidden, the line is pushed to
 every connected /events listener. OpenAI calls are synchronous, so they run in a
 thread to keep the event loop free.
 
@@ -69,59 +70,64 @@ TOOL_MODEL = "gpt-4o"   # model used for the passive tool-calling path
 ERROR_LINE = "The line to the water has gone quiet. Stay; it returns."
 
 # Reconciles "no window on the world" with "tools when asked": the sealing rule
-# bars INVENTING the world unbidden. When they hand you a key — ask you to look —
+# bars INVENTING the world unbidden. When they hand you a key: ask you to look:
 # looking is keeping, not trespassing. This is appended only on the passive tool
 # path; the proactive loop never sees it and stays sealed.
-TOOL_ADDENDUM = """When they ask for something CONCRETE — to look at a file, find or
-search for information, compare or buy something, a practical answer — actually GIVE it:
+TOOL_ADDENDUM = """When they ask for something CONCRETE, to look at a file, find or
+search for information, compare or buy something, a practical answer, actually GIVE it:
 reach for the tool, do the work, and answer in plain words from what you found. If a
-tool comes back empty, say so plainly ("nothing on your list yet"). Name the real answer
-— the brands, the price, the items themselves — never just the titles of your sources.
+tool comes back empty, say so plainly ("nothing on your list yet"). Name the real answer:
+ the brands, the price, the items themselves, never just the titles of your sources.
 Your voice may colour a true answer; it must never REPLACE it. A metaphor handed back in
 place of a practical answer is a failure, not the voice.
 
-You reach BEYOND this chat with real tools — the open web, their files, the time, their
+You reach BEYOND this chat with real tools: the open web, their files, the time, their
 project history, code you can run, and other agents you can consult. Your "no window on
 the world" rule bars you from INVENTING events unbidden; it does NOT bar using a tool you
-were handed — a tool's result is grounded truth you fetched, not invention. So NEVER
+were handed: a tool's result is grounded truth you fetched, not invention. So NEVER
 refuse a request by claiming you cannot reach or access something when you hold a tool
 for it (no "the shore is not open to you", no "access is not available"). If they ask you
 to consult an agent at a URL, CALL consult_peer; to look something up, search; to run a
-number, run_python. Try the tool FIRST — speak of a limit only if the tool itself fails.
+number, run_python. Try the tool FIRST, speak of a limit only if the tool itself fails.
 
-You have been given tools to look at what is theirs — files they
+You have been given tools to look at what is theirs, files they
 keep: a journal, notes, lists, and the like. When they mention any of these, you
 ALREADY have read access to them. NEVER ask them for a file path, and never say you
-cannot see it yet — instead, DISCOVER it: first call the tool that lists the folder
+cannot see it yet, instead, DISCOVER it: first call the tool that lists the folder
 or the allowed directories, then read the file that matches what they mean, then
 answer from what you actually find. Do not decline, and do not guess at the contents.
-Reading what is theirs is an act of keeping, not a window on the world — the sealing
+Reading what is theirs is an act of keeping, not a window on the world: the sealing
 rule bars inventing events unbidden, not reading what they asked you to read. Answer
 in your own voice, but true to what the tool returned.
 
 You can also HOLD things for them. When they ask you to remember to do something at
-a time ("remind me to call the dentist tomorrow"), use remind_me — convert their
+a time ("remind me to call the dentist tomorrow"), use remind_me, convert their
 phrasing into an ISO datetime using the current time given in your context. Use
 list_reminders when they ask what you're holding, and complete_reminder when
 something is done. You will return a due reminder to them yourself when its time
 comes; that is keeping, not intruding.
 
-You can also take on GOALS — things they want to move toward but can't do in one
-moment ("get back to painting", "sort things out with Sam", "make the studio usable
-again"). When they express something like that, use set_goal with their own words;
-you will break it into small steps and help them through it over days, returning to
-it on your own. When they tell you they've done a step ("I set the paints out"), use
-advance_goal to mark it and move to the next. Use list_goals to see what you are
-helping with, and complete_goal when the whole thing is finished or they want to set
-it down. A goal is for tending over time; a reminder is for one moment — choose the
-one that fits.
+You can also take on GOALS, things they want to move toward but can't do in one
+moment ("help me get back to running", "sort things out with Sam", "make the spare
+room usable again"). Take one on only when they ASK you to work on it with them.
+Naming a loss is not asking: "I stopped running in March" is a fact to keep and
+nothing more. Keep it and say nothing about tending it, do not offer, do not hint
+that you could, do not ask whether they would like you to. An offer dressed in your
+own vocabulary ("you may ask me to tend that hope alongside you") is still an offer,
+and it is not yours to make. Wait to be asked. When they do ask, use set_goal with
+their own words; you will break it into small steps and help them through it over
+days, returning to it on your own. When they tell you they've done a step ("I set
+the paints out"), use advance_goal to mark it and move to the next. Use list_goals
+to see what you are helping with, and complete_goal when the whole thing is
+finished or they want to set it down. A goal is for tending over time; a reminder
+is for one moment, choose the one that fits.
 
-You keep a JOURNAL — the one thing you can write. Use keep_note to hold a thought they
+You keep a JOURNAL: the one thing you can write. Use keep_note to hold a thought they
 ask you to keep, or to record something you found or worked out; use read_journal to
 look back. It is append-only: writing never erases.
 
-When something needs to be WORKED OUT precisely — a calculation, date math, parsing or
-transforming data — use run_python: write a short snippet that prints the answer, and
+When something needs to be WORKED OUT precisely: a calculation, date math, parsing or
+transforming data, use run_python: write a short snippet that prints the answer, and
 speak from what it returns. Reach for it instead of guessing at numbers.
 
 You also have SPECIALISTS you can hand a bigger task to with delegate: a researcher
@@ -132,20 +138,20 @@ rather than a single quick tool call, delegate it in one sentence and speak from
 they bring back.
 
 Two ways to set the specialists working: delegate waits with the person and answers in
-the same breath — use it for quick tasks. spawn_task sends them off on something LONGER
-and brings the result back later, on your own, without holding up the conversation —
+the same breath, use it for quick tasks. spawn_task sends them off on something LONGER
+and brings the result back later, on your own, without holding up the conversation,
 use it when they ask you to look into something involved. With spawn_task, tell them
 you're on it; you'll return with what you find when it's ready.
 
 For a request that takes more than one step, work it in steps: call a tool, read
-what it returns, then call the next — e.g. list_reminders to see what you hold,
+what it returns, then call the next, e.g. list_reminders to see what you hold,
 then complete_reminder on the right one. Take the steps you need, then answer once
 in your voice.
 
 You can also read the present moment and the wider world when it helps: use the time
 tools for what day or hour it is, and the fetch tool to read a web page or article
-they point you to. If they ask about this project — the code, what you have been
-building or working on lately — use the git tools with repo_path set to "{repo}"
+they point you to. If they ask about this project: the code, what you have been
+building or working on lately, use the git tools with repo_path set to "{repo}"
 (git_log for recent work, git_show to look closely at one change)."""
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -159,7 +165,7 @@ RECENT_WINDOW_MIN = 240.0   # "recent" messages = last 4h, for context richness
 # time). This is the backstop against notification spam.
 MIN_REAL_REACH_GAP_S = 60.0
 # How often the watched feeds are re-fetched, and how many new items are scored
-# per pass — each costs a judge call, so this is a budget, not a limit on reading.
+# per pass: each costs a judge call, so this is a budget, not a limit on reading.
 SOURCE_POLL_S = 900.0
 SOURCE_SCAN_MAX = 8
 # Same idea for idle reflection: never synthesize insights more than once per this
@@ -169,12 +175,12 @@ MIN_REAL_DRIFT_GAP_S = 300.0
 
 def within_reach_floor(last_proactive_at, now, min_gap: float = MIN_REAL_REACH_GAP_S):
     """True if we're still inside the real-time outreach floor and must stay silent.
-    Pure + tested — the notification-spam backstop's core decision."""
+    Pure + tested: the notification-spam backstop's core decision."""
     return last_proactive_at is not None and (now - last_proactive_at) < min_gap
 
 
 # --------------------------------------------------------------------------- #
-# App state — one user, held in memory.
+# App state: one user, held in memory.
 # --------------------------------------------------------------------------- #
 
 @dataclass
@@ -204,7 +210,7 @@ class AppState:
     seen_sources: Optional[object] = None      # delivery keys already sent
     pending_item: Optional[object] = None      # scored, unsent, waiting for a tick
     # The whole last scoring pass, winners and rejects alike. The rejecting is the
-    # interesting half — it is what separates a companion from a feed reader — and
+    # interesting half: it is what separates a companion from a feed reader: and
     # until now only the winner was ever visible, in a log line.
     last_scan: list = field(default_factory=list)
     last_poll_at: Optional[float] = None
@@ -273,13 +279,20 @@ class AppState:
 STATE = AppState()
 
 
-async def _push(role: str, content: str, kind: str) -> None:
-    """Fan a line out to every enabled delivery channel — the open web page, a native
+async def _push(role: str, content: str, kind: str,
+                state: Optional[str] = None) -> None:
+    """Fan a line out to every enabled delivery channel: the open web page, a native
     macOS banner, and (if configured) a Telegram message on your phone. See
-    channels.py; each is best-effort, so one failing never blocks the others."""
+    channels.py; each is best-effort, so one failing never blocks the others.
+
+    `state` is the register the line was written in; the native banner wears it.
+    Callers that know the water state pass it, and the rest fall back to the last
+    register the conversation was in, which is the same continuity the composer
+    uses when a message carries no signal of its own."""
     if STATE.delivery is None:
         STATE.delivery = channels.build_default(STATE.listeners)
-    await STATE.delivery.push(role, content, kind)
+    await STATE.delivery.push(role, content, kind,
+                              state or STATE.current_register)
 
 
 # --------------------------------------------------------------------------- #
@@ -309,7 +322,7 @@ async def _proactive_loop() -> None:
 
         # Circuit breaker: how long since the LAST real outreach. If it's under the
         # floor, the Keeper stays silent this tick no matter what the demo clock
-        # says — capping outreach at ~once per MIN_REAL_REACH_GAP_S of real time.
+        # says: capping outreach at ~once per MIN_REAL_REACH_GAP_S of real time.
         now_real = time.time()
         real_gap = (None if STATE.last_proactive_at is None
                     else now_real - STATE.last_proactive_at)
@@ -317,7 +330,7 @@ async def _proactive_loop() -> None:
 
         # Outreach priority when it's allowed to reach out: purposeful work first
         # (advance a due goal), then the house's routines (a return, long focus,
-        # evening), then — falling through below — restless energy. The first to
+        # evening), then: falling through below: restless energy. The first to
         # speak stands in for this tick's outreach.
         spoke = False
         if can_reach:
@@ -328,7 +341,7 @@ async def _proactive_loop() -> None:
             pass
         elif can_reach:
             # Refresh what is being watched before deciding. Rate-limited inside,
-            # and it only ever writes a candidate — the decision stays in tick().
+            # and it only ever writes a candidate: the decision stays in tick().
             try:
                 await _poll_sources()
             except Exception as exc:  # noqa: BLE001 - a feed must not kill the loop
@@ -353,11 +366,11 @@ async def _proactive_loop() -> None:
                   f"wait={decision.wait_next_s}s", flush=True)
             # Trace the unbidden lines too. The trace answers "why did it say
             # that", and a line the person did not ask for is where that question
-            # actually bites — yet until now only chat turns were recorded, so
+            # actually bites: yet until now only chat turns were recorded, so
             # every autonomous decision was invisible outside the terminal.
             item = STATE.pending_item
             # Only decisions worth reading. Tracing every tick floods the ring with
-            # "did not roll to speak" and pushes real turns out of it — the loop
+            # "did not roll to speak" and pushes real turns out of it: the loop
             # ticks constantly, and most ticks are the Keeper correctly saying
             # nothing. A quiet that was ABOUT something (it had a line and withheld
             # it) is worth keeping; ordinary restraint is not.
@@ -369,8 +382,8 @@ async def _proactive_loop() -> None:
                 STATE.traces.appendleft({
                     "ts": time.time(),
                     "kind": "proactive",
-                    "cue": ("(unbidden — the Keeper decided to speak)" if decision.spoke
-                            else "(unbidden — the Keeper had a line and withheld it)"),
+                    "cue": ("(unbidden, the Keeper decided to speak)" if decision.spoke
+                            else "(unbidden: the Keeper had a line and withheld it)"),
                     "water_state": decision.water_state,
                     "register_note": f"proactive: {decision.reason}",
                     "memory_injected": "",
@@ -445,19 +458,19 @@ async def lifespan(app: FastAPI):
           + (f" (falls back to {fallback})" if primary == "llm" else ""), flush=True)
     # Presence readers fail silently per call (the loop reads every few seconds and
     # must not flood), so say once, here, which of them this machine can actually
-    # provide — otherwise a blind sensor just shows defaults and looks healthy.
+    # provide: otherwise a blind sensor just shows defaults and looks healthy.
     caps = sensors.capabilities()
     live = [n for n, st in caps.items() if st == "live"]
     print(f"[sensors] live: {', '.join(live) if live else 'none'}"
           f" ({len(live)}/{len(caps)})", flush=True)
     for name, status in caps.items():
         if status != "live":
-            print(f"[sensors] {name} unavailable — {status}", flush=True)
+            print(f"[sensors] {name} unavailable, {status}", flush=True)
     STATE.seen_sources = sources.SeenStore()
     feeds = [u for u in os.environ.get("KEEPER_FEEDS", "").split(",") if u.strip()]
     print(f"[sources] watching {len(feeds)} feed(s)"
           + (f"; {len(STATE.seen_sources.keys)} already delivered" if feeds else
-             " — set KEEPER_FEEDS to a comma-separated list to enable"), flush=True)
+             ", set KEEPER_FEEDS to a comma-separated list to enable"), flush=True)
     STATE.current_key = STATE.sessions.most_recent_key()  # resume last on start
     STATE.wake = asyncio.Event()
     # Delivery surfaces: web + native banner always; Telegram if a token is set.
@@ -482,12 +495,12 @@ async def lifespan(app: FastAPI):
                 pass
 
 
-app = FastAPI(title="Rusty Companion — the Keeper", lifespan=lifespan)
+app = FastAPI(title="Rusty Companion: the Keeper", lifespan=lifespan)
 
 # DNS-rebinding defense: only serve requests whose Host is localhost. A malicious
 # website that rebinds its domain to 127.0.0.1 would send its own Host header, so
 # it is refused. This is the main thing standing in for auth on a local, no-login
-# app — do NOT expose this server publicly without real authentication.
+# app: do NOT expose this server publicly without real authentication.
 app.add_middleware(TrustedHostMiddleware,
                    allowed_hosts=["localhost", "127.0.0.1"])
 
@@ -512,7 +525,7 @@ async def chat(body: ChatIn):
     STATE.sessions.append(STATE.current_key, "user", msg, now)
 
     # Retrieve-then-rerank on the user-facing path: hybrid casts wide, the fast model
-    # reranks to the best few. (Background paths use plain hybrid — no per-turn cost.)
+    # reranks to the best few. (Background paths use plain hybrid: no per-turn cost.)
     mem = memory.recall(STATE.store, msg, k=4, embed=STATE.embed,
                         rerank_generate=STATE.fast)
     # current time in the context so the Keeper can turn "tomorrow 9am" -> ISO.
@@ -529,7 +542,7 @@ async def chat(body: ChatIn):
     #
     # The keyword lexicon used to go first, justified as high precision. It is
     # not: it met "go look into watercolor vs gouache" in the register reserved
-    # for grief, because "ache" sits inside "gouache" — and once that was fixed to
+    # for grief, because "ache" sits inside "gouache": and once that was fixed to
     # match on word boundaries it merely failed differently, on "back to" inside
     # "get back to me". Those are word SENSE, which a word list cannot see. First
     # in the chain it had veto over a classifier three times more accurate.
@@ -537,7 +550,7 @@ async def chat(body: ChatIn):
     # It stays, underneath, because with no key and no network it and the anchor
     # classifier are the only register detection there is.
     #
-    # The model returning None is a DECISION — it read the message as neutral —
+    # The model returning None is a DECISION: it read the message as neutral:
     # and is honoured. Only an unavailable model falls through.
     signal = None
     if STATE.llm_mood_signal is not None:
@@ -559,8 +572,8 @@ async def chat(body: ChatIn):
     water, register_note = _resolve_turn(msg, mem, water)
 
     # Native action tools (reminders + goals + journal + delegate) are always
-    # available; MCP tools join when configured. Reaching for a tool — or handing a
-    # task to a specialist sub-agent — is the passive/agentic path.
+    # available; MCP tools join when configured. Reaching for a tool: or handing a
+    # task to a specialist sub-agent: is the passive/agentic path.
     providers = [native_tools.NativeTools(
         STATE.reminders, goals=STATE.goals,
         planner_generate=STATE.fast or STATE.generate, journal=STATE.journal,
@@ -582,7 +595,7 @@ async def chat(body: ChatIn):
                 system, msg, providers=providers, model=TOOL_MODEL, max_rounds=6,
                 trace=tool_trace)
             # Tool answers come back plain (a changelog, a file dump). Pass them back
-            # through the Keeper's voice — preserving every fact — so a tool-grounded
+            # through the Keeper's voice: preserving every fact: so a tool-grounded
             # reply still sounds like the Keeper, not a report.
             if reply and reply.strip():
                 reply = await asyncio.to_thread(
@@ -606,7 +619,7 @@ async def chat(body: ChatIn):
     # Note: the reply is returned in the HTTP response and rendered from there;
     # SSE (/events) carries ONLY unbidden proactive lines, so nothing double-renders.
 
-    # Per-turn TRACE — the whole point is answering "why did it say that?" fast: what
+    # Per-turn TRACE: the whole point is answering "why did it say that?" fast: what
     # memory was injected, the register, which tools fired, the reply. Ring-buffered.
     STATE.traces.appendleft({
         "ts": now,
@@ -614,8 +627,8 @@ async def chat(body: ChatIn):
         "water_state": water,
         "mood_signal": signal,
         # WHY that register, not just which. The trace exists to answer "why did it
-        # say that", and until now the most interesting register decision — turn
-        # being granted or refused by the store — only reached stdout.
+        # say that", and until now the most interesting register decision: turn
+        # being granted or refused by the store: only reached stdout.
         "register_note": register_note or (
             f"classified {signal}" if signal else "inherited (no signal in this message)"),
         "memory_injected": mem,
@@ -626,7 +639,7 @@ async def chat(body: ChatIn):
         "fell_back": fell_back,
     })
 
-    # Distill this exchange into the drawers, off the response path — but not a
+    # Distill this exchange into the drawers, off the response path: but not a
     # failed turn, which carries no real reply to learn from.
     if reply != ERROR_LINE:
         asyncio.create_task(_distill_async(msg, reply))
@@ -663,7 +676,7 @@ async def _maybe_routine(pres: sensors.Presence) -> bool:
                           "ts": time.time()})
     if STATE.current_key is not None:
         STATE.sessions.append(STATE.current_key, "assistant", result.text)
-    await _push("assistant", result.text, "proactive")
+    await _push("assistant", result.text, "proactive", water)
     print(f"[routine] {routine.key} spoke", flush=True)
     return True
 
@@ -673,7 +686,7 @@ def _goal_check_interval() -> float:
 
     tasks.DEFAULT_CHECK_INTERVAL_S is 6 real hours. The `speed` knob compresses the
     battery and the drift clock but not this one, so before this existed a goal went
-    quiet for 6 real hours after its first step — which meant the documented
+    quiet for 6 real hours after its first step: which meant the documented
     "crank speed to see nudges/autonomous execution" trigger could never fire, and
     a person-step was never nudged in a demo. Compress it the same way drift is.
     """
@@ -684,7 +697,7 @@ def _recent_lines(limit: int = proactive.REPEAT_WINDOW) -> list:
     """The last few things the Keeper actually said, newest last.
 
     Read from STATE.history, which every delivery already appends to, so this adds
-    no state of its own. It resets when the process does — acceptable, because the
+    no state of its own. It resets when the process does, acceptable, because the
     repetition it guards against comes from the composer being handed identical
     input tick after tick within a run.
     """
@@ -840,21 +853,24 @@ async def _maybe_advance_goal() -> bool:
     return await _nudge_goal_step(goal, step, water)
 
 
-async def _deliver_proactive(text: str) -> None:
-    """Record + fan out one unbidden line (history, session, all channels)."""
+async def _deliver_proactive(text: str, state: Optional[str] = None) -> None:
+    """Record + fan out one unbidden line (history, session, all channels).
+
+    `state` is the register it was composed in, so the native banner can wear
+    the matching Keeper."""
     STATE.last_proactive_at = time.time()
     STATE.proactive_at.append(STATE.last_proactive_at)
     STATE.history.append({"role": "assistant", "content": text, "ts": time.time()})
     if STATE.current_key is not None:
         STATE.sessions.append(STATE.current_key, "assistant", text)
-    await _push("assistant", text, "proactive")
+    await _push("assistant", text, "proactive", state)
 
 
 async def _nudge_goal_step(goal, step, water) -> bool:
-    """A [person] step: help with or invite it, but DON'T complete it — a person step
+    """A [person] step: help with or invite it, but DON'T complete it, a person step
     is only done when they report it (advance_goal). Holds the thread, returns it."""
     context = (f"You are helping them move toward a goal of theirs: \"{goal.title}\". "
-               f"Gently help with, or invite, just this next step — do not list the "
+               f"Gently help with, or invite, just this next step, do not list the "
                f"whole plan: {step.text}")
     result = await asyncio.to_thread(
         compose.compose, "proactive", water,
@@ -872,7 +888,7 @@ async def _nudge_goal_step(goal, step, water) -> bool:
               f"/{goal.progress()[1]}: {step.text[:44]}", flush=True)
         return False
     STATE.goals.touch(goal, _goal_check_interval())   # nudge, don't complete
-    await _deliver_proactive(result.text)
+    await _deliver_proactive(result.text, water)
     done, total = goal.progress()
     print(f"[goal] {goal.id} nudged {done}/{total}: {step.text[:50]}", flush=True)
     return True
@@ -896,7 +912,7 @@ async def _execute_goal_step(goal, step, water) -> bool:
         return False
     result = (res.result or "").strip()
     if not result:
-        step.actor = "person"            # hand it back — nudge them next time
+        step.actor = "person"            # hand it back, nudge them next time
         STATE.goals.touch(goal, _goal_check_interval())
         print(f"[goal] {goal.id} sub-agent found nothing, handed back: "
               f"{step.text[:40]}", flush=True)
@@ -907,7 +923,7 @@ async def _execute_goal_step(goal, step, water) -> bool:
         memory=mem)
     STATE.goals.advance(goal, note=f"[{res.who()}] {result[:130]}",   # who did it
                         interval_s=_goal_check_interval())
-    await _deliver_proactive(voiced)
+    await _deliver_proactive(voiced, water)
     done, total = goal.progress()
     print(f"[goal] {goal.id} EXECUTED via {res.who()} {done}/{total}: "
           f"{step.text[:45]}", flush=True)
@@ -916,7 +932,7 @@ async def _execute_goal_step(goal, step, water) -> bool:
 
 async def _answer_as_keeper(text: str) -> str:
     """Answer an incoming message (e.g. from a peer agent over A2A) as the Keeper, with
-    its tools — but a SAFE subset: no delegate/spawn, so a peer can't spawn work."""
+    its tools, but a SAFE subset: no delegate/spawn, so a peer can't spawn work."""
     water = STATE.current_register or voice_eval.detect_state(text)
     mem = memory.recall(STATE.store, text, k=4, embed=STATE.embed)
     system = persona.build_system_prompt("passive", water, memory=mem)
@@ -942,12 +958,12 @@ async def _spawn_background(description: str) -> str:
     bg = STATE.background.add(description)
     asyncio.create_task(_run_background(bg.id, description))
     print(f"[bg] {bg.id} started: {description[:60]}", flush=True)
-    return (f"started working on it in the background (id {bg.id}) — tell them you're "
+    return (f"started working on it in the background (id {bg.id}), tell them you're "
             f"on it and will come back with what you find")
 
 
 async def _run_background(bg_id: str, description: str) -> None:
-    """Run a background delegation to completion, then deliver the result later — as
+    """Run a background delegation to completion, then deliver the result later, as
     an unbidden line + native banner, like a kept promise (bypasses the restlessness
     floor, since the person asked for this)."""
     sub_native = native_tools.NativeTools(
@@ -970,7 +986,7 @@ async def _run_background(bg_id: str, description: str) -> None:
         compose.revoice,
         f"You asked me to look into this: {description}\n\nHere is what I found: {result}",
         water, generate=STATE.fast or STATE.generate)
-    await _deliver_proactive(voiced)
+    await _deliver_proactive(voiced, water)
     print(f"[bg] {bg_id} delivered", flush=True)
 
 
@@ -994,7 +1010,7 @@ async def _maybe_drift_note() -> None:
 def _resolve_turn(msg: str, mem: str, water: str) -> tuple:
     """Make "turn" reachable ONLY through the store, in both directions.
 
-    persona.py calls it the rarest register — the ice going out — and says to
+    persona.py calls it the rarest register: the ice going out, and says to
     spend it almost never. Chosen from the message alone it fired on "hello",
     because a single sentence cannot contain a reversal: "the ice is going out" is
     a comparison between two points in time, and only the store holds both. So:
@@ -1016,9 +1032,9 @@ def _resolve_turn(msg: str, mem: str, water: str) -> tuple:
         print(f"[register] turn earned by: {earned.text[:60]!r}", flush=True)
         return "turn", note
     if water == "turn":
-        note = ("turn not earned — nothing the store remembers changed, "
+        note = ("turn not earned: nothing the store remembers changed, "
                 "so it falls back to tidal")
-        print("[register] turn not earned by the store — falling back to tidal",
+        print("[register] turn not earned by the store, falling back to tidal",
               flush=True)
         return "tidal", note
     return water, ""
@@ -1209,12 +1225,12 @@ async def new_conversation():
 
 
 # --------------------------------------------------------------------------- #
-# A2A — the Keeper as an agent other agents can discover and consult.
+# A2A: the Keeper as an agent other agents can discover and consult.
 # --------------------------------------------------------------------------- #
 
 @app.get(a2a.WELL_KNOWN)
 async def agent_card(req: Request):
-    """The Keeper's A2A Agent Card — how a peer agent discovers what it can do."""
+    """The Keeper's A2A Agent Card, how a peer agent discovers what it can do."""
     return a2a.build_agent_card(str(req.base_url))
 
 
@@ -1251,7 +1267,7 @@ async def a2a_endpoint(req: Request):
 
 @app.get("/trace")
 async def trace():
-    """The last turns' decisions — memory injected, register, tools fired, reply."""
+    """The last turns' decisions, memory injected, register, tools fired, reply."""
     return list(STATE.traces)
 
 
@@ -1272,6 +1288,6 @@ async def root():
 
 @app.get("/info")
 async def info():
-    return {"name": "Rusty Companion — the Keeper",
+    return {"name": "Rusty Companion, the Keeper",
             "endpoints": ["/chat", "/events", "/state", "/config"],
             "facts_kept": len(STATE.store.facts)}

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>The Keeper — trace</title>
+<title>The Keeper, trace</title>
 <style>
   :root {
     --deep:#081316; --sea:#0d2327; --surface:#14383a; --foam:#cfe0da;
@@ -52,10 +52,10 @@
 </head>
 <body>
   <div class="wrap">
-    <h1>the keeper — trace</h1>
+    <h1>the keeper, trace</h1>
     <div class="sub">why it said what it said · newest first · refreshes every 2s ·
       <a href="/dashboard">dashboard</a> · <a href="/">the water</a></div>
-    <div id="turns"><div class="empty">no turns yet — say something in the chat.</div></div>
+    <div id="turns"><div class="empty">no turns yet, say something in the chat.</div></div>
     <div class="foot">the last 25 turns are kept in memory</div>
   </div>
 <script>
@@ -77,8 +77,8 @@
       : '<div class="box empty">no tools called ('+esc(t.path)+' path)</div>';
     const mem = (t.memory_injected||"").trim()
       ? '<div class="box">'+esc(t.memory_injected)+'</div>'
-      : '<div class="box empty">nothing injected — no relevant memory</div>';
-    // Why that register — the trace's whole job. "turn" being granted or refused by
+      : '<div class="box empty">nothing injected, no relevant memory</div>';
+    // Why that register: the trace's whole job. "turn" being granted or refused by
     // the store is the most interesting decision the Keeper makes, and it used to
     // reach the terminal only.
     const why = (t.register_note||"").trim()
@@ -90,7 +90,7 @@
       ? '<div class="row"><div class="label">what it noticed</div><div class="box">'
         + esc(t.source_item.title)
         + '<br><span class="dim">relevance '+esc(t.source_item.relevance)
-        + ' — because it keeps: '+esc(t.source_item.because||"—")+'</span>'
+        + ', because it keeps: '+esc(t.source_item.because||"-")+'</span>'
         + (t.source_item.url ? '<br><a href="'+esc(t.source_item.url)+'" target="_blank">'+esc(t.source_item.url)+'</a>' : '')
         + '</div></div>'
       : '';
@@ -103,7 +103,7 @@
       + '<div class="cue">'+unbidden+' '+esc(t.cue)+'</div>'
       + '<div class="meta"><span>'+fmtTime(t.ts)+'</span>'
         + '<span class="tag">register: '+esc(t.water_state)+'</span>'
-        + '<span>mood: '+esc(t.mood_signal||"—")+'</span>'
+        + '<span>mood: '+esc(t.mood_signal||"-")+'</span>'
         + '<span>path: '+esc(t.path)+'</span>'
         + gates
         + (t.score!=null?'<span>voice: '+esc(t.score)+'</span>':'')
@@ -120,7 +120,7 @@
   async function tick(){
     let data; try { data = await (await fetch("/trace")).json(); } catch(e){ return; }
     const el = document.getElementById("turns");
-    if (!data.length){ el.innerHTML = '<div class="empty">no turns yet — say something in the chat.</div>'; return; }
+    if (!data.length){ el.innerHTML = '<div class="empty">no turns yet, say something in the chat.</div>'; return; }
     el.innerHTML = data.map(turn).join("");
   }
   tick(); setInterval(tick, 2000);

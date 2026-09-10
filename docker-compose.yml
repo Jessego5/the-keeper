@@ -6,12 +6,12 @@ services:
     ports:
       - "8790:8790"
     env_file:
-      # OPENAI_API_KEY lives here (gitignored), and KEEPER_FEEDS — the
+      # OPENAI_API_KEY lives here (gitignored), and KEEPER_FEEDS: the
       # comma-separated feeds to watch. Unset means sources are off.
       - backend/.env
     volumes:
       # The ONLY host path exposed. Everything else the container can read is its
-      # own image — which is the point: run_python cannot reach the host filesystem,
+      # own image: which is the point: run_python cannot reach the host filesystem,
       # and the API key arrives as an env var above rather than as a file, so the
       # stripped child environment in sandbox.py leaves it nothing to read.
       - ./memory_store:/app/memory_store   # persist facts + reflections

@@ -1,5 +1,7 @@
-"""Tier 1 — the register replay harness (replay_register.py). No key, no model:
-these pin the extraction and the shape of what it emits, not any classification.
+"""
+These are the Tier 1 tests for the register replay harness (replay_register.py). No key,
+no model: these pin the extraction and the shape of what it emits, not any
+classification.
 """
 import json
 
@@ -45,7 +47,7 @@ def test_a_corrupt_session_file_is_skipped_not_fatal(sessions):
 
 def test_candidates_leave_the_label_empty():
     """The predictions come from the system under test, so a candidate must arrive
-    UNLABELLED — promoting its own guesses would be marking its own homework."""
+    UNLABELLED: promoting its own guesses would be marking its own homework."""
     rows = rr.classify_both(["i feel stuck"])
     assert rows[0]["predicted"] in (None, "frozen", "tidal", "turn")
     assert set(rows[0]) == {"text", "keyword", "model2vec", "predicted", "why"}

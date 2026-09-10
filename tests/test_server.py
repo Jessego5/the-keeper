@@ -1,9 +1,11 @@
-"""Tier 2 — the running app (server.py): chat, state, and the reach-out path.
+"""
+These are the Tier 2 tests for the running app (server.py): chat, state, and the
+reach-out path.
 
 Drives the real ASGI app (lifespan + background proactive loop) over httpx, with
 the model forced to the offline stub and MCP disabled, so these run with no key,
 no cost, and deterministically. The headline test is the reach-out: crank the
-battery and assert a proactive line is delivered over SSE — the mechanism behind
+battery and assert a proactive line is delivered over SSE: the mechanism behind
 the notifications.
 """
 import asyncio
@@ -37,7 +39,7 @@ async def test_rejects_foreign_host(client):
     # DNS-rebinding defense: a request whose Host isn't localhost/127.0.0.1 (as a
     # malicious website's rebind would send) must be refused, not served.
     r = await client.get("/state", headers={"host": "evil.example.com"})
-    assert r.status_code == 400, "foreign Host was served — DNS-rebinding open"
+    assert r.status_code == 400, "foreign Host was served, DNS-rebinding open"
 
 
 async def test_allows_localhost(client):
@@ -206,7 +208,7 @@ def _chain(msg, *, keyword, llm, local):
 
 def test_the_model_outranks_the_lexicon():
     """The keyword layer used to go first, justified as high precision. Measured on
-    real messages it fires 9 times in 32 and is right 5 of those — it met "go look
+    real messages it fires 9 times in 32 and is right 5 of those: it met "go look
     into watercolor vs gouache" as grief, because "ache" sits inside "gouache".
     First in the chain it had veto over a classifier three times more accurate."""
     assert _chain("go look into gouache", keyword=lambda m: "frozen",
@@ -219,7 +221,7 @@ def test_the_model_is_used_when_present():
 
 
 def test_a_failing_model_falls_back_to_the_local_classifier():
-    """A 429 or an outage must not cost register detection entirely — the local
+    """A 429 or an outage must not cost register detection entirely: the local
     Model2Vec path is why this still works with no key and no network."""
     def boom(m): raise RuntimeError("429")
     assert _chain("x", keyword=lambda m: None, llm=boom,
@@ -240,7 +242,7 @@ def test_all_layers_abstaining_means_inherit():
 def test_the_models_abstention_is_a_decision_not_a_gap():
     """Regression, caught live: the model answering None means it read the message
     as NEUTRAL. Falling through to the weaker classifier on None put "go look into
-    watercolor vs gouache" back to frozen — the exact error the model was brought
+    watercolor vs gouache" back to frozen: the exact error the model was brought
     in to fix. Only an unavailable model may fall back."""
     assert _chain("go look into watercolor vs gouache", keyword=lambda m: None,
                   llm=lambda m: None, local=lambda m: "frozen") is None

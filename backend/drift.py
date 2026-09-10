@@ -1,13 +1,14 @@
-"""drift.py — the Keeper's inner life.
+"""
+This is the Keeper's inner life.
 
 When the Keeper is idle (a proactive tick chose silence), it occasionally drifts.
 Two modes:
 
-  reflect()    — a single private note in the Keeper's voice (the quiet hum).
-  synthesize() — the Generative Agents reflection step (Park et al., 2023): from
+  reflect(): a single private note in the Keeper's voice (the quiet hum).
+  synthesize(): the Generative Agents reflection step (Park et al., 2023): from
                  what it currently holds, generate the most salient high-level
                  QUESTIONS, retrieve the facts relevant to each, and write grounded
-                 INSIGHTS — higher-level understanding that follows *from* the facts
+                 INSIGHTS: higher-level understanding that follows *from* the facts
                  rather than restating them. Insights are stored back as retrievable
                  memories (kind='insight'), exactly as reflections re-enter the
                  memory stream in the paper.
@@ -106,12 +107,12 @@ no numbering, no preamble."""
 
 _INSIGHT_SYSTEM = """You are the private reflective mind of a companion. Given a \
 question and the relevant things it keeps about the person, write ONE insight: a \
-higher-level understanding that FOLLOWS FROM those facts — a pattern, a tension, a \
-likely need — not a restatement of any single fact. Ground it only in what is given; \
+higher-level understanding that FOLLOWS FROM those facts: a pattern, a tension, a \
+likely need, not a restatement of any single fact. Ground it only in what is given; \
 never invent events. Write it as the companion's own quiet conclusion about the \
 person, one sentence (e.g. "They keep circling back to what they left unfinished"). \
-The person's gender is NOT known. Always write about them as "they/them" — never "he", \
-"she", "his" or "her" — unless their own words established it, in which case use what \
+The person's gender is NOT known. Always write about them as "they/them", never "he", \
+"she", "his" or "her", unless their own words established it, in which case use what \
 they said. Inventing a gender is inventing a fact about them, which you must never do. \
 Prefix it with an importance from 1 to 10 in brackets, e.g. [7]. If the facts support \
 no honest higher-level read, output exactly NONE."""
@@ -125,8 +126,8 @@ def synthesize(store: memory.MemoryStore, generate: compose.Generator,
                *, max_questions: int = 3) -> list[memory.Fact]:
     """Run one reflection cycle, storing grounded insights as retrievable memories.
 
-    Returns the insight Facts created (already stored, embedded, and — if a log is
-    given — appended to the reflection log). Returns [] when there is too little to
+    Returns the insight Facts created (already stored, embedded, and, if a log is
+    given: appended to the reflection log). Returns [] when there is too little to
     reflect on (< _MIN_FACTS_TO_SYNTHESIZE facts); the caller falls back to reflect().
     """
     seed = memory.rank_facts(store.facts, "", k=12, embed=embed)
@@ -155,7 +156,7 @@ def synthesize(store: memory.MemoryStore, generate: compose.Generator,
         # The same water-poetry guard distill uses. Reflection reaches the store by a
         # different door, so the filter added there never covered it: lines like "The
         # tide brought back what you gave the water in spring" were landing as
-        # kind=insight — the Keeper's own voice stored as a read of the person, then
+        # kind=insight: the Keeper's own voice stored as a read of the person, then
         # recalled back to it as something it had understood.
         if memory._is_junk_fact(text):
             continue

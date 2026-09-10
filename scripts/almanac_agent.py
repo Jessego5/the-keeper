@@ -1,32 +1,27 @@
-"""almanac_agent.py — a small A2A peer for the Keeper to actually talk to.
+"""
+This is a small A2A peer for the Keeper to actually talk to.
 
 The Keeper implements both halves of A2A, but until now the only agent it could
 consult was itself. A loopback proves the plumbing and nothing else: two halves of
 one module agreeing about a format they both define.
 
-This is a genuinely separate agent. It shares no code with backend/a2a.py — the
-JSON-RPC envelope here is written from the spec, not imported — so a successful
+This is a genuinely separate agent. It shares no code with backend/a2a.py: the
+JSON-RPC envelope here is written from the spec, not imported, so a successful
 consult is two independent implementations interoperating, which is the only thing
 that actually demonstrates a protocol.
 
-It is deliberately unlike the Keeper:
+It is deliberately unlike the Keeper. It has no memory of anyone, no voice, no
+proactivity and no model behind it, answering instead from a fixed reference table
+that makes it deterministic and free. It knows things the Keeper does not, which
+is what makes consulting it meaningful rather than decorative. And it needs no
+auth because it holds nothing private, where the Keeper's own /a2a requires a
+bearer token precisely because answering there means reading someone's memory: two
+agents, two honest postures.
 
-  * it has no memory of anyone, no voice, no proactivity, and no model behind it
-  * it answers from a fixed reference table, so it is deterministic and free
-  * it knows things the Keeper does not, which is what makes consulting it
-    meaningful rather than decorative
-  * it needs no auth, because it holds nothing private. The Keeper's own /a2a
-    requires a bearer token precisely because answering means reading someone's
-    memory. Two agents, two honest postures.
-
-Run:
-    .venv/bin/python -m uvicorn scripts.almanac_agent:app --port 8791
-
-Then, from the Keeper:
-    consult the agent at http://localhost:8791 and ask what gouache is
-
-That requires the Keeper to allow the origin, since it is loopback:
-    KEEPER_A2A_ALLOW=http://localhost:8790,http://localhost:8791
+Run it with .venv/bin/python -m uvicorn scripts.almanac_agent:app --port 8791, then ask
+the Keeper to consult the agent at http://localhost:8791 and tell you what gouache is.
+Because that address is loopback, the Keeper will only reach it if the origin is
+allowed, with KEEPER_A2A_ALLOW=http://localhost:8790,http://localhost:8791.
 """
 
 from __future__ import annotations

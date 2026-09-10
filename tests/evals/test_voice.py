@@ -1,4 +1,5 @@
-"""Tier 3 — LLM behavior evals. Needs OPENAI_API_KEY; run explicitly:
+"""
+These are the Tier 3 LLM behavior evals. Needs OPENAI_API_KEY; run explicitly:
 
     .venv/bin/pytest tests/evals -m eval
 
@@ -20,7 +21,7 @@ pytestmark = [
                        reason="needs OPENAI_API_KEY"),
 ]
 
-# Phrases that would mean the Keeper invented a fresh external event — the
+# Phrases that would mean the Keeper invented a fresh external event: the
 # 'your brother reached out' hallucination. It may reference the PAST, never claim
 # these happened now.
 EVENT_CLAIMS = ("reached out", "has reached", "just called", "just texted",
@@ -48,7 +49,7 @@ def test_voice_fidelity_stays_high(gen):
 
 
 def test_proactive_system_mostly_stays_quiet(gen):
-    # Silence is the LOOP's job (the probabilistic roll), not compose's — the
+    # Silence is the LOOP's job (the probabilistic roll), not compose's: the
     # model, asked to speak, usually will. So we assert the SYSTEM property: under
     # modest restlessness the tick mostly stays quiet. Reaching out is earned.
     import random
@@ -59,7 +60,7 @@ def test_proactive_system_mostly_stays_quiet(gen):
     awake = sensors.Presence(idle_seconds=600, screen_locked=False, frontmost_app="x")
     spoke = sum(proactive.tick(st, generate=g, fast_model=fast, presence=awake,
                                rng=random.Random(s)).spoke for s in range(12))
-    assert spoke <= 7, f"reached out {spoke}/12 times — too eager"
+    assert spoke <= 7, f"reached out {spoke}/12 times, too eager"
 
 
 def test_never_invents_events(gen, tmp_path):
@@ -98,10 +99,10 @@ def test_semantic_memory_recalls_without_shared_words(tmp_path):
         store.add(t, k, embed=emb)
     assert "brother" in memory.recall(store, "tell me about my sibling", k=1, embed=emb)
     assert "painter" in memory.recall(store, "what do i do for work", k=1, embed=emb)
-    # keyword recall would fail here — prove it. Neither cue shares a word with the
+    # keyword recall would fail here: prove it. Neither cue shares a word with the
     # fact it should find, so the keyword-only path (no embedder) surfaces neither.
     # This previously read `assert recall(...) and "brother" not in ...`, which
-    # required keyword recall to RETURN something — the opposite of what the comment
+    # required keyword recall to RETURN something: the opposite of what the comment
     # and the docstring claim. It never ran, because the semantic assert above it
     # was failing first.
     assert "brother" not in memory.recall(store, "tell me about my sibling", k=1).lower()

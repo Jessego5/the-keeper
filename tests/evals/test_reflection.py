@@ -1,4 +1,5 @@
-"""Tier 3 — reflection, on the real model. Run explicitly:
+"""
+These are the Tier 3 tests for reflection, on the real model. Run explicitly:
 
     .venv/bin/pytest tests/evals -m eval
 
@@ -26,7 +27,7 @@ pytestmark = [
 TRIALS = 4
 GENDERED = re.compile(r"\b(he|she|his|her|him|hers)\b", re.I)
 
-# Deliberately gender-free, and about a family — the context that drew it out live.
+# Deliberately gender-free, and about a family: the context that drew it out live.
 FACTS = """- Is a painter.
 - Has a brother named Sam.
 - The person's mother is in the hospital.
@@ -56,7 +57,7 @@ def test_insights_never_invent_a_gender(gen):
 
 
 def test_insights_still_say_something(gen):
-    """Guard the other direction — the gender ban must not scare it into NONE."""
+    """Guard the other direction: the gender ban must not scare it into NONE."""
     outs = [(gen(drift._INSIGHT_SYSTEM,
                  f"Question: {QUESTIONS[0]}\n\nWhat you keep:\n{FACTS}") or "").strip()
             for _ in range(TRIALS)]

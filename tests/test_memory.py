@@ -1,4 +1,6 @@
-"""Tier 1 — the drawers (memory.py): recall, dedup, persistence."""
+"""
+These are the Tier 1 tests for the drawers (memory.py): recall, dedup, persistence.
+"""
 import pytest
 import memory
 
@@ -67,7 +69,7 @@ _TOPICS = ["brother", "painter", "age"]
 
 
 def _fake_embed(texts):
-    """One-hot topic vectors, with query synonyms mapped to the same topic — so
+    """One-hot topic vectors, with query synonyms mapped to the same topic, so
     'sibling'~brother and 'work'~painter share a dimension without sharing words."""
     out = []
     for t in texts:
@@ -379,7 +381,7 @@ def test_consolidate_leaves_insights_untouched(store):
 # --- warming: the reversal that earns the `turn` register --- #
 
 def _warming_judge(system, user):
-    """Fake judge over a "OLD: ...\nNEW: ..." prompt. Reads only the NEW line —
+    """Fake judge over a "OLD: ...\nNEW: ..." prompt. Reads only the NEW line,
     an earlier version matched "again" anywhere and so called a LOSS warmer,
     because the fact being replaced still contained the word."""
     new_line = ""

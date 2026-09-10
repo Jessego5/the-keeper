@@ -3,7 +3,7 @@
 One story, not a feature list: a person who stopped painting, starts again, and is
 tended. Every feature earns its place by belonging to that arc.
 
-**Run on the host** (`./run.sh`), not in Docker — the container is Linux, so it
+**Run on the host** (`./run.sh`), not in Docker: the container is Linux, so it
 loses presence sensing and the native banner, which are two of the beats below.
 Start from a clean store:
 
@@ -16,11 +16,11 @@ Set `KEEPER_FEEDS` in `backend/.env` first, and `DISCORD_WEBHOOK_URL` if you wan
 the notification beat visible on screen rather than in the corner of your desktop.
 
 Two windows: **chat** at `/`, and **dashboard** at `/dashboard`. Keep the trace
-(`/trace-view`) in a third tab — it is the payoff, not the opener.
+(`/trace-view`) in a third tab: it is the payoff, not the opener.
 
 ---
 
-## Act 1 — It learns you  *(~40s)*
+## Act 1: It learns you  *(~40s)*
 
 ```
 i stopped painting in march
@@ -35,7 +35,7 @@ actually i started painting again
 ```
 how's my painting going?
 ```
-> The reply is in the **turn** register — the ice going out. Terminal shows
+> The reply is in the **turn** register: the ice going out. Terminal shows
 > `[register] turn earned by: 'Started painting again.'`
 
 Then, to show it cannot be talked into it:
@@ -43,9 +43,9 @@ Then, to show it cannot be talked into it:
 ```
 everything is finally turning around for me
 ```
-> The classifier reads that as **turn** — the words are right there. The reply comes
+> The classifier reads that as **turn**: the words are right there. The reply comes
 > back **tidal**, and the terminal says
-> `turn not earned by the store — falling back to tidal`.
+> `turn not earned by the store, falling back to tidal`.
 >
 > **The person said the words of a turn and the Keeper declined them**, because
 > nothing it remembers actually changed. Contrast with the line before, where the
@@ -58,19 +58,19 @@ Ask "how is my painting going?" too fast and the reversal is not in the store ye
 so `turn` is not earned and the beat silently becomes an ordinary tidal reply. This
 is the one place in the demo where typing quickly loses you the moment.
 
-## Act 2 — It works on things with you  *(~60s)*
+## Act 2: It works on things with you  *(~60s)*
 
 ```
 help me get back to painting, work on it with me
 ```
 > Dashboard: a **goal** appears with 5 steps and `next_actor`. Some steps are
-> labelled for the Keeper, some for the person — it does not hand you a to-do list
+> labelled for the Keeper, some for the person: it does not hand you a to-do list
 > and walk away.
 
 ```
 find a typical price for a beginner watercolour set and work out the cost per week over a year
 ```
-> Trace: **search → fetch → run_python**. A real price, and a *computed* figure —
+> Trace: **search → fetch → run_python**. A real price, and a *computed* figure,
 > not a guessed one.
 
 ```
@@ -85,7 +85,7 @@ go and research watercolour versus gouache for a beginner, take your time and ge
 > Naming the delay ("take your time", "later") spawned 4 times out of 4. Both are
 > reasonable readings of the request, so this is a script fix, not a bug.
 
-## Act 3 — It holds things  *(~20s)*
+## Act 3: It holds things  *(~20s)*
 
 ```
 remind me to gesso the canvas tomorrow at 9am
@@ -97,7 +97,7 @@ keep a note: the gallery show is in July
 ```
 > Its one write. Append-only.
 
-## Act 4 — It has judgment about the world  *(~40s)*
+## Act 4: It has judgment about the world  *(~40s)*
 
 Terminal, from the poll:
 
@@ -137,7 +137,7 @@ to speak anyway; only *worth interrupting* lets the outside world make it speak.
 The `because` is the fact it turned on, copied from the store. On the silent rows
 it is empty, because nothing it keeps is the reason.
 
-## Act 5 — Then close the browser  *(~60s)*
+## Act 5: Then close the browser  *(~60s)*
 
 ```bash
 curl -s -X POST localhost:8790/config -H 'content-type: application/json' \
@@ -151,9 +151,9 @@ because the 60s real-time floor cannot be cranked away.
 
 **Close the browser.** One crank makes everything autonomous fire at once:
 
-- a **native banner** arrives with the Keeper's face — telling you about the
+- a **native banner** arrives with the Keeper's face, telling you about the
   painting show, *because* it knows you paint
-- `[goal] … EXECUTED via researcher` — it takes its own step, with tools
+- `[goal] … EXECUTED via researcher`: it takes its own step, with tools
 - possibly `[goal] … nudged`, inviting you to take yours. **Do not promise this
   one.** A nudge goes through the ordinary proactive composer, which may choose
   silence, and in a full rehearsal it declined every time inside four minutes.
@@ -167,23 +167,23 @@ Reset when you are done:
 curl -s -X POST localhost:8790/config -H 'content-type: application/json' -d '{"speed":1}'
 ```
 
-## Act 6 — Why it said any of it  *(~40s)*
+## Act 6: Why it said any of it  *(~40s)*
 
 Open **`/trace-view`**. Per turn: memory injected, the register and why, every tool
 call with arguments and results, and the reply.
 
-This is the credibility shot. Not "it said something apt" — *here is the fact that
+This is the credibility shot. Not "it said something apt", *here is the fact that
 made it worth saying.*
 
 Finish on the **dashboard**, now fully populated: energy and speak-probability, facts
 and changes and insights, the goal's progress, the house (idle, screen, focused app),
 reminders held.
 
-## Act 7 — It is an agent, not just an app  *(~25s)*
+## Act 7: It is an agent, not just an app  *(~25s)*
 
 Open **`localhost:8790/.well-known/agent.json`** in a tab.
 > An **Agent Card**: name, skills, and an endpoint. This is the server half of
-> A2A — other agents can discover the Keeper and call it.
+> A2A, other agents can discover the Keeper and call it.
 
 Start the peer first, in another terminal:
 
@@ -194,7 +194,7 @@ Start the peer first, in another terminal:
 It is **The Almanac**: a painter's reference with no memory, no voice and no model
 behind it, sharing no code with the Keeper's own A2A module. Show its card at
 `localhost:8791/.well-known/agent.json` beside the Keeper's, and note it asks for
-no auth while the Keeper's requires a token — because answering there means
+no auth while the Keeper's requires a token, because answering there means
 reading someone's memory.
 
 Then, in chat:
@@ -224,7 +224,7 @@ changes, and a machine that speaks first with the browser shut.
 
 ## Rehearsal notes
 
-- Act 5 needs the **60s real-time floor** to pass between outreaches — that gap is
+- Act 5 needs the **60s real-time floor** to pass between outreaches: that gap is
   deliberate and cannot be cranked away. Plan for a pause, or cut around it.
 - The register is **inherited** on neutral messages, so a `tidal` reading after a
   question is continuity, not a misread. Say so if it shows.

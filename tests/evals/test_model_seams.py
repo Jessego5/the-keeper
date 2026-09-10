@@ -1,4 +1,6 @@
-"""Tier 3 — the remaining places a unit test hands the code a FAKE model.
+"""
+These are the Tier 3 tests for the remaining places a unit test hands the code a FAKE
+model.
 
 Three bugs this week lived at exactly such a seam: distill, the supersede judge,
 and the goal matcher. In each case the machinery was fine and the boundary was
@@ -10,7 +12,7 @@ twin:
     route             tests/test_subagents.py gen = lambda s, u: "researcher"
     critique_plan     tests/test_tasks.py    lambda s, u: "GOOD"
 
-None of the three is broken today — that was checked before writing this. The
+None of the three is broken today: that was checked before writing this. The
 point is that nothing would TELL you if a model change altered the output shape:
 rerank parses digits out of free text, route substring-matches a name, and
 critique_plan tests a verdict with startswith. Each assertion below is a contract
@@ -90,7 +92,7 @@ def test_route_picks_the_right_specialist(gen, task, expected):
 
 def test_route_answers_with_exactly_one_name(gen):
     """route() substring-matches profile names in PROFILES order, so an answer
-    naming two ("not the researcher — the analyst") would silently return the
+    naming two ("not the researcher: the analyst") would silently return the
     first one listed. The prompt asks for a bare name; this holds it to that."""
     blurbs = "\n".join(f"- {p.name}: {p.blurb}" for p in subagents.PROFILES.values())
     for task in ("draft a note to Sam", "add up what i spent"):
@@ -117,7 +119,7 @@ def test_a_weak_plan_is_never_approved(gen):
 
 
 def test_an_approval_is_the_bare_word_the_parser_expects(gen):
-    """When the critic DOES approve it must say exactly GOOD — the parser tests
+    """When the critic DOES approve it must say exactly GOOD: the parser tests
     startswith, so "This plan is good" would read as a critique and burn a
     revision round on a plan that was already fine.
 
@@ -125,7 +127,7 @@ def test_an_approval_is_the_bare_word_the_parser_expects(gen):
     approves this deliberately gentle plan only 4 times: it nearly always finds
     something to say about the first step. An earlier version of this test asserted
     "at least one approval in 6 tries", which at p=0.27 fails roughly one run in
-    six — a flaky eval in a nightly job is worse than no eval, because it teaches
+    six: a flaky eval in a nightly job is worse than no eval, because it teaches
     you to ignore the tier.
     """
     verdicts = [planner.critique_plan("get back to painting", GOOD_PLAN, gen)
@@ -145,7 +147,7 @@ def test_an_approval_is_the_bare_word_the_parser_expects(gen):
 def test_plan_returns_usable_steps(gen):
     """planner._plan_once strips one leading bullet/number per line. A model that
     answered in a paragraph, or wrapped its plan in a preamble ("Here is a plan:"),
-    would turn that preamble into step one — and step one is the one the Keeper
+    would turn that preamble into step one, and step one is the one the Keeper
     nudges the person to do."""
     for _ in range(TRIALS):
         steps = planner.plan("get back to painting", gen)
@@ -180,7 +182,7 @@ def test_decompose_splits_a_two_part_task(gen):
 def test_decompose_does_not_fan_out_on_an_atomic_task(gen):
     """The risk is orchestrate spawning specialists to race over halves of an
     indivisible job. Measured 10/10 as exactly one subtask in isolation, but an
-    exact ==1 assertion still failed once when the whole tier ran at pace — a
+    exact ==1 assertion still failed once when the whole tier ran at pace: a
     stray preamble line is enough. What must never happen is a real fan-out, so
     that is what this asserts."""
     subs = subagents._decompose("what time is it in Tokyo", gen)

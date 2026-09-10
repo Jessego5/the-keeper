@@ -1,15 +1,16 @@
-"""clean_memory.py — repair and de-duplicate the fact store.
+"""
+This repairs and de-duplicates the fact store.
 
-Two fixes over an existing memory_store/facts.jsonl:
-  1. De-tag: strips leaked bracket tags ("[emotion] Feels stuck." -> "Feels stuck.")
-     left by an older distill parser, recovering the real kind from the first known
-     tag.
-  2. De-dupe: merges semantic duplicates with the embedder, keeping the highest
-     importance, the summed mention count, and the earliest created time.
+It makes two fixes over an existing memory_store/facts.jsonl. De-tagging strips
+the leaked bracket tags an older distill parser left behind, turning "[emotion]
+Feels stuck." back into "Feels stuck." and recovering the real kind from the first
+known tag. De-duplicating then merges semantic duplicates with the embedder,
+keeping the highest importance, the summed mention count and the earliest created
+time.
 
-Backs the original up to facts.jsonl.bak first. Idempotent — safe to run twice.
-
-    .venv/bin/python scripts/clean_memory.py [path/to/facts.jsonl]
+It backs the original up to facts.jsonl.bak first, and is idempotent, so running
+it twice is safe. Run it with .venv/bin/python scripts/clean_memory.py, optionally
+naming a path to a different facts.jsonl.
 """
 
 from __future__ import annotations
@@ -46,7 +47,7 @@ def clean(path: Path) -> None:
     before = len(store.facts)
     embed = embedder.make_embedder()          # real embedder (needs OPENAI key)
     if embed is None:
-        print("no embedder (set OPENAI_API_KEY) — de-tagging only, no semantic merge.")
+        print("no embedder (set OPENAI_API_KEY), de-tagging only, no semantic merge.")
 
     cleaned: list[memory.Fact] = []
     for f in store.facts:

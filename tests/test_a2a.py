@@ -1,4 +1,6 @@
-"""Tier 1 — the A2A protocol helpers (a2a.py). Pure, no network."""
+"""
+These are the Tier 1 tests for the A2A protocol helpers (a2a.py). Pure, no network.
+"""
 import pytest
 import a2a
 

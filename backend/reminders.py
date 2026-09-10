@@ -1,11 +1,12 @@
-"""reminders.py — the things you ask the Keeper to hold and return at the right time.
+"""
+These are the things you ask the Keeper to hold and return at the right time.
 
 The agentic core: you ask it to remember to do something ("remind me to call the
 dentist tomorrow"); it stores that; and when the time comes the proactive loop
 returns it to you. This is the one unbidden action that stays perfectly in
-character — the Keeper keeping something, and giving it back.
+character: the Keeper keeping something, and giving it back.
 
-Reminders can RECUR — the housekeeping layer. A reminder carries an optional
+Reminders can RECUR: the housekeeping layer. A reminder carries an optional
 `repeat` ("daily", "weekly", "weekdays", or "every N minutes/hours/days/weeks");
 when it's delivered, the store re-arms it to its next future occurrence instead of
 retiring it, so "water the plants every day" keeps coming back.
@@ -105,7 +106,7 @@ class ReminderStore:
 
 
 # --------------------------------------------------------------------------- #
-# Recurrence — small RRULE-lite over epoch seconds.
+# Recurrence: small RRULE-lite over epoch seconds.
 # --------------------------------------------------------------------------- #
 
 _INTERVAL_RE = re.compile(

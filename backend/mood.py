@@ -1,4 +1,5 @@
-"""mood.py — embedding-based register (mood) classification.
+"""
+This is embedding-based register (mood) classification.
 
 Nearest-centroid over sentence embeddings: each register has a few anchor
 sentences; a message is classified by which register's NEAREST anchor it is
@@ -6,7 +7,7 @@ closest to (cosine). Catches implicit mood ("I don't know why I bother") that th
 keyword lexicon misses, because meaning-close sentences sit close in embedding
 space even with no shared words.
 
-Embedder-agnostic — works with OpenAI embeddings or a local Model2Vec model (see
+Embedder-agnostic, works with OpenAI embeddings or a local Model2Vec model (see
 mood_bench.py, which benchmarks both and picks the better). Returns the register
 or None (below confidence -> caller inherits register continuity), matching
 voice_eval.register_signal's shape so it is a drop-in.
@@ -20,7 +21,7 @@ from memory import _cosine   # reuse the pure-Python cosine
 
 Embedder = Callable[[list[str]], list[list[float]]]
 
-# The register returned as "no signal" — see the NEUTRAL anchors below.
+# The register returned as "no signal": see the NEUTRAL anchors below.
 NEUTRAL = "neutral"
 
 # Anchors capture the FEELING, varied in wording. Kept separate from any eval set.
@@ -45,7 +46,7 @@ ANCHORS: dict[str, list[str]] = {
     ],
     # A fourth class carrying NO emotional content. Nearest-centroid has to put every
     # message in some class, so before this existed a plain tool request was forced
-    # into frozen/tidal/turn — and confidently: "search the web for beginner paint
+    # into frozen/tidal/turn: and confidently: "search the web for beginner paint
     # sets" scored turn 0.303 with a 0.142 margin, while a real cry ("i don't know why
     # i even bother") scored frozen 0.303 with a 0.092 margin. The neutral message had
     # the HIGHER confidence, so no floor or margin could separate them; only another
@@ -53,7 +54,7 @@ ANCHORS: dict[str, list[str]] = {
     # inherits register continuity, which is what should happen when someone asks the
     # time. Phrasings mirror the ones the app actually receives (see FEATURES.md).
     #
-    # Keep these REQUEST-shaped — second person, imperative, tool vocabulary. A first
+    # Keep these REQUEST-shaped: second person, imperative, tool vocabulary. A first
     # attempt included bare queries ("what time is it") and first-person lines ("what
     # have i been working on lately"), and they swallowed real implicit mood: implicit
     # accuracy fell 38% -> 25%, because implicit distress is ALSO phrased as mundane
@@ -114,13 +115,13 @@ feeling. One word, lowercase, nothing else."""
 def llm_signal(message: str, generate) -> Optional[str]:
     """The register a live model names, or None for neutral / unrecognised.
 
-    Same contract as register_signal and the anchor classifier — None means "no
-    signal, inherit" — so the three are interchangeable and the benchmark compares
+    Same contract as register_signal and the anchor classifier: None means "no
+    signal, inherit", so the three are interchangeable and the benchmark compares
     like with like.
 
     Measured against the anchors it is not close: 92% vs 67% on the held-out
     split, and 6% vs 41% wrong on real conversation turns. The gap is almost all
-    IMPLICIT mood (88% vs 38%) — a message carrying feeling with no feeling word
+    IMPLICIT mood (88% vs 38%): a message carrying feeling with no feeling word
     in it, which a bag-of-words embedding cannot represent. It does NOT fix
     negation ("i'm not sad at all"), which scores the same either way.
     """
@@ -170,7 +171,7 @@ def build_local_mood_signal(floor: float = 0.15):
     """The chosen mood sensor: a local Model2Vec anchor classifier, or None if the
     model can't load (caller falls back to the keyword register_signal). floor 0.15
     is tuned on evals/register_dataset.json (see mood_bench.py) for this model and
-    these anchors — re-run mood_bench.py and move this if either changes."""
+    these anchors, re-run mood_bench.py and move this if either changes."""
     embed = _model2vec_embedder()
     if embed is None:
         return None

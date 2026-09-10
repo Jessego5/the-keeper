@@ -1,4 +1,5 @@
-"""sources.py — what the Keeper watches, so it can speak about the world.
+"""
+This is what the Keeper watches, so it can speak about the world.
 
 Until this existed, the proactive loop could only ever hand back the person's own
 past: Gate 3 recalled with an empty cue, so every unbidden line was a rearrangement
@@ -6,13 +7,13 @@ of what they had already said. This gives it something to notice.
 
 A source must genuinely PUSH. RSS qualifies: entries carry an id and a publish
 time, so "new since I last looked" is a fact rather than a re-asked question. A web
-search does not — running the same query again returns the same results, and a
+search does not, running the same query again returns the same results, and a
 companion announcing that as a discovery is inventing an event. This codebase has
 an eval forbidding exactly that (`test_never_invents_events`, written after it
 claimed "your brother reached out"), and a source that fabricates novelty walks
 straight into it.
 
-Nothing here decides whether to speak. This layer only answers "what is new?" —
+Nothing here decides whether to speak. This layer only answers "what is new?",
 relevance is judged against the person's memory in relevance.py, and the decision
 to interrupt stays in proactive.tick().
 """
@@ -49,7 +50,7 @@ class SourceItem:
     key: str = ""
     # Filled in by the relevance pass, not by parsing.
     relevance: float = 0.0
-    because: str = ""            # the fact it turned on — shown in the trace
+    because: str = ""            # the fact it turned on, shown in the trace
 
     def __post_init__(self) -> None:
         if not self.key:
@@ -106,7 +107,7 @@ def _split_record_line(line: str) -> tuple[str, str]:
 
     The title is that line as a person would say it: no field label, no wrapping
     quotes, cut at the first paragraph break. The REMAINDER is everything after
-    that break, and it must be kept — in a commit it is the explanation under the
+    that break, and it must be kept, in a commit it is the explanation under the
     subject, which is the richest thing in the record to match against memory.
     """
     body = _LABEL.sub("", line.strip())

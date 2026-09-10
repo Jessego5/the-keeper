@@ -1,12 +1,13 @@
-"""background.py — long tasks the Keeper goes off and works on, returning later.
+"""
+These are the long tasks the Keeper goes off and works on, returning later.
 
-The other delegation model. `delegate`/`orchestrate` are SYNCHRONOUS — the Keeper
+The other delegation model. `delegate`/`orchestrate` are SYNCHRONOUS: the Keeper
 waits with you while its specialists work, then answers in the same breath. Some
 tasks are too long for that: real research, digging through a lot. For those the
 Keeper spawns a BACKGROUND task, tells you it's on it, and brings the result back
-later — on its own, through the same channels a proactive line uses (chat + a native
+later: on its own, through the same channels a proactive line uses (chat + a native
 banner). This is the reference agent's SpawnTool + Poller idea: fire-and-forget, report on
-completion. On-persona too — a keeper that goes away, tends to something, and returns.
+completion. On-persona too: a keeper that goes away, tends to something, and returns.
 
 This module is just the registry (what's running, what finished). The actual running
 and delivery live in the server, which owns the event loop and the channels.

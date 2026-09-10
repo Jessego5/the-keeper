@@ -1,6 +1,7 @@
-"""eval_harness.py — the Keeper's behavioral evals, as tracked metrics.
+"""
+These are the Keeper's behavioral evals, as tracked metrics.
 
-Not pass/fail tests (those live in tests/) — this is an offline harness that runs
+Not pass/fail tests (those live in tests/): this is an offline harness that runs
 a dataset of cases across the behavioral dimensions that matter for a companion
 agent, computes per-dimension METRICS, prints a report, and saves a JSON snapshot
 so runs can be compared over time (e.g. before/after a persona or prompt change).
@@ -51,7 +52,7 @@ class DimResult:
 
 
 # --------------------------------------------------------------------------- #
-# Datasets — small, curated cases per dimension.
+# Datasets: small, curated cases per dimension.
 # --------------------------------------------------------------------------- #
 
 VOICE_CASES = [("passive", s, m) for s in ("frozen", "tidal", "turn")
@@ -63,7 +64,7 @@ REGISTER_CASES = [
     ("i finally went back to the studio", "tidal"), ("things are lighter", "tidal"),
 ]
 
-RECALL_CASES = [   # (cue, substring expected in top-1) — no shared words with fact
+RECALL_CASES = [   # (cue, substring expected in top-1): no shared words with fact
     ("tell me about my sibling", "brother"),
     ("what do i do for work", "painter"),
     ("how old am i", "30"),
@@ -76,7 +77,7 @@ RECALL_FACTS = [
     ("Keeps a studio in Lisbon.", "identity"),
 ]
 
-# Answers accept digit OR spelled forms — the Keeper spells numbers ("sixty-eight"),
+# Answers accept digit OR spelled forms: the Keeper spells numbers ("sixty-eight"),
 # so a digits-only check would undercount truthful answers (a measurement bug the
 # harness itself surfaced).
 TRUTH_CASES = [   # (question, [acceptable answer substrings])

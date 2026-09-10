@@ -1,17 +1,16 @@
-"""relevance.py — does this thing from the world matter to THIS person?
+"""
+This decides whether a thing from the world matters to THIS person.
 
 The gate that makes a feed reader into a companion. An item is worth saying only
 because of something the Keeper already knows: a gallery listing matters because
 the store says they paint, not because it is art news.
 
-Two stages, mirroring recall's own retrieve-then-rerank:
-
-  1. cheap  — rank the person's facts against the item's text and keep it only if
-              something clears memory's relevance floor. Kills most items for the
-              cost of an embedding.
-  2. judge  — one model call on the survivors, which also names the fact it turned
-              on, so the trace can show WHY the Keeper thought this was worth an
-              interruption.
+It runs in two stages, mirroring recall's own retrieve-then-rerank. The cheap
+stage ranks the person's facts against the item's text and keeps the item only if
+something clears memory's relevance floor, killing most of them for the cost of an
+embedding. The judge stage then spends one model call on the survivors, and names
+the fact it turned on as it goes, so the trace can show WHY the Keeper thought
+this was worth an interruption.
 
 TWO thresholds, not one, and that is the design. "Worth mentioning" and "worth
 interrupting a person for" are different bars: an item over MENTION changes what
@@ -40,7 +39,7 @@ person about, given what is known about them.
 
 You are told what is kept about the person, and one item. Answer with a score from \
 0 to 10 for how much THIS ITEM matters TO THIS PERSON, then a dash, then the single \
-thing you know about them that makes it matter — copied word for word from the list, \
+thing you know about them that makes it matter, copied word for word from the list, \
 or NONE if nothing does.
 
   8 - Is a painter.
@@ -52,6 +51,12 @@ items are 0 to 2. Reserve 8 or more for something they would want interrupting f
 
 Format: a number, a dash, then the fact or NONE. Nothing else."""
 
+# The dashes in this class are DATA, not punctuation: the prompt above asks for
+# "a number, a dash, then the fact", and a model writes that dash as a hyphen, an
+# en-dash or an em-dash as it pleases. They stay even where prose dashes do not,
+# because this has to read what the model actually emits. (A sweep that replaced
+# em-dashes across the repo turned this into [-,,:] and silently stopped the
+# separator matching.)
 _SCORE_RE = re.compile(r"^\s*(\d{1,2})(?:\s*[-–—:]\s*(.*))?", re.S)
 
 

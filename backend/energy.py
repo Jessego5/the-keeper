@@ -1,4 +1,5 @@
-"""energy.py — the battery. When does the Keeper get restless enough to speak?
+"""
+This is the battery, which decides when the Keeper gets restless enough to speak.
 
 Ported from the reference agent's proactive_v2/energy.py (multi-timescale exponential
 decay), trimmed to what v1 needs and rewritten in English. The model:

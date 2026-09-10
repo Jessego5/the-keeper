@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# dev.sh — drive the Keeper for hands-on testing.
+# dev.sh: drive the Keeper for hands-on testing.
 #
 #   ./dev.sh start     start the server in the background
 #   ./dev.sh stop      stop it
@@ -29,7 +29,7 @@ start() {
   $PY -m uvicorn server:app --app-dir backend --port "$PORT" --log-level warning \
     > "$LOG" 2>&1 &
   echo -n "starting"; for _ in 1 2 3 4 5 6 7 8; do sleep 1; _up && break; echo -n .; done
-  echo; _up && echo "up at $URL" || { echo "failed — see $LOG"; tail -5 "$LOG"; }
+  echo; _up && echo "up at $URL" || { echo "failed, see $LOG"; tail -5 "$LOG"; }
 }
 
 stop() { pkill -f "uvicorn server:app" 2>/dev/null && echo "stopped" || echo "not running"; }
@@ -45,7 +45,7 @@ case "${1:-}" in
              | $PY -c 'import sys,json; d=json.load(sys.stdin); print("keeper:", d["reply"]); print("   [", d.get("water_state"), "| tools:", d.get("used_tools"), "| score:", d.get("score"), "]")' ;;
   fast)    curl -s -X POST "$URL/config" -H 'content-type: application/json' \
              -d '{"speed":800,"cooldown_min":20}' | $PY -m json.tool
-           echo "battery compressed — watch the page; reset with ./dev.sh normal" ;;
+           echo "battery compressed, watch the page; reset with ./dev.sh normal" ;;
   normal)  curl -s -X POST "$URL/config" -H 'content-type: application/json' \
              -d '{"speed":1,"cooldown_min":600}' | $PY -m json.tool ;;
   reset)   stop; sleep 1; rm -f memory_store/facts.jsonl; echo "memory wiped"; start ;;

@@ -1,9 +1,10 @@
-"""Shared fixtures and tier gating for the Keeper test suite.
+"""
+These are the shared fixtures and the tier gating for the Keeper test suite.
 
 Tiers (see pyproject.toml markers):
-  unit         — pure logic, always runnable
-  integration  — OS sensors, MCP (needs node), running app
-  eval         — LLM behavior, needs OPENAI_API_KEY (run explicitly)
+  unit: pure logic, always runnable
+  integration: OS sensors, MCP (needs node), running app
+  eval: LLM behavior, needs OPENAI_API_KEY (run explicitly)
 
 Run:
   .venv/bin/pytest                     # unit + integration (evals excluded)

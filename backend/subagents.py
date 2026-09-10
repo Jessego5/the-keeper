@@ -1,16 +1,20 @@
-"""subagents.py — the Keeper's specialists. Multi-agent, kept legible.
+"""
+These are the Keeper's specialists: multi-agent, kept legible.
 
 For a task too involved for one tool call, the Keeper delegates to a SUB-AGENT: a
 focused specialist that runs its OWN tool loop (ReAct) with a narrow role and only the
 tools it needs, then returns a result. A tiny supervisor routes a task to the right
-specialist. This is the reference agent's supervisor + sub-agent pattern, as three clear roles
+specialist. This is the reference agent's supervisor + sub-agent pattern, as four clear roles
 instead of a fleet framework.
 
-    researcher — looks things up on the web and synthesizes an answer  (search, fetch)
-    archivist  — digs through the person's own files/notes/history       (files, git, time, journal)
-    scribe     — drafts text: a message, a note, a plan                  (journal)
+The researcher looks things up on the open web and synthesizes an answer, holding
+search and fetch. The archivist digs through the person's own files, notes, journal
+and project history, holding files, git and time alongside the native tools. The
+scribe drafts text, a message or a note or a short plan, on the native tools alone.
+And the analyst works things out by running code, for calculations, date math and
+data crunching, which it does through run_python.
 
-Each sub-agent is still "the Keeper's" — its output is an internal work product the
+Each sub-agent is still "the Keeper's": its output is an internal work product the
 main Keeper then speaks from, so it need not be in full voice. The model is injected,
 so routing and running are testable offline.
 """
@@ -53,13 +57,13 @@ PROFILES: dict[str, SubAgentProfile] = {
         servers=("files", "git", "time"), use_native=True),
     "scribe": SubAgentProfile(
         name="scribe",
-        blurb="drafts text — a message, a note, a short plan",
+        blurb="drafts text: a message, a note, a short plan",
         role="You are the Keeper's scribe. Draft exactly the text asked for, plainly "
              "and warmly, ready to use. Keep it in the journal only if asked.",
         servers=(), use_native=True),
     "analyst": SubAgentProfile(
         name="analyst",
-        blurb="works things out by running code — calculations, dates, data crunching",
+        blurb="works things out by running code, calculations, dates, data crunching",
         role="You are the Keeper's analyst. Work the answer out by WRITING AND RUNNING "
              "Python with run_python (print the result), then report the answer in one "
              "or two plain sentences. Reach for code whenever a real computation, date "
@@ -98,7 +102,7 @@ class _FilteredMCP:
 
 
 _ROUTE_SYSTEM = """You dispatch a task to ONE of the Keeper's specialists. Given the \
-task, reply with just the specialist's name — nothing else. The specialists are:
+task, reply with just the specialist's name: nothing else. The specialists are:
 """
 
 
@@ -126,7 +130,7 @@ async def run(profile: SubAgentProfile, task: str, *,
         if view.has_tools:
             providers.append(view)
     system = (f"{profile.role}\n\nYou are working on behalf of the Keeper. Do the "
-              f"task, then answer in one short paragraph — no chit-chat, no preamble.")
+              f"task, then answer in one short paragraph: no chit-chat, no preamble.")
     result = await compose.tool_reply(
         system, task, providers=providers, model=model,
         max_rounds=profile.max_rounds)
@@ -148,7 +152,7 @@ async def delegate(task: str, generate: Generator, *,
 MAX_WORKERS = 4
 
 _DECOMPOSE_SYSTEM = """You are the Keeper's lead agent. Break a task into the FEWEST \
-INDEPENDENT subtasks that together fully answer it — 1 to 4 — each doable by one \
+INDEPENDENT subtasks that together fully answer it, 1 to 4: each doable by one \
 specialist working alone, in parallel (so they must not depend on each other's output). \
 If the task is already single and simple, return exactly ONE line (the task itself). \
 Output one subtask per line, no numbering, no preamble."""
@@ -156,7 +160,7 @@ Output one subtask per line, no numbering, no preamble."""
 _SYNTH_SYSTEM = """You are the Keeper's lead agent. Your specialists each worked one \
 part of a task; their findings follow. Combine them into ONE clear, coherent answer to \
 the original task. Keep every concrete fact, drop repetition, resolve any conflicts \
-sensibly, and invent nothing. Answer plainly — the Keeper will re-voice it."""
+sensibly, and invent nothing. Answer plainly: the Keeper will re-voice it."""
 
 
 @dataclass

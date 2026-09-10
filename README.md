@@ -4,7 +4,7 @@
 
 <h1 align="center">The Keeper</h1>
 
-> A local-first AI companion that decides on its own when to speak: long-term
+> An AI companion that decides on its own when to speak: long-term
 > memory that tracks what *changed* about you, tools over MCP, sandboxed code
 > execution, A2A interop with other agents, and a native OS notification that
 > reaches you with the browser closed.
@@ -12,7 +12,7 @@
 **[Features](FEATURES.md)** · **[Architecture](docs/ARCHITECTURE.md)** · **[Demo script](docs/DEMO.md)** · **[Voice spec](KEEPER_VOICE.md)** · **[Testing rules](tests/README.md)**
 
 ![CI](https://github.com/Jessego5/rusty-companion/actions/workflows/ci.yml/badge.svg)
-![tests](https://img.shields.io/badge/tests-440%20unit%20%2B%20integration-informational)
+![tests](https://img.shields.io/badge/tests-457%20unit%20%2B%20integration-informational)
 ![evals](https://img.shields.io/badge/LLM%20evals-60-informational)
 
 ## What it can actually do
@@ -56,7 +56,7 @@ earns a register it is not allowed to claim on wording alone.
 > i stopped painting in march      [tidal]  inherited (no signal in this message)
 > actually i started painting again[tidal]  classified tidal
 > how is my painting going?        [turn]   turn earned by a recorded reversal:
-                                            Has started painting again.
+                                            Started painting again.
 
 facts kept 1 · changes tracked 1
 ```
@@ -65,6 +65,34 @@ Facts stayed at **1**, not 2: the old fact was closed rather than deleted, and t
 change itself is kept as history. `turn` is the rarest register and cannot be
 bought with phrasing. Say "everything is finally turning around for me" and it
 comes back `tidal`, with `turn not earned, nothing the store remembers changed`.
+
+**Then nobody types anything.** Two minutes later the same window moves on its
+own. It is not a timer going off: something it watches turned out to bear on a
+fact it keeps, and that is the only reason it is allowed to interrupt you.
+
+![The same conversation, still. Then an unbidden line arrives on its own, two minutes after the last thing anyone typed](docs/screenshots/proactive.gif)
+
+```
+[sources] scanned 13, 6 judged not worth saying
+[sources] pending 'Denizens of a Crowded City Populate Erin Milez's D…'
+          relevance=0.9 because='Started painting again.'
+[proactive] tick spoke=True reason='spoke about something watched'
+```
+
+The `because` is the fact it turned on, copied out of the store: the same
+reversal that earned `turn` a moment earlier. Had you never mentioned painting,
+that item scores near zero and you never hear about it. Most of what it scans
+never clears the bar, which is the subject of the dashboard below.
+
+Two thresholds, not one. Clearing **0.45** only changes what it says when it was
+going to speak anyway; it takes **0.75** to let the outside world make it speak at
+all. That line scored 0.9. And a real-time floor caps outreach at roughly once a
+minute whatever the clock says, so cranking the demo speed cannot turn it into a
+firehose.
+
+The same event fires a native desktop banner with the Keeper's own icon, so it
+reaches you with the browser shut: the window above is just where it is easiest
+to photograph.
 
 **The trace is the thing to open first.** Per turn it shows the register and why,
 what memory was injected, every tool that fired with its arguments and result, and
@@ -127,7 +155,7 @@ flowchart TB
         M[message] --> REG[register: LLM classifier<br/>keyword, then Model2Vec fallback]
         REG --> REC[recall: relevance x recency x importance]
         REC --> GEN[compose + tools]
-        GEN --> VE[voice_eval: 11 rules]
+        GEN --> VE[voice_eval: 13 checks]
         VE -->|fails| GEN
         VE --> REPLY[reply]
         REPLY --> DIS[distill facts] --> STORE[(facts.jsonl)]
@@ -181,7 +209,7 @@ backend/
   relevance.py      does this thing from the world matter to THIS person
   sources.py        RSS and MCP tool output, normalised into scored items
   compose.py        generation, retries, the offline stub
-  voice_eval.py     11 rules: 6 mechanical, 5 judged by a fast model
+  voice_eval.py     13 checks over the seven rules: 8 mechanical, 5 judged
   mood.py           register classification, with fallbacks
   tools.py          MCP client: timeouts, health, read-only by default
   a2a.py            agent card, peer consultation, SSRF checks
@@ -381,3 +409,17 @@ shape from LongMemEval. Tooling is [MCP](https://modelcontextprotocol.io); agent
 interop is [A2A](https://google.github.io/A2A/). Models are OpenAI's; the local
 register fallback is [Model2Vec](https://github.com/MinishLab/model2vec)
 `potion-base-8M`.
+
+---
+
+<details>
+<summary><sub>One more thing, if you got this far.</sub></summary>
+
+<br>
+
+![Three native macOS banners, each carrying a different Keeper: closed in frozen, closed in tidal, one hand open in turn](docs/screenshots/banners.png)
+
+It wears the weather it is speaking in. Closed in the cold. A hand open as the
+ice goes out.
+
+</details>

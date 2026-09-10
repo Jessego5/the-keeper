@@ -1,4 +1,7 @@
-"""Tier 1 — the code sandbox (sandbox.py) + the run_python tool. Code-as-action."""
+"""
+These are the Tier 1 tests for the code sandbox (sandbox.py) + the run_python tool.
+Code-as-action.
+"""
 import pytest
 import native_tools
 import reminders as reminders_mod
@@ -30,7 +33,7 @@ def test_auto_print_uses_computed_variable():
 
 
 def test_explicit_print_not_doubled():
-    # a trailing print() call is left alone — its value (None) isn't re-printed
+    # a trailing print() call is left alone: its value (None) isn't re-printed
     assert sandbox.run_python("print(6 * 7)").stdout.strip() == "42"
 
 
@@ -89,7 +92,7 @@ def test_cwd_and_home_are_a_throwaway_dir():
 
 
 def test_known_gap_filesystem_is_not_fenced():
-    """NOT a wish — a pin on a documented limitation, so it cannot drift unnoticed.
+    """NOT a wish: a pin on a documented limitation, so it cannot drift unnoticed.
 
     sandbox.py states the fence does not block the filesystem or the network, and
     that matters here because the Keeper fetches web pages and calls run_python in
@@ -97,9 +100,9 @@ def test_known_gap_filesystem_is_not_fenced():
 
     If real isolation ever lands (the Dockerfile with no host mount, a sandbox-exec
     profile), THIS TEST WILL FAIL. That failure is the signal to rewrite the threat
-    model in sandbox.py — currently the only place a reader is told about the path
+    model in sandbox.py, currently the only place a reader is told about the path
     from a fetched page to local code execution.
     """
     r = sandbox.run_python("import pathlib\nprint(pathlib.Path('/etc/hosts').exists())")
     assert r.stdout.strip() == "True", (
-        "filesystem reads now appear fenced — update sandbox.py's threat model")
+        "filesystem reads now appear fenced, update sandbox.py's threat model")

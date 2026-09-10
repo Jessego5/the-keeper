@@ -1,4 +1,7 @@
-"""Tier 1 — answer scoring (metrics.py). Pure string work, no key, no model."""
+"""
+These are the Tier 1 tests for answer scoring (metrics.py). Pure string work, no key, no
+model.
+"""
 import pytest
 import metrics
 

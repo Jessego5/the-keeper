@@ -1,4 +1,6 @@
-"""Tier 3 — the relevance gate against the real judge. Needs OPENAI_API_KEY:
+"""
+These are the Tier 3 tests for the relevance gate against the real judge. Needs
+OPENAI_API_KEY:
 
     .venv/bin/pytest tests/evals/test_relevance.py -m eval
 

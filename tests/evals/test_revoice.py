@@ -1,10 +1,12 @@
-"""Tier 3 — re-voicing long content, on the real model. Run explicitly:
+"""
+These are the Tier 3 tests for re-voicing long content, on the real model. Run
+explicitly:
 
     .venv/bin/pytest tests/evals -m eval
 
 Why this exists: the fast model was hard-capped at 128 max_tokens. That is plenty for
-what it was first used for — a one-word SUPERSEDES/DISTINCT verdict, a rerank list,
-the voice rubric — but background research is BOTH synthesized and re-voiced through
+what it was first used for: a one-word SUPERSEDES/DISTINCT verdict, a rerank list,
+the voice rubric, but background research is BOTH synthesized and re-voiced through
 that same callable. So a multi-paragraph answer was delivered cut off mid-sentence at
 roughly 640 characters, with no error anywhere. Nothing in the unit suite could see
 it: the cap lives inside the OpenAI generator, which the offline tests never build.
@@ -21,7 +23,7 @@ pytestmark = [
                        reason="needs OPENAI_API_KEY"),
 ]
 
-# The shape of a real orchestration result — long enough that a 128-token cap cuts it.
+# The shape of a real orchestration result: long enough that a 128-token cap cuts it.
 LONG_FINDING = (
     "Watercolor is a transparent paint that relies on the white of the paper for its "
     "lightness, and it is best suited to loose, layered washes, landscapes and florals. "
@@ -33,7 +35,7 @@ LONG_FINDING = (
     "needs no second kit. The main practical difference is that watercolor mistakes "
     "are hard to correct, whereas gouache can be painted over opaquely."
 )
-TERMINAL = (".", "!", "?", '"', "'", ")", "—")
+TERMINAL = (".", "!", "?", '"', "'", ")", "-")
 
 
 @pytest.fixture(scope="module")
@@ -57,6 +59,6 @@ def test_a_long_answer_keeps_its_facts(fast):
 
 
 def test_a_short_answer_stays_short(fast):
-    """Raising the cap is an upper bound, not a target — a one-liner must not bloat."""
+    """Raising the cap is an upper bound, not a target: a one-liner must not bloat."""
     out = compose.revoice("It is 14 degrees outside.", "tidal", generate=fast).strip()
     assert len(out) < 400, f"short answer ballooned to {len(out)} chars: {out!r}"

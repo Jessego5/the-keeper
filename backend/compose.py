@@ -1,4 +1,5 @@
-"""compose.py — produce ONE Keeper line, guaranteed on-voice.
+"""
+This produces ONE Keeper line, guaranteed on-voice.
 
 The heartbeat every part of the system calls. It ties the three pieces together:
 
@@ -53,7 +54,7 @@ SAFE_LINES = {
 # What we ask the model to do, per mode, as the user turn. Passive gets the human's
 # real message; the others get an internal instruction.
 _PROACTIVE_INSTRUCTION = (
-    f"Speak to them now, unbidden, in one line — or, if you have no true reason to "
+    f"Speak to them now, unbidden, in one line, or, if you have no true reason to "
     f"speak, output exactly {SILENCE_TOKEN} and nothing else. Silence is the usual "
     f"outcome."
 )
@@ -99,7 +100,7 @@ def compose(
     user_message:  the human's text in passive mode; ignored otherwise.
     fast_model:    optional cheap model for voice_eval's semantic layer. If None,
                    scoring is deterministic-only (still catches hedges/sentiment/
-                   length/motif — the hard fails).
+                   length/motif: the hard fails).
     threshold:     min fidelity to accept a generated line.
     max_attempts:  generations tried before giving up on passing threshold. In
                    passive mode the best real attempt is then kept unless it hard-
@@ -157,7 +158,7 @@ def compose(
             attempts=max_attempts, fell_back=False, score=None, report=best)
 
     # Passive: they asked, so they are owed a reply. The canned safe line is a net
-    # for genuinely BAD output — a hard fail (sentiment / hedge). A merely
+    # for genuinely BAD output: a hard fail (sentiment / hedge). A merely
     # low-motif answer is usually an honest, plain reply to a plain question
     # ("100 degrees Celsius"); clobbering it with a water non-answer would break
     # "a plain question gets a true answer." So keep the best real attempt unless
@@ -176,8 +177,8 @@ def compose(
 
 
 _REVOICE_INSTRUCTION = """The message below is a true answer you have just worked out \
-(often from a tool — a file, your memory, the web, your own history). Re-voice it so it \
-sounds like YOU — your register, your economy — WITHOUT changing what it says.
+(often from a tool: a file, your memory, the web, your own history). Re-voice it so it \
+sounds like YOU: your register, your economy, WITHOUT changing what it says.
 
 Rules, in order of importance:
 - Keep every concrete fact exactly: names, numbers, dates, quotes, file or code contents.
@@ -185,14 +186,14 @@ Rules, in order of importance:
 - If a line is a plain fact your voice would distort (a number, an address), keep it plain.
 - Do not turn it into a riddle; clarity first, voice second.
 
-Output only the re-voiced message — no preface, no explanation."""
+Output only the re-voiced message: no preface, no explanation."""
 
 
 def revoice(text: str, water_state: str = persona.DEFAULT_WATER_STATE, *,
             generate: Generator, memory: str = "", context: str = "") -> str:
     """Rewrite a factual/tool-grounded answer in the Keeper's voice, preserving every
     fact. Used so tool answers (git history, a file, the time) still sound like the
-    Keeper instead of a flat changelog. Falls back to the original on any failure —
+    Keeper instead of a flat changelog. Falls back to the original on any failure:
     a true-but-plain answer always beats a lost fact."""
     text = (text or "").strip()
     if not text:
@@ -221,7 +222,7 @@ def openai_generator(
     model: str = "gpt-4o",
     fast: str = "gpt-4o-mini",
     max_tokens: int = 600,     # room for re-voiced tool answers; short lines stay short
-    fast_max_tokens: int = 600,   # see fast_model below — a CAP, never a target
+    fast_max_tokens: int = 600,   # see fast_model below, a CAP, never a target
 ) -> tuple[Generator, Generator]:
     """Build (generate, fast_model) backed by the OpenAI API.
 
@@ -250,7 +251,7 @@ def openai_generator(
             )
             return resp.choices[0].message.content or ""
         # A 429 here used to surface as the canned ERROR_LINE, or as a lost
-        # supersede verdict — both indistinguishable from a real answer.
+        # supersede verdict: both indistinguishable from a real answer.
         return retry.with_retry(once, what=f"chat({model_id})")
 
     def generate(system: str, user: str) -> str:
@@ -262,7 +263,7 @@ def openai_generator(
         # voice rubric) but silently truncated everything else. Background research
         # is synthesized AND re-voiced through this same callable, so a multi-
         # paragraph answer arrived cut off mid-sentence at ~640 characters. max_tokens
-        # is only an upper bound — a short verdict still costs one short answer.
+        # is only an upper bound: a short verdict still costs one short answer.
         return _call(fast, system, user, fast_max_tokens)
 
     return generate, fast_model
@@ -280,12 +281,12 @@ async def tool_reply(
 ) -> str:
     """Passive-only: let the Keeper use tools, then answer in voice.
 
-    providers: objects shaped like tools.MCPManager — each exposes
+    providers: objects shaped like tools.MCPManager, each exposes
         openai_tools() -> list[def]  and  async call(name, args) -> str.
     Pass any mix (MCP file tools + native action tools like reminders); each tool
     call is routed to the provider that declared it. The model may call tools
     across several rounds, sees results, and writes a final line. Returns that
-    line's text (scoring is the caller's job — a tool-grounded answer may be
+    line's text (scoring is the caller's job: a tool-grounded answer may be
     plainer than a proactive line and must not be replaced by a canned fallback).
 
     Never used by the proactive loop, which stays sealed.
@@ -337,11 +338,11 @@ async def tool_reply(
                               "result": out[:160]})
             messages.append({"role": "tool", "tool_call_id": tc.id,
                             "content": out[:4000]})
-        # Step budget running low — nudge it to wrap up on its own before the wall.
+        # Step budget running low: nudge it to wrap up on its own before the wall.
         if i == max_rounds - 2:
             messages.append({"role": "system", "content": _BUDGET_WARN})
 
-    # Ran out of rounds — force a GRACEFUL final answer with tools off, so a worker
+    # Ran out of rounds: force a GRACEFUL final answer with tools off, so a worker
     # is never cut off mid-thought with nothing to show (the reference agent's forced-cleanup).
     messages.append({"role": "system", "content": _BUDGET_DONE})
     resp = await aclient.chat.completions.create(
@@ -351,7 +352,7 @@ async def tool_reply(
 
 _BUDGET_WARN = ("You are almost out of tool steps. If you can answer from what you "
                 "already have, do it now instead of calling more tools.")
-_BUDGET_DONE = ("Your tool steps are used up. Answer now with what you found — your "
+_BUDGET_DONE = ("Your tool steps are used up. Answer now with what you found: your "
                 "best result, noting briefly if something stayed incomplete. Do not "
                 "call tools; do not apologize at length.")
 
@@ -369,7 +370,7 @@ def make_generator() -> tuple[Generator, Optional[Generator]]:
 def stub_generator(system: str, user: str) -> str:
     """Offline stand-in so the loop is exercisable with no API key.
 
-    Not a model — it just echoes a plausible on-voice line by peeking at the
+    Not a model: it just echoes a plausible on-voice line by peeking at the
     system prompt's active water state. Enough to test the plumbing end to end.
     """
     if "The ice is going out" in system:
@@ -384,15 +385,15 @@ if __name__ == "__main__":
     backend = "openai" if os.environ.get("OPENAI_API_KEY") else "stub"
     print(f"generator: {backend}\n")
 
-    print("— passive —")
+    print(", passive, ")
     print(compose("passive", "frozen", generate=generate, fast_model=fast,
                   user_message="i can't get started on anything lately"))
 
-    print("\n— proactive —")
+    print("\n, proactive, ")
     print(compose("proactive", "tidal", generate=generate, fast_model=fast,
                   memory="- left a project unfinished in spring",
                   context="idle for 8h; screen awake"))
 
-    print("\n— drift —")
+    print("\n, drift, ")
     print(compose("drift", generate=generate, fast_model=fast,
                   memory="- brother Sam, not spoken since spring"))

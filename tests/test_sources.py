@@ -1,5 +1,6 @@
-"""Tier 1 — watching the world (sources.py, relevance.py). Offline: a fixture feed
-and fake judges, so nothing here touches the network or a model.
+"""
+These are the Tier 1 tests for watching the world (sources.py, relevance.py). Offline: a
+fixture feed and fake judges, so nothing here touches the network or a model.
 """
 
 import pytest
@@ -72,6 +73,9 @@ def test_unseen_filters_what_was_already_delivered(tmp_path):
 
 # --- the relevance verdict --- #
 
+# The separators here are DATA: the prompt asks for "a number, a dash, then the
+# fact", and a model picks its own dash. The em-dash case is the point of the
+# test, so it stays even where prose em-dashes have been removed.
 @pytest.mark.parametrize("raw,score,because", [
     ("8 - Is a painter.", 0.8, "Is a painter."),
     ("10 — Started painting again.", 1.0, "Started painting again."),

@@ -1,4 +1,6 @@
-"""Tier 1 — reminders store + native action tools. No key needed."""
+"""
+These are the Tier 1 tests for reminders store + native action tools. No key needed.
+"""
 import time
 import pytest
 import native_tools

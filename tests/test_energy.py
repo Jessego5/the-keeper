@@ -1,4 +1,6 @@
-"""Tier 1 — the battery math (energy.py)."""
+"""
+These are the Tier 1 tests for the battery math (energy.py).
+"""
 import pytest
 import energy
 

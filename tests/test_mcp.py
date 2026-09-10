@@ -1,4 +1,6 @@
-"""Tier 2 — MCP tool integration (tools.py) against the reference filesystem server.
+"""
+These are the Tier 2 tests for MCP tool integration (tools.py) against the reference
+filesystem server.
 
 Covers discovery, reading, the sandbox security boundary, the read-only default,
 and graceful errors. Skips entirely without node/npx + the mcp SDK.

@@ -324,7 +324,7 @@
 
   // proactive pushes: render on the page. The OS banner is fired natively by the
   // backend (notifier.py) so it reaches you with the browser closed and carries
-  // the Keeper's own icon — no browser web-notification here (would double-banner
+  // the Keeper's own icon: no browser web-notification here (would double-banner
   // with the browser's logo).
   const events = new EventSource("/events");
   events.onmessage = (e) => {

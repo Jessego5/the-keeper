@@ -1,8 +1,9 @@
-"""Tier 3 — the warming judge, on the real model. Run explicitly:
+"""
+These are the Tier 3 tests for the warming judge, on the real model. Run explicitly:
 
     .venv/bin/pytest tests/evals -m eval
 
-`turn` is the Keeper's rarest register — the ice going out — and it is now earned
+`turn` is the Keeper's rarest register: the ice going out, and it is now earned
 only by a recorded reversal INTO something better. That direction comes from a
 free-text verdict, which this session has repeatedly shown to be the thing that
 drifts: the supersede judge produced THREE spellings of its own answer. So the
@@ -52,7 +53,7 @@ def test_a_return_reads_as_warmer(judge, old, new):
 ])
 def test_a_loss_never_reads_as_warmer(judge, old, new):
     """The direction that must never be wrong. A false WARMER would meet a loss
-    with the ice-going-out register — the worst tonal failure the Keeper has."""
+    with the ice-going-out register: the worst tonal failure the Keeper has."""
     for _ in range(TRIALS):
         v = _verdict(judge, old, new)
         assert not memory._reads_as_warmer(v), f"{v!r} for {old!r} -> {new!r}"

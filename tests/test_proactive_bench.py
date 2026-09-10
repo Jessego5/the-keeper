@@ -1,5 +1,7 @@
-"""Tier 1 — the policy benchmark (proactive_bench.py). Offline: the stub generator
-and a fixed seed, so it runs in a second and asserts the harness, never a verdict.
+"""
+These are the Tier 1 tests for the policy benchmark (proactive_bench.py). Offline: the
+stub generator and a fixed seed, so it runs in a second and asserts the harness, never a
+verdict.
 """
 import pytest
 

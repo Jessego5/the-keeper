@@ -1,19 +1,19 @@
 """
-voice_eval.py — Keeper voice-fidelity evaluator.
+This is the Keeper's voice-fidelity evaluator.
 
 Scores a candidate line against the seven voice rules distilled during
 calibration. Deliberately operates ONLY on your own generated output; no
 source text from any other work is used, stored, or required.
 
-Two layers:
-  - Deterministic checks (free, instant): sentence count, hedges, questions,
-    motif-noun presence, greeting-card words, length.
-  - Semantic checks (one fast-model call): flat-declarative, withholding,
-    role-address, earned-not-overt hope. These need judgment, so they go to
-    the cheap background model — the same llm.fast you use for memory gating.
+It works in two layers. The deterministic checks are free and instant, counting
+sentences, hedges and questions, and looking for motif nouns, greeting-card words
+and length. The semantic checks cost one fast-model call and cover the qualities
+no counter can see: flat-declarative, withholding, role-address, and hope that is
+earned rather than stated. Those need judgment, so they go to the cheap background
+model, the same llm.fast used for memory gating.
 
-Return: VoiceReport with a 0..1 fidelity score, per-rule pass/fail, and notes.
-Wire it into compose(): if score < threshold, regenerate or fall back.
+It returns a VoiceReport carrying a 0..1 fidelity score, per-rule pass or fail,
+and notes. Wire it into compose(): below the threshold, regenerate or fall back.
 """
 
 from __future__ import annotations
@@ -32,30 +32,35 @@ from typing import Callable, Optional
 # --- The Keeping: one water, two states. Keep each set SMALL and closed. ---
 # The weight comes from the SAME few nouns recurring, not from breadth.
 
-# THAW state — frozen, held, stuck. Reached for when the person is in a hard,
-# stalled season. The cold that does not move.
-THAW_NOUNS = {
+# FROZEN state: held, stuck, wintering. Reached for when the person is in a
+# hard, stalled season. The cold that does not move.
+#
+# Named for the cold and not for the thaw, deliberately: the thaw is the TURN,
+# and this register's own prompt says "do not promise the thaw". Calling the cold
+# vocabulary THAW_NOUNS put the name of the hope inside the set for the state
+# that is not allowed to reach for it.
+FROZEN_NOUNS = {
     "ice", "frost", "the cold", "the freeze", "still water", "the held",
     "the long cold", "white", "hard water",
 }
 
-# TIDE state — moving, returning, breathing. Reached for when things move, or
+# TIDE state: moving, returning, breathing. Reached for when things move, or
 # when returning a memory (the water gives back what was given to it).
 TIDE_NOUNS = {
     "tide", "shore", "water", "the deep", "current", "salt",
     "low water", "high water", "the returning", "the pull",
 }
 
-# THE TURN — the hope-engine made physical. Ice going out, freeze becoming flow.
+# THE TURN: the hope-engine made physical. Ice going out, freeze becoming flow.
 # Rare and load-bearing; these are the strongest lines the Keeper says.
 TURN_NOUNS = {
     "the thaw", "the break", "the going-out", "the turn", "breaking up",
     "the water moves", "it moves again",
 }
 
-# Words that mean two true things at once — the BURIED pun layer. The voice
+# Words that mean two true things at once: the BURIED pun layer. The voice
 # preferentially reaches for these; the evaluator gently rewards them. Never a
-# gag — each means something literal about water AND something about the person.
+# gag: each means something literal about water AND something about the person.
 DOUBLE_MEANING = {
     "still",      # motionless water / yet, continued ("you are still here")
     "current",    # water's flow / the present moment
@@ -68,7 +73,7 @@ DOUBLE_MEANING = {
 }
 
 # The full closed vocabulary the motif check accepts.
-MOTIF_NOUNS = THAW_NOUNS | TIDE_NOUNS | TURN_NOUNS | DOUBLE_MEANING
+MOTIF_NOUNS = FROZEN_NOUNS | TIDE_NOUNS | TURN_NOUNS | DOUBLE_MEANING
 
 # Hedges break Rule 1 (flat declarative certainty).
 HEDGES = {
@@ -91,6 +96,41 @@ OVERT_HOPE = {
     "it will end", "things get better", "the dark will end",
     "you'll be okay", "it gets better", "hold on", "don't give up",
 }
+
+# Rule 7: the machinery stays invisible. Two ways it gets out, both seen in one
+# real capture, where the Keeper answered "i stopped painting in march" with
+# "The shore has a calling: 'return to painting.' Would you like help with this?"
+#
+# The first is an offer of help: the tool asking permission to run, in assistant
+# register rather than the Keeper's. Rule 4 lets a plain practical exchange ask a
+# question, which is why the guard looks for offers specifically and not for
+# question marks: restraint_questions below already counts those.
+#
+# The obvious assistant phrasings are only half of it. Told not to SET a goal, the
+# model went on offering to, in the Keeper's own idiom: "you may ask me to tend
+# that hope alongside you": which scored 1.0 against the first version of this
+# list. An offer is an offer whatever vocabulary it wears, so the in-voice
+# constructions are listed alongside the obvious ones.
+SERVICE_OFFERS = {
+    "would you like", "do you want me to", "shall i", "can i help",
+    "let me know if", "would you like me to", "if you'd like", "want me to",
+    "is there anything", "i can help", "how can i help", "just let me know",
+    "you may ask", "you can ask", "ask me to", "if you ask", "i can tend",
+    "tell me if you",
+}
+# Every entry above is the Keeper proposing to ACT, contingent on being asked.
+# That test excludes some near neighbours deliberately: "alongside you" and "if
+# you wish" read as offers in the line that prompted this list, but neither is one
+# on its own ("the tide moves alongside you"), and a guard this heavy must not fire
+# on a line that merely sounds like the persona. Statements of action it simply
+# takes ("I will tend this") stay legal: the Keeper acting is in voice; the
+# Keeper asking permission is not.
+
+# The second is a stored value read back verbatim: a goal title, a reminder, a
+# fact: wearing water vocabulary but still shaped like a field: a colon, then
+# the value in quotes. Returning a memory is an act of keeping, never "here is a
+# thing you said", so the quoting itself is the fault, whatever the value is.
+_QUOTED_VALUE_RE = re.compile(r":\s*['\"‘“][^'\"’”]{3,}['\"’”]")
 
 # --- Emotional signal in the PERSON's message (not the Keeper's line). ---
 # People don't speak in water vocabulary; they say "I'm sad," "I'm stuck." These
@@ -149,7 +189,7 @@ class VoiceReport:
 
 
 # ---------------------------------------------------------------------------
-# Deterministic layer — Rules 3, 4, 6 (partial) + tone guards
+# Deterministic layer: Rules 3, 4, 6 (partial) + tone guards
 # ---------------------------------------------------------------------------
 
 def _sentences(text: str) -> list[str]:
@@ -185,14 +225,14 @@ def deterministic_checks(text: str,
     results: list[RuleResult] = []
     hard_fail = False
 
-    # Rule 4 — terse. Sentence + word caps.
+    # Rule 4: terse. Sentence + word caps.
     terse_ok = len(sents) <= max_sentences and len(words) <= max_words
     results.append(RuleResult(
         "terse", terse_ok, 1.0,
         f"{len(sents)} sentences / {len(words)} words "
         f"(cap {max_sentences}/{max_words})"))
 
-    # Rule 1 (partial) — no hedges. Hard fail: certainty is core.
+    # Rule 1 (partial): no hedges. Hard fail: certainty is core.
     hedges = _contains_any(low, HEDGES)
     if hedges:
         hard_fail = True
@@ -200,14 +240,14 @@ def deterministic_checks(text: str,
         "no_hedging", not hedges, 2.0,
         f"hedges: {hedges}" if hedges else "clean"))
 
-    # Rule 4 (partial) — withholding shows up as few/no questions.
+    # Rule 4 (partial): withholding shows up as few/no questions.
     qmarks = text.count("?")
     q_ok = qmarks <= 1
     results.append(RuleResult(
         "restraint_questions", q_ok, 0.5,
         f"{qmarks} question marks"))
 
-    # Rule 3 — at least one motif-noun anchors the closed vocabulary. Weighted
+    # Rule 3: at least one motif-noun anchors the closed vocabulary. Weighted
     # heavily: a line with NO water motif is almost always off-voice reportage
     # (it reads like a notification), so losing this should sink the score.
     motifs = [n for n in motif_nouns if n in low]
@@ -215,7 +255,7 @@ def deterministic_checks(text: str,
         "motif_noun", bool(motifs), 2.5,
         f"motifs: {motifs}" if motifs else "no motif noun"))
 
-    # Tone guard — greeting-card / therapy-speak. Hard fail: kills the whole voice.
+    # Tone guard: greeting-card / therapy-speak. Hard fail: kills the whole voice.
     senti = _contains_any(low, SENTIMENT_WORDS)
     if senti:
         hard_fail = True
@@ -223,7 +263,41 @@ def deterministic_checks(text: str,
         "no_sentiment", not senti, 2.0,
         f"sentiment words: {senti}" if senti else "clean"))
 
-    # Buried-pun layer — reward (don't require) double-meaning words.
+    # Both Rule 7 guards below carry weight ONLY when they fail. They are
+    # penalties, not credits: a line earns nothing for merely lacking a leak, and
+    # paying it for the absence would inflate every clean line's score, diluting
+    # the rules that do real work. That dilution is not hypothetical: scoring
+    # these as ordinary always-on rules lifted the motif-less reportage in
+    # test_invented_event_reportage_fails ("Your brother Sam has reached out
+    # again.") from a fail up over threshold, because two more passing rules
+    # outvoted the single motif check that is supposed to sink it.
+
+    # A stored value read back as a quoted field. Hard fail: the pattern is
+    # mechanical and unambiguous, and nothing breaks the spell faster than the
+    # Keeper reciting its own state at you.
+    leak = _QUOTED_VALUE_RE.search(text)
+    if leak:
+        hard_fail = True
+    results.append(RuleResult(
+        "no_quoted_value", not leak, 2.0 if leak else 0.0,
+        f"quoted value: {leak.group(0).strip()!r}" if leak else "clean"))
+
+    # An offer of help is the tool asking permission to run, in assistant
+    # register. The weight has to exceed the rest of the rubric combined, because
+    # an offering line is otherwise a MODEL line: terse, motif-rich, unhedged:
+    # and at a smaller weight it still cleared threshold on everything else it did
+    # right (0.81 for "you may ask me to tend that hope alongside you").
+    #
+    # Deliberately not a hard fail. Hard fail sends the passive path to the canned
+    # safe line; this only has to push the score under threshold, which makes
+    # compose re-roll and, if every attempt still offers, keep the best real reply
+    # rather than clobber it. Re-roll, don't destroy.
+    offers = _contains_any(low, SERVICE_OFFERS)
+    results.append(RuleResult(
+        "no_service_offer", not offers, 7.0 if offers else 0.0,
+        f"service offer: {offers}" if offers else "clean"))
+
+    # Buried-pun layer: reward (don't require) double-meaning words.
     doubles = _contains_any(low, DOUBLE_MEANING)
     results.append(RuleResult(
         "double_meaning", bool(doubles), 0.5,
@@ -238,18 +312,18 @@ def deterministic_checks(text: str,
 def detect_state(text: str) -> str:
     """Which water-state is this line in?
 
-    Returns one of the three canonical compose states — "frozen" | "tidal" |
-    "turn" — so the result can be handed straight to persona.build_system_prompt()
+    Returns one of the three canonical compose states, "frozen" | "tidal" |
+    "turn", so the result can be handed straight to persona.build_system_prompt()
     without translation. "tidal" doubles as the calm/ambiguous resting default.
     """
     low = _lower(text)
     if _contains_any(low, TURN_NOUNS):
-        return "turn"         # the hope-engine firing — should be rare
-    thaw = len(_contains_any(low, THAW_NOUNS))
+        return "turn"         # the hope-engine firing, should be rare
+    frozen = len(_contains_any(low, FROZEN_NOUNS))
     tide = len(_contains_any(low, TIDE_NOUNS))
-    if thaw > tide:
+    if frozen > tide:
         return "frozen"
-    return "tidal"            # moving, or calm/ambiguous — the resting default
+    return "tidal"            # moving, or calm/ambiguous: the resting default
 
 
 def register_signal(message: str) -> Optional[str]:
@@ -258,7 +332,7 @@ def register_signal(message: str) -> Optional[str]:
     Returns "frozen" (distress) or "tidal" (upswing) only when feeling words are
     present. Returns None for neutral messages ("what should i do", "what's on my
     list") so the caller can decide to INHERIT the recent register rather than
-    reset — the difference between listening to the arc and forgetting it.
+    reset: the difference between listening to the arc and forgetting it.
     """
     low = _lower(message)
     frozen = len(_contains_any(low, FROZEN_FEELING))
@@ -273,13 +347,13 @@ def read_register(message: str) -> str:
 
     A clear emotional signal wins; otherwise fall back to motif/default. Prefer
     register continuity at the call site (inherit the last signal on a neutral
-    turn) — this single-message form is the floor when there's no history.
+    turn): this single-message form is the floor when there's no history.
     """
     return register_signal(message) or detect_state(message)
 
 
 # ---------------------------------------------------------------------------
-# Semantic layer — Rules 1, 2, 5, 7 (needs judgment → fast model)
+# Semantic layer: Rules 1, 2, 5, 7 (needs judgment → fast model)
 # ---------------------------------------------------------------------------
 
 SEMANTIC_RUBRIC = """You are grading ONE line spoken by a fictional character \
@@ -355,7 +429,7 @@ def evaluate(text: str,
     layer runs only if fast_model is provided.
 
     Scoring: weighted pass-rate across all rules. Semantic grades of 2 count
-    as full weight, 1 as half, 0 as zero — so partial voice gets partial credit
+    as full weight, 1 as half, 0 as zero, so partial voice gets partial credit
     rather than a hard pass/fail. A hard_fail (hedge or sentiment word) caps the
     score below threshold regardless of everything else.
     """
@@ -399,8 +473,8 @@ def evaluate(text: str,
 
 def stub_fast_model(system_prompt: str, user_text: str) -> str:
     """
-    Heuristic stand-in for llm.fast so the demo runs offline. NOT for production
-    — it just approximates the rubric with keyword guesses. Replace with a real
+    Heuristic stand-in for llm.fast so the demo runs offline. NOT for production:
+     it just approximates the rubric with keyword guesses. Replace with a real
     model call: fast_model = lambda sys, txt: my_llm_fast(sys, txt).
     """
     low = user_text.lower()
@@ -425,10 +499,10 @@ if __name__ == "__main__":
         # TIDAL state: things moving; returning a memory as the tide returns things.
         "The tide brought back what you gave the water in spring. "
         "You are further out than you were.",
-        # TURNING state: the hope-engine — the thaw, earned not stated.
+        # TURNING state: the hope-engine, the thaw, earned not stated.
         "The ice is going out. I have watched you cross this break before.",
         # off-voice: greeting-card sentiment (hard fail)
-        "Don't give up — everything happens for a reason and brighter days are coming!",
+        "Don't give up: everything happens for a reason and brighter days are coming!",
         # off-voice: hedging, chatty, no motif (hard fail)
         "Hey! Maybe things will sort of get better, I think? How are you feeling today?",
         # borderline: overt hope flagged, but otherwise on-voice

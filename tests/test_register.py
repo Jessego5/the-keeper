@@ -1,4 +1,7 @@
-"""Tier 1 — reading the person's register (voice_eval.register_signal) + continuity."""
+"""
+These are the Tier 1 tests for reading the person's register
+(voice_eval.register_signal) + continuity.
+"""
 import pytest
 import voice_eval as ve
 

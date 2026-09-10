@@ -1,4 +1,7 @@
-"""Tier 1 — sub-agents (subagents.py): routing, tool filtering, delegation."""
+"""
+These are the Tier 1 tests for sub-agents (subagents.py): routing, tool filtering,
+delegation.
+"""
 import pytest
 import subagents
 

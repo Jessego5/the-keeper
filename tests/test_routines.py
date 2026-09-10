@@ -1,4 +1,7 @@
-"""Tier 1 — the house's presence-driven routines (routines.py). No key, no clock."""
+"""
+These are the Tier 1 tests for the house's presence-driven routines (routines.py). No
+key, no clock.
+"""
 from datetime import datetime
 
 import pytest
