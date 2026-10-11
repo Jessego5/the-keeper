@@ -30,6 +30,10 @@ async def client(monkeypatch, tmp_path):
     # Every unbidden line now opens a conversation if none is active and is written
     # to the log, so a run against the real memory_store/ would leave both behind.
     _isolate_delivery(monkeypatch, tmp_path)
+    # The single-instance lock lives in memory_store/ too. Held by a Keeper
+    # running on this machine, it would otherwise refuse the test its lifespan.
+    import instance
+    monkeypatch.setattr(instance, "LOCK_PATH", tmp_path / "keeper.lock")
     async with server.app.router.lifespan_context(server.app):
         server.STATE.generate, server.STATE.fast = compose.stub_generator, None
         transport = httpx.ASGITransport(app=server.app)

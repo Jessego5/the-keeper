@@ -52,6 +52,7 @@ import drift
 import embedder
 import energy
 import inbox as inbox_mod
+import instance
 import journal as journal_mod
 import memory
 import mood
@@ -478,6 +479,14 @@ async def _proactive_loop() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # First, before anything that could speak: one Keeper per memory. See
+    # instance.py for the night this was written for.
+    lock = instance.InstanceLock(instance.LOCK_PATH)
+    try:
+        lock.acquire(port=os.environ.get("PORT", ""))
+    except instance.AlreadyRunning as exc:
+        print(f"[instance] refusing to start: {exc}", flush=True)
+        raise SystemExit(1) from None
     STATE.generate, STATE.fast = compose.make_generator()
     STATE.embed = embedder.make_embedder()   # semantic recall when a key is set
     STATE.mood_signal = mood.build_local_mood_signal()   # local fallback
@@ -523,6 +532,7 @@ async def lifespan(app: FastAPI):
         task.cancel()
         if inbox_task is not None:
             inbox_task.cancel()
+        lock.release()
         if STATE.mcp is not None:
             try:
                 await STATE.mcp.aclose()
