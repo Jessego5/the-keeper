@@ -278,6 +278,7 @@ async def tool_reply(
     max_rounds: int = 4,
     max_tokens: int = 400,
     trace: Optional[list] = None,
+    prior: Optional[list] = None,
 ) -> str:
     """Passive-only: let the Keeper use tools, then answer in voice.
 
@@ -288,6 +289,10 @@ async def tool_reply(
     across several rounds, sees results, and writes a final line. Returns that
     line's text (scoring is the caller's job: a tool-grounded answer may be
     plainer than a proactive line and must not be replaced by a canned fallback).
+
+    prior: the last few turns of this conversation, oldest first, as
+        {"role", "content"} dicts. Without them every message arrived alone, so
+        "what did he say?" or "make it shorter" had nothing to refer to.
 
     Never used by the proactive loop, which stays sealed.
     """
@@ -302,10 +307,10 @@ async def tool_reply(
             tools.append(t)
             route[t["function"]["name"]] = p
 
-    messages: list[dict] = [
-        {"role": "system", "content": system},
-        {"role": "user", "content": user or "."},
-    ]
+    messages: list[dict] = [{"role": "system", "content": system}]
+    messages += [{"role": m["role"], "content": m["content"]}
+                 for m in (prior or []) if m.get("content")]
+    messages.append({"role": "user", "content": user or "."})
 
     for i in range(max_rounds):
         resp = await aclient.chat.completions.create(

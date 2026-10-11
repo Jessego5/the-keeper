@@ -580,16 +580,48 @@ class ChatIn(BaseModel):
     message: str
 
 
+# How much of the conversation a turn sees. Long-term memory is recall's job; this
+# is only the thread of the last few exchanges, so a reply can refer back to what
+# was just said. Bounded in count AND in time: yesterday's last message is not
+# context for this morning's first one.
+RECENT_TURNS = 8
+RECENT_TURNS_WINDOW_S = 2 * 3600.0
+
+
+def _recent_turns(key: Optional[str], now: Optional[float] = None) -> list:
+    """The tail of a conversation as chat messages, oldest first.
+
+    Unbidden lines and proposals are included: "what did he say?" is usually a
+    reply to something the Keeper said first, and "make it shorter" to a draft it
+    is waiting on a yes for."""
+    s = STATE.sessions.get(key) if key else None
+    if s is None:
+        return []
+    now = now or time.time()
+    recent = [m for m in s.messages if now - m.ts <= RECENT_TURNS_WINDOW_S]
+    return [{"role": "user" if m.role == "user" else "assistant",
+             "content": m.content} for m in recent[-RECENT_TURNS:]]
+
+
 @app.post("/chat")
 async def chat(body: ChatIn):
-    msg = body.message.strip()
+    if STATE.current_key is None:                 # start a conversation on first msg
+        STATE.current_key = STATE.sessions.new().key
+    return await _converse(body.message.strip(), STATE.current_key, surface="web")
+
+
+async def _converse(msg: str, key: str, surface: str = "web") -> dict:
+    """One turn of conversation, from any surface, kept in conversation `key`.
+
+    The page passes whichever conversation is open; the phone passes its own
+    thread. Everything else, memory, goals, reminders, the register, is one Keeper
+    whichever way the person reached it."""
     now = time.time()
+    prior = _recent_turns(key, now)
     STATE.last_user_at = now
     STATE.user_msg_times.append(now)
     STATE.history.append({"role": "user", "content": msg, "ts": now})
-    if STATE.current_key is None:                 # start a conversation on first msg
-        STATE.current_key = STATE.sessions.new().key
-    STATE.sessions.append(STATE.current_key, "user", msg, now)
+    STATE.sessions.append(key, "user", msg, now)
 
     # Retrieve-then-rerank on the user-facing path: hybrid casts wide, the fast model
     # reranks to the best few. (Background paths use plain hybrid: no per-turn cost.)
@@ -663,7 +695,7 @@ async def chat(body: ChatIn):
             system = system + "\n\n---\n\n" + TOOL_ADDENDUM
             reply = await compose.tool_reply(
                 system, msg, providers=providers, model=TOOL_MODEL, max_rounds=6,
-                trace=tool_trace)
+                trace=tool_trace, prior=prior)
             # Tool answers come back plain (a changelog, a file dump). Pass them back
             # through the Keeper's voice: preserving every fact: so a tool-grounded
             # reply still sounds like the Keeper, not a report.
@@ -684,8 +716,7 @@ async def chat(body: ChatIn):
         reply, score, fell_back = ERROR_LINE, None, True
 
     STATE.history.append({"role": "assistant", "content": reply, "ts": time.time()})
-    if STATE.current_key is not None:
-        STATE.sessions.append(STATE.current_key, "assistant", reply)
+    STATE.sessions.append(key, "assistant", reply)
     # Note: the reply is returned in the HTTP response and rendered from there;
     # SSE (/events) carries ONLY unbidden proactive lines, so nothing double-renders.
 
@@ -694,6 +725,8 @@ async def chat(body: ChatIn):
     STATE.traces.appendleft({
         "ts": now,
         "cue": msg,
+        "surface": surface,
+        "turns_seen": len(prior),
         "water_state": water,
         "mood_signal": signal,
         # WHY that register, not just which. The trace exists to answer "why did it

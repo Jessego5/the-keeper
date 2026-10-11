@@ -731,3 +731,39 @@ async def test_the_person_can_be_asked_but_a_peer_agent_cannot(actions,
 
 async def _noop_distill(*a, **k):
     return None
+
+
+# --- a turn sees the last few exchanges --- #
+
+async def test_a_turn_sees_the_recent_thread_and_not_yesterday(monkeypatch, tmp_path):
+    _isolate_delivery(monkeypatch, tmp_path)
+    s = server.STATE.sessions.new()
+    now = time.time()
+    server.STATE.sessions.append(s.key, "user", "from yesterday", now - 86_400)
+    for i in range(12):
+        server.STATE.sessions.append(s.key, "user", f"m{i}", now - 60 + i)
+    server.STATE.sessions.append(s.key, "assistant", "Sam wrote back.", now - 5,
+                                 kind="proactive")
+    turns = server._recent_turns(s.key, now)
+    assert len(turns) == server.RECENT_TURNS
+    assert "from yesterday" not in [t["content"] for t in turns]
+    assert turns[-1] == {"role": "assistant", "content": "Sam wrote back."}
+
+
+async def test_chat_hands_the_model_the_thread(monkeypatch, tmp_path):
+    """Regression: every message used to arrive alone, so "what did he say?" had
+    nothing to refer to. The second turn must see the first."""
+    _isolate_delivery(monkeypatch, tmp_path)
+    seen = []
+
+    async def fake_tool_reply(system, user, *, prior=None, **kw):
+        seen.append([m["content"] for m in prior or []])
+        return "kept"
+
+    monkeypatch.setattr(server.compose, "tool_reply", fake_tool_reply)
+    monkeypatch.setattr(server.compose, "revoice", lambda text, *a, **k: text)
+    monkeypatch.setattr(server.memory, "recall", lambda *a, **k: "")
+    monkeypatch.setattr(server, "_distill_async", _noop_distill)
+    await server.chat(server.ChatIn(message="sam asked about thursday"))
+    await server.chat(server.ChatIn(message="what did he ask?"))
+    assert seen == [[], ["sam asked about thursday", "kept"]]
