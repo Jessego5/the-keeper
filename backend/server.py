@@ -915,9 +915,11 @@ async def _poll_sources() -> None:
         try:
             # mcp.call answers rather than raising, and its deadline is what keeps
             # a hung server from stalling the whole proactive loop.
-            text = await STATE.mcp.call(tool, watch.get("args") or {})
-            batches.append(sources.parse_tool_output(
-                text, source=label, max_items=int(watch.get("max_items", 8))))
+            text = await STATE.mcp.call(
+                tool, sources.expand_time(watch.get("args") or {}, now))
+            batches.append(sources.parse_watch_output(
+                text, source=label, max_items=int(watch.get("max_items", 8)),
+                parser=watch.get("parser")))
         except Exception as exc:  # noqa: BLE001 - a dead tool is never fatal
             print(f"[sources] watch {label} failed: {type(exc).__name__}: {exc}",
                   flush=True)

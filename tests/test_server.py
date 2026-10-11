@@ -938,3 +938,54 @@ async def test_the_loop_runs_a_due_job(client, scheduled, monkeypatch):
     scheduled.add("check the gallery's site", time.time() - 1)
     server.STATE.wake.set()
     await asyncio.wait_for(ran.wait(), 10)
+
+
+# --- watching the inbox and calendar --- #
+
+_INBOX = """Found 1 messages matching 'in:inbox is:unread':
+
+📧 MESSAGES:
+  1. Message ID: 18c2a9f0
+     Subject: The gallery wants your paintings
+     From: Riverside Gallery <hello@riverside.example>
+     Date: Sat, 10 Oct 2026 18:02:11 -0500
+     Web Link: https://mail.google.com/mail/u/0/#all/18c2a9f0
+     Thread ID: 18c2a9f0
+     Thread Link: https://mail.google.com/mail/u/0/#all/18c2a9f0
+
+💡 USAGE:
+  • Pass the Message IDs **as a list** to get_gmail_messages_content_batch()
+"""
+
+
+async def test_a_message_that_bears_on_a_kept_fact_becomes_worth_saying(
+        polling, monkeypatch):
+    """The inbox watched like any source: read by its own parser, scored against
+    memory, and only the message that touches something kept is held."""
+    monkeypatch.setattr(server.relevance, "score_item",
+                        lambda item, *a, **k: (0.9, "they paint")
+                        if "gallery" in item.title.lower() else (0.0, ""))
+    fake = _FakeMCP(text=_INBOX, watches=[{
+        "name": "inbox", "tool": "google__search_gmail_messages",
+        "args": {"query": "in:inbox is:unread", "include_headers": True},
+        "parser": "gmail"}])
+    monkeypatch.setattr(polling, "mcp", fake)
+    await server._poll_sources()
+    assert polling.pending_item.title == (
+        "The gallery wants your paintings (from Riverside Gallery "
+        "<hello@riverside.example>)")
+    assert [r["title"] for r in polling.last_scan] == [polling.pending_item.title]
+
+
+async def test_a_calendar_watch_asks_about_now_not_the_day_it_was_written(
+        polling, monkeypatch):
+    monkeypatch.setattr(server.relevance, "score_item", lambda *a, **k: (0.0, ""))
+    fake = _FakeMCP(text="", watches=[{
+        "name": "calendar", "tool": "google__get_events",
+        "args": {"time_min": "${NOW}", "time_max": "${NOW+1d}"},
+        "parser": "calendar"}])
+    monkeypatch.setattr(polling, "mcp", fake)
+    await server._poll_sources()
+    (tool, args), = fake.calls
+    assert "${" not in args["time_min"] and "${" not in args["time_max"]
+    assert args["time_min"][:4].isdigit() and args["time_min"] < args["time_max"]

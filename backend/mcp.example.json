@@ -126,7 +126,29 @@
         "max_count": 5
       },
       "max_items": 5
+    },
+    {
+      "name": "inbox",
+      "tool": "google__search_gmail_messages",
+      "args": {
+        "query": "in:inbox is:unread newer_than:2d",
+        "page_size": 10,
+        "include_headers": true
+      },
+      "parser": "gmail",
+      "max_items": 10
+    },
+    {
+      "name": "calendar",
+      "tool": "google__get_events",
+      "args": {
+        "time_min": "${NOW}",
+        "time_max": "${NOW+1d}",
+        "max_results": 10
+      },
+      "parser": "calendar",
+      "max_items": 10
     }
   ],
-  "_watch_comment": "Tools the proactive loop polls for what is NEW, scored against memory like any feed item. Only tools whose entries carry their own identity belong here (a commit log, a listing, a calendar); a web search returns the same results every time and would have the Keeper announce old news as a discovery. See sources.py."
+  "_watch_comment": "Tools the proactive loop polls for what is NEW, scored against memory like any feed item. Only tools whose entries carry their own identity belong here (a commit log, a listing, a calendar); a web search returns the same results every time and would have the Keeper announce old news as a discovery. See sources.py. 'parser' names a reader for servers whose output the generic one gets wrong ('gmail', 'calendar'); ${NOW}, ${NOW+1d} and ${NOW-6h} in args are filled in at every poll. The inbox and calendar watches do nothing until the google server is on."
 }

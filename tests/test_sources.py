@@ -328,3 +328,93 @@ def test_a_relevant_item_keeps_its_reason(tmp_path):
         item, store, generate=lambda s, u: "8 - Is a painter.", embed=None)
     assert score >= relevance.MENTION
     assert because == "Is a painter who stopped painting in March."
+
+
+# --- the google workspace server's own shapes --- #
+#
+# Copied from what workspace-mcp prints (gmail_tools._format_gmail_results_plain,
+# calendar_tools.get_events), header, emoji and usage tips included, because
+# those are exactly what the generic reader would mistake for events.
+
+_GMAIL = """Found 2 messages matching 'in:inbox is:unread newer_than:2d':
+
+📧 MESSAGES:
+  1. Message ID: 18c2a9f0
+     Subject: Re: Thursday
+     From: Sam Ortiz <sam@example.com>
+     Date: Sat, 10 Oct 2026 18:02:11 -0500
+     Web Link: https://mail.google.com/mail/u/0/#all/18c2a9f0
+     Thread ID: 18c2a000
+     Thread Link: https://mail.google.com/mail/u/0/#all/18c2a000
+
+  2. Message ID: 18c2b111
+     Subject: Your autumn programme
+     From: Riverside Gallery <hello@riverside.example>
+     Date: Sat, 10 Oct 2026 09:15:00 -0500
+     Web Link: https://mail.google.com/mail/u/0/#all/18c2b111
+     Thread ID: 18c2b111
+     Thread Link: https://mail.google.com/mail/u/0/#all/18c2b111
+
+💡 USAGE:
+  • Pass the Message IDs **as a list** to get_gmail_messages_content_batch()
+    e.g. get_gmail_messages_content_batch(message_ids=[...])
+"""
+
+_CALENDAR = """Successfully retrieved 2 events from calendar 'primary' for me@example.com:
+- "Dinner with Sam" (Starts: 2026-10-11T19:00:00-05:00, Ends: 2026-10-11T21:00:00-05:00) ID: ev1 | Link: https://calendar.google.com/event?eid=ev1
+- "Gallery opening" (Starts: 2026-10-12T18:00:00-05:00, Ends: 2026-10-12T20:00:00-05:00)
+  Location: Riverside
+  ID: ev2 | Link: https://calendar.google.com/event?eid=ev2"""
+
+
+def test_mail_is_read_as_messages_not_as_the_servers_furniture():
+    items = sources.parse_watch_output(_GMAIL, "inbox", parser="gmail")
+    assert [i.title for i in items] == [
+        "Re: Thursday (from Sam Ortiz <sam@example.com>)",
+        "Your autumn programme (from Riverside Gallery <hello@riverside.example>)"]
+    assert items[0].url.endswith("18c2a9f0")
+
+
+def test_the_generic_reader_would_have_announced_the_usage_tips():
+    """Why the gmail parser exists: read generically, the header and the tips come
+    back as things that happened."""
+    titles = " ".join(i.title for i in sources.parse_tool_output(_GMAIL, "inbox"))
+    assert "Found 2 messages" in titles or "USAGE" in titles
+
+
+def test_a_message_is_known_by_its_id():
+    a = sources.parse_gmail_search(_GMAIL)[0]
+    b = sources.parse_gmail_search(_GMAIL.replace("Re: Thursday", "Re: Thurs"))[0]
+    assert a.key == b.key
+
+
+def test_events_are_read_in_both_of_the_servers_shapes():
+    items = sources.parse_watch_output(_CALENDAR, "calendar", parser="calendar")
+    assert [i.title for i in items] == [
+        "Dinner with Sam at 2026-10-11T19:00:00-05:00",
+        "Gallery opening at 2026-10-12T18:00:00-05:00"]
+
+
+def test_a_meeting_that_moves_is_news():
+    """Keyed by id alone, a moved dinner would be 'already told'."""
+    before = sources.parse_calendar_events(_CALENDAR)[0]
+    moved = sources.parse_calendar_events(
+        _CALENDAR.replace("2026-10-11T19:00", "2026-10-11T20:00"))[0]
+    assert before.key != moved.key
+
+
+def test_a_tool_that_is_not_there_yields_nothing():
+    """The google server is off until configured; its watches must stay quiet."""
+    assert sources.parse_watch_output("(no such tool: google__get_events)",
+                                      "calendar", parser="calendar") == []
+
+
+def test_now_is_filled_in_at_each_poll():
+    from datetime import datetime
+    now = datetime(2026, 10, 11, 8, 0).timestamp()
+    out = sources.expand_time({"time_min": "${NOW}", "time_max": "${NOW+1d}",
+                               "since": ["${NOW-6h}"], "n": 10}, now)
+    assert out["time_min"].startswith("2026-10-11T08:00:00")
+    assert out["time_max"].startswith("2026-10-12T08:00:00")
+    assert out["since"][0].startswith("2026-10-11T02:00:00")
+    assert out["n"] == 10

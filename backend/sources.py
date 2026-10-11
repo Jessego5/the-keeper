@@ -27,6 +27,7 @@ import re
 import time
 import xml.etree.ElementTree as ET
 from dataclasses import asdict, dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Iterable, Optional
 
@@ -183,6 +184,103 @@ def parse_tool_output(text: str, source: str = "tool",
             items.append(SourceItem(source=source, title=title, body=rest[:1000],
                                     key=delivery_key("", block[:500])))
     return items
+
+
+# --------------------------------------------------------------------------- #
+# Servers whose output the generic reader gets wrong.
+# --------------------------------------------------------------------------- #
+#
+# The google workspace server answers in its own decorated text: a count line, an
+# emoji header, numbered records, then usage tips for the model. parse_tool_output
+# would read the header and the tips as things that happened. These two read the
+# record shapes that server actually prints (gmail/gmail_tools.py and
+# gcalendar/calendar_tools.py in workspace-mcp), and key each record by the
+# server's own id, which is what makes "new since I last looked" a fact.
+
+_GMAIL_RECORD = re.compile(r"^\s*\d+\.\s+Message ID:\s*(\S+)\s*$", re.M)
+_GMAIL_FIELD = re.compile(r"^\s*(Subject|From|Date|Web Link):\s*(.*)$", re.M)
+
+
+def parse_gmail_search(text: str, source: str = "inbox",
+                       max_items: int = 10) -> list[SourceItem]:
+    """search_gmail_messages, called with include_headers=true. One item per
+    message: its subject and sender, keyed by message id, so a thread that grows
+    a reply arrives as the reply rather than as the whole thread again."""
+    body = text or ""
+    starts = list(_GMAIL_RECORD.finditer(body))
+    items: list[SourceItem] = []
+    for i, m in enumerate(starts[:max_items]):
+        end = starts[i + 1].start() if i + 1 < len(starts) else len(body)
+        fields = dict(_GMAIL_FIELD.findall(body[m.end():end]))
+        subject = (fields.get("Subject") or "(no subject)").strip()
+        sender = (fields.get("From") or "").strip()
+        title = f"{subject} (from {sender})" if sender else subject
+        items.append(SourceItem(
+            source=source, title=title[:200],
+            url=(fields.get("Web Link") or "").strip(),
+            body=f"From: {sender}\nDate: {fields.get('Date', '').strip()}",
+            key=delivery_key(f"gmail:{m.group(1)}", "")))
+    return items
+
+
+_EVENT = re.compile(
+    r'^- "(?P<title>.*?)" \(Starts: (?P<start>[^,]+), Ends: (?P<end>[^)]+)\)'
+    r'(?P<rest>.*?)ID: (?P<id>\S+) \| Link: (?P<link>\S+)', re.M | re.S)
+
+
+def parse_calendar_events(text: str, source: str = "calendar",
+                          max_items: int = 10) -> list[SourceItem]:
+    """get_events. Keyed by event id AND start time: a meeting that MOVES is news,
+    and keying by id alone would have decided it had already been told."""
+    items: list[SourceItem] = []
+    for m in list(_EVENT.finditer(text or ""))[:max_items]:
+        start = m.group("start").strip()
+        items.append(SourceItem(
+            source=source, title=f"{m.group('title').strip()} at {start}"[:200],
+            url=m.group("link").strip(),
+            body=f"Starts: {start}\nEnds: {m.group('end').strip()}",
+            key=delivery_key(f"cal:{m.group('id')}@{start}", "")))
+    return items
+
+
+PARSERS = {"gmail": parse_gmail_search, "calendar": parse_calendar_events}
+
+
+def parse_watch_output(text: str, source: str, max_items: int = 8,
+                       parser: Optional[str] = None) -> list[SourceItem]:
+    """A watched tool's result, read by the parser its watch names, or by the
+    generic reader when it names none."""
+    if (text or "").lstrip().startswith("("):   # "(tool error: ...)", "(no such tool"
+        return []
+    fn = PARSERS.get(parser or "")
+    if fn is not None:
+        return fn(text, source=source, max_items=max_items)
+    return parse_tool_output(text, source=source, max_items=max_items)
+
+
+_NOW_REF = re.compile(r"\$\{NOW(?:([+-])(\d+)([mhd]))?\}")
+_UNIT_S = {"m": 60, "h": 3600, "d": 86400}
+
+
+def expand_time(obj, now: Optional[float] = None):
+    """${NOW}, ${NOW+1d}, ${NOW-6h} inside a watch's arguments, as RFC 3339 in
+    local time. Expanded at each poll, not at load: a calendar watch asks about
+    the next day from NOW, and the day it was configured has long passed."""
+    now = now or time.time()
+    if isinstance(obj, str):
+        def sub(m):
+            offset = 0
+            if m.group(1):
+                offset = int(m.group(2)) * _UNIT_S[m.group(3)]
+                offset = offset if m.group(1) == "+" else -offset
+            return datetime.fromtimestamp(now + offset).astimezone().isoformat(
+                timespec="seconds")
+        return _NOW_REF.sub(sub, obj)
+    if isinstance(obj, dict):
+        return {k: expand_time(v, now) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [expand_time(x, now) for x in obj]
+    return obj
 
 
 def parse_feed(xml_text: str, source: str = "feed") -> list[SourceItem]:
