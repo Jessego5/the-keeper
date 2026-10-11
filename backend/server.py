@@ -44,6 +44,7 @@ import a2a
 import background as background_mod
 import channels
 import compose
+import dial as dial_mod
 import drift
 import embedder
 import energy
@@ -123,6 +124,11 @@ the paints out"), use advance_goal to mark it and move to the next. Use list_goa
 to see what you are helping with, and complete_goal when the whole thing is
 finished or they want to set it down. A goal is for tending over time; a reminder
 is for one moment, choose the one that fits.
+
+They decide how often you speak on your own. When they ask you to be quieter, to
+leave them be for a while, or to speak up more, use set_dial: off, quiet, usual or
+eager. Never change it on your own judgement, and never suggest it. Off means you
+start nothing yourself; what they asked you to hold or look into still comes back.
 
 You keep a JOURNAL: the one thing you can write. Use keep_note to hold a thought they
 ask you to keep, or to record something you found or worked out; use read_journal to
@@ -238,6 +244,7 @@ class AppState:
         default_factory=routines.RoutineEngine)   # the house's presence routines
     unbidden: unbidden.UnbiddenLog = field(
         default_factory=unbidden.UnbiddenLog)     # every line it said unasked
+    dial: dial_mod.Dial = field(default_factory=dial_mod.Dial)  # the person's say
 
     def minutes_since_user(self) -> Optional[float]:
         if self.last_user_at is None:
@@ -333,13 +340,25 @@ async def _proactive_loop() -> None:
         # (advance a due goal), then the house's routines (a return, long focus,
         # evening), then: falling through below: restless energy. The first to
         # speak stands in for this tick's outreach.
+        #
+        # All three are the Keeper's own initiative, which the person can switch
+        # off (dial.py). Off skips them here rather than composing a line and
+        # discarding it, so "off" also costs nothing: no judge calls on feeds, no
+        # sub-agent working a goal step whose result could not be said.
+        initiative = STATE.dial.level.initiative
         spoke = False
-        if can_reach:
+        if can_reach and initiative:
             spoke = await _maybe_advance_goal() or await _maybe_routine(pres)
 
         wait = max(1, int(STATE.config.tick_fast / max(STATE.config.speed, 1e-9)))
         if spoke:
             pass
+        elif can_reach and not initiative:
+            # Holding its tongue by request. Reflection is private and never sent,
+            # so it carries on; reminders above already went out regardless.
+            await _maybe_drift_note()
+            wait = max(1, int(STATE.config.tick_slow
+                              / max(STATE.config.speed, 1e-9)))
         elif can_reach:
             # Refresh what is being watched before deciding. Rate-limited inside,
             # and it only ever writes a candidate: the decision stays in tick().
@@ -353,7 +372,8 @@ async def _proactive_loop() -> None:
                     proactive.tick,
                     STATE.proactive_state(),
                     generate=STATE.generate, fast_model=STATE.fast,
-                    store=STATE.store, config=STATE.config, presence=pres,
+                    store=STATE.store, config=STATE.dial.shape(STATE.config),
+                    presence=pres,
                     pending=STATE.pending_item,
                     recent=_recent_lines(),
                 )
@@ -576,7 +596,7 @@ async def chat(body: ChatIn):
         STATE.reminders, goals=STATE.goals,
         planner_generate=STATE.fast or STATE.generate, journal=STATE.journal,
         mcp=STATE.mcp, delegate_generate=STATE.fast or STATE.generate,
-        spawner=_spawn_background)]
+        spawner=_spawn_background, dial=STATE.dial)]
     if STATE.mcp is not None and STATE.mcp.has_tools:
         providers.append(STATE.mcp)
     used_tools = bool(providers)
@@ -685,7 +705,8 @@ def _goal_check_interval() -> float:
     "crank speed to see nudges/autonomous execution" trigger could never fire, and
     a person-step was never nudged in a demo. Compress it the same way drift is.
     """
-    return tasks.DEFAULT_CHECK_INTERVAL_S / max(STATE.config.speed, 1.0)
+    return (STATE.dial.goal_interval(tasks.DEFAULT_CHECK_INTERVAL_S)
+            / max(STATE.config.speed, 1.0))
 
 
 def _recent_lines(limit: int = proactive.REPEAT_WINDOW) -> list:
@@ -861,6 +882,13 @@ async def _deliver_proactive(text: str, state: Optional[str] = None,
 
     `state` is the register it was composed in, so the native banner can wear
     the matching Keeper. `why` says which part of the Keeper spoke."""
+    # The loop already skips the Keeper's own initiative when the dial is off.
+    # This is the backstop for work that was in flight when it was turned: a goal
+    # step a sub-agent was still working, say. Its result is kept on the step; it
+    # just is not said.
+    if not STATE.dial.allows(why):
+        print(f"[dial] held a {why} line, the dial is {STATE.dial.name}", flush=True)
+        return
     # A line with nowhere to be kept is a line the page can never show again. After
     # "begin again", or on a first run, there is no conversation, so the Keeper's
     # line opens one, the way a person's first message would.
@@ -1170,6 +1198,10 @@ async def state():
     en = energy.compute_energy(ms)
     score = energy.base_score(en, STATE.recent_msg_count())
     now = time.time()
+    # The band the loop actually rolls against, which the dial reshapes. Reporting
+    # the defaults while the dial was at quiet would show a number the Keeper is
+    # not using: the same lie as a channel advertised that cannot fire.
+    shaped = STATE.dial.shape(STATE.config)
 
     pres = await asyncio.to_thread(sensors.read)
     pending = STATE.reminders.pending()
@@ -1182,7 +1214,11 @@ async def state():
         "recent_msg_count": STATE.recent_msg_count(),
         "energy": round(en, 3),
         "base_score": round(score, 3),
-        "speak_probability": round(energy.speak_probability(score), 3),
+        "speak_probability": (round(energy.speak_probability(
+            score, p_min=shaped.p_min, p_max=shaped.p_max), 3)
+            if STATE.dial.level.initiative else 0.0),
+        "level": STATE.dial.name,
+        "daily_max": shaped.daily_max,
         "facts_kept": sum(1 for f in STATE.store.facts if f.active),
         "insights_kept": sum(1 for f in STATE.store.facts
                              if f.kind == "insight" and f.active),
@@ -1232,6 +1268,7 @@ async def state():
 class ConfigIn(BaseModel):
     speed: Optional[float] = None
     cooldown_min: Optional[float] = None
+    level: Optional[str] = None      # the proactivity dial: off/quiet/usual/eager
 
 
 @app.post("/config")
@@ -1241,9 +1278,18 @@ async def set_config(body: ConfigIn):
         STATE.drift_config.speed = STATE.config.speed   # compress drift clock too
     if body.cooldown_min is not None:
         STATE.config.cooldown_min = max(0.0, body.cooldown_min)
+    error = None
+    if body.level is not None and STATE.dial.set(body.level) is None:
+        error = f"unknown level {body.level!r}: one of {', '.join(dial_mod.LEVELS)}"
+    elif body.level is not None:
+        print(f"[dial] set to {STATE.dial.name}", flush=True)
     if STATE.wake is not None:
         STATE.wake.set()   # re-tick now with the new settings
-    return {"speed": STATE.config.speed, "cooldown_min": STATE.config.cooldown_min}
+    out = {"speed": STATE.config.speed, "cooldown_min": STATE.config.cooldown_min,
+           "level": STATE.dial.name}
+    if error:
+        out["error"] = error
+    return out
 
 
 @app.get("/sessions")

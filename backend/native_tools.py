@@ -19,6 +19,7 @@ from datetime import datetime
 from typing import Callable, Optional
 
 import a2a as a2a_mod
+import dial as dial_mod
 import journal as journal_mod
 import planner as planner_mod
 import reminders as reminders_mod
@@ -33,8 +34,10 @@ class NativeTools:
                  planner_generate: Optional[Callable] = None,
                  journal: Optional[journal_mod.Journal] = None,
                  mcp=None, delegate_generate: Optional[Callable] = None,
-                 allow_delegate: bool = True, spawner: Optional[Callable] = None):
+                 allow_delegate: bool = True, spawner: Optional[Callable] = None,
+                 dial: Optional[dial_mod.Dial] = None):
         self.store = store
+        self.dial = dial                       # only the person's own turn gets it
         self.goals = goals
         self._plan_gen = planner_generate      # used to decompose a new goal
         self.journal = journal
@@ -215,6 +218,25 @@ class NativeTools:
                 },
             },
         ]
+        if dial is not None:
+            self._defs.append({
+                "type": "function",
+                "function": {
+                    "name": "set_dial",
+                    "description": "Set how often you speak on your own, ONLY when "
+                                   "the person asks you to: 'off' (start nothing "
+                                   "yourself; reminders and things they asked for "
+                                   "still come back), 'quiet', 'usual', or 'eager'.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "level": {"type": "string",
+                                      "enum": list(dial_mod.LEVELS)},
+                        },
+                        "required": ["level"],
+                    },
+                },
+            })
         if allow_delegate and spawner is not None:
             self._defs.append({
                 "type": "function",
@@ -379,6 +401,14 @@ class NativeTools:
         if name == "run_python":
             res = await asyncio.to_thread(sandbox_mod.run_python, args.get("code", ""))
             return res.as_text()
+
+        if name == "set_dial":
+            if self.dial is None:
+                return "(cannot change that from here)"
+            level = self.dial.set(args.get("level", ""))
+            if level is None:
+                return f"(no such level; one of {', '.join(dial_mod.LEVELS)})"
+            return f"set to {level}"
 
         if name == "spawn_task":
             if self._spawner is None:

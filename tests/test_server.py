@@ -242,6 +242,46 @@ async def test_a_line_said_during_the_replay_is_not_sent_twice(
     assert contents == ["caught in between", "after"]
 
 
+async def test_config_turns_the_dial(client, monkeypatch, tmp_path):
+    import dial
+    monkeypatch.setattr(server.STATE, "dial", dial.Dial(tmp_path / "dial.json"))
+    out = (await client.post("/config", json={"level": "quiet"})).json()
+    assert out["level"] == "quiet"
+    s = (await client.get("/state")).json()
+    assert s["level"] == "quiet" and s["daily_max"] == 4
+    bad = (await client.post("/config", json={"level": "whisper"})).json()
+    assert bad["level"] == "quiet" and "unknown level" in bad["error"]
+
+
+async def test_off_keeps_a_promise_and_starts_nothing(client, monkeypatch, tmp_path):
+    """The real loop, restless and sped up, at off. A due reminder must still come
+    back; nothing of the Keeper's own may follow it."""
+    import dial
+    import reminders
+    d = dial.Dial(tmp_path / "dial.json")
+    d.set("off")
+    monkeypatch.setattr(server.STATE, "dial", d)
+    monkeypatch.setattr(server.STATE, "reminders",
+                        reminders.ReminderStore(tmp_path / "r.jsonl"))
+    server.STATE.reminders.add("water the plants", time.time() - 1)
+    server.STATE.last_user_at = time.time() - 100_000   # as restless as it gets
+    server.STATE.last_proactive_at = None
+    server.STATE.config.respect_lock = False
+    server.STATE.config.use_presence = False
+    q: asyncio.Queue = asyncio.Queue()
+    server.STATE.listeners.add(q)
+    try:
+        await client.post("/config", json={"speed": 900, "cooldown_min": 0})
+        first = json.loads(await asyncio.wait_for(q.get(), 10))
+        assert "water the plants" in first["content"]
+        assert first["why"] == "reminder"
+        with pytest.raises(asyncio.TimeoutError):
+            await asyncio.wait_for(q.get(), 3)
+    finally:
+        server.STATE.listeners.discard(q)
+        await client.post("/config", json={"speed": 1, "cooldown_min": 600})
+
+
 async def test_push_delivers_to_listener():
     # The delivery seam: a proactive line fans out to every registered listener
     # (this is what /events subscribes to internally).

@@ -75,6 +75,9 @@
   .v-int{color:var(--amber);min-width:6.5rem}
   .v-men{color:var(--tide);min-width:6.5rem}
   .v-sil{color:var(--foam-dim);opacity:.55;min-width:6.5rem}
+  .dial { display:flex; gap:0.5rem; flex-wrap:wrap; margin-bottom:0.55rem; }
+  .dial .badge.on { color:var(--foam); border-color:var(--tide);
+                    background:rgba(90,163,154,0.14); }
   </style>
 </head>
 <body>
@@ -132,6 +135,19 @@
         <div class="val" id="since">,</div>
         <div class="sub">virtual minutes since you spoke</div>
       </div>
+    </div>
+
+    <!-- The person's say over how much it speaks on its own. Off stops what it
+         starts; what you asked it to hold still comes back. See dial.py. -->
+    <div class="reflection">
+      <div class="label">how much it speaks on its own</div>
+      <div class="dial" id="dial">
+        <button class="badge btn" data-level="off">off</button>
+        <button class="badge btn" data-level="quiet">quiet</button>
+        <button class="badge btn" data-level="usual">usual</button>
+        <button class="badge btn" data-level="eager">eager</button>
+      </div>
+      <div class="sub" id="dial-sub" style="color:var(--foam-dim);font-size:0.7rem;"></div>
     </div>
 
     <!-- What it looked at and did NOT say. The rejecting is what separates a
@@ -276,6 +292,12 @@
     document.getElementById("b-speed").textContent = "speed " + (s.speed ?? 1) + "×";
     document.getElementById("crank").disabled = (s.speed ?? 1) > 1;
     document.getElementById("uncrank").disabled = (s.speed ?? 1) <= 1;
+    const level = s.level || "usual";
+    for (const b of document.querySelectorAll("#dial .btn"))
+      b.classList.toggle("on", b.dataset.level === level);
+    document.getElementById("dial-sub").textContent = level === "off"
+      ? "starts nothing of its own. reminders and things you sent it after still come back."
+      : "up to " + (s.daily_max ?? "-") + " a day, never more than once a minute.";
     document.getElementById("b-listeners").textContent = (s.listeners ?? 0) + " listening";
     // A tool the Keeper cannot reach should look like a fault, not like reticence.
     const tb = document.getElementById("b-tools"), tools = s.tools || {};
@@ -292,6 +314,13 @@
       body: JSON.stringify({speed: speed, cooldown_min: cooldown})});
     tick();
   }
+  for (const b of document.querySelectorAll("#dial .btn"))
+    b.onclick = async () => {
+      await fetch("/config", {method:"POST",
+        headers:{"content-type":"application/json"},
+        body: JSON.stringify({level: b.dataset.level})});
+      tick();
+    };
   document.getElementById("crank").onclick   = () => setSpeed(600, 5);
   document.getElementById("uncrank").onclick = () => setSpeed(1, 600);
 </script>

@@ -46,6 +46,11 @@ class Why:
     BACKGROUND = "background"    # a task it was sent off on came back
 
 
+# Lines that answer something the person asked for. The proactivity dial silences
+# the Keeper's own initiative, never these: see dial.py.
+ASKED_FOR = frozenset({Why.REMINDER, Why.BACKGROUND})
+
+
 @dataclass
 class Line:
     seq: int                     # monotonic; the SSE event id
