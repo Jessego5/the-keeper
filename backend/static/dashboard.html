@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>The Keeper, state</title>
 <style>
+  html { background:#081316; }
   :root {
     --deep:#081316; --sea:#0d2327; --surface:#14383a; --foam:#cfe0da;
     --foam-dim:#7ea59d; --tide:#5aa39a; --current:#2c5254; --amber:#e8b17a;
@@ -67,7 +68,11 @@
           margin-top:1.4rem; letter-spacing:0.08em; }
   a { color:var(--tide); text-decoration:none; }
   .badge.warn { color:#e8b17a; border-color:rgba(232,177,122,0.35); }
-  .btn{cursor:pointer;border:none;font:inherit}
+  /* Buttons set no background of their own, so the browser's white showed through
+     and the dial read inverted: every level lit except the one in effect. */
+  .btn{cursor:pointer;border:none;font:inherit;background:transparent}
+  .badge.btn{border:1px solid rgba(207,224,218,0.10);color:var(--foam-dim)}
+  .badge.btn:hover:not(:disabled){color:var(--foam);border-color:var(--tide)}
   .btn:disabled{opacity:.4;cursor:default}
     .cons-row{display:flex;gap:0.6rem;align-items:baseline;padding:0.18rem 0;
              font-size:0.76rem;font-family:var(--mono,monospace)}
@@ -76,8 +81,8 @@
   .v-men{color:var(--tide);min-width:6.5rem}
   .v-sil{color:var(--foam-dim);opacity:.55;min-width:6.5rem}
   .dial { display:flex; gap:0.5rem; flex-wrap:wrap; margin-bottom:0.55rem; }
-  .dial .badge.on { color:var(--foam); border-color:var(--tide);
-                    background:rgba(90,163,154,0.14); }
+  .dial .badge.on, .dial .badge.on:hover { color:var(--deep); border-color:var(--tide);
+                    background:var(--tide); }
   </style>
 </head>
 <body>
