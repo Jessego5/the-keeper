@@ -20,6 +20,7 @@ from typing import Callable, Optional
 
 import a2a as a2a_mod
 import dial as dial_mod
+import jobs as jobs_mod
 import journal as journal_mod
 import planner as planner_mod
 import reminders as reminders_mod
@@ -35,9 +36,11 @@ class NativeTools:
                  journal: Optional[journal_mod.Journal] = None,
                  mcp=None, delegate_generate: Optional[Callable] = None,
                  allow_delegate: bool = True, spawner: Optional[Callable] = None,
-                 dial: Optional[dial_mod.Dial] = None):
+                 dial: Optional[dial_mod.Dial] = None,
+                 jobs: Optional[jobs_mod.JobStore] = None):
         self.store = store
         self.dial = dial                       # only the person's own turn gets it
+        self.jobs = jobs                       # likewise: only they schedule work
         self.goals = goals
         self._plan_gen = planner_generate      # used to decompose a new goal
         self.journal = journal
@@ -237,6 +240,62 @@ class NativeTools:
                     },
                 },
             })
+        if jobs is not None:
+            self._defs += [
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "schedule_job",
+                        "description": "Run a TASK for them on a schedule, ONLY when "
+                                       "they ask ('every weekday at 8 check my "
+                                       "calendar', 'brief me each morning'). Unlike "
+                                       "remind_me, which hands back words, a job does "
+                                       "the work and brings the result. Use kind "
+                                       "'brief' for a daily brief or morning "
+                                       "summary; 'task' for anything else. Convert "
+                                       "their time to ISO using the current time.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "task": {"type": "string",
+                                         "description": "the work, described fully"},
+                                "first_iso": {"type": "string",
+                                              "description": "ISO 8601 of the first "
+                                                             "run"},
+                                "repeat": {"type": "string",
+                                           "description": "'daily', 'weekdays', "
+                                                          "'weekly', 'every N hours/"
+                                                          "days'. Omit for once."},
+                                "kind": {"type": "string",
+                                         "enum": list(jobs_mod.KINDS)},
+                            },
+                            "required": ["task", "first_iso"],
+                        },
+                    },
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "list_jobs",
+                        "description": "List the jobs you run for them on a "
+                                       "schedule.",
+                        "parameters": {"type": "object", "properties": {}},
+                    },
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "cancel_job",
+                        "description": "Stop a scheduled job, by a word from it or "
+                                       "its id, when they ask.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {"key": {"type": "string"}},
+                            "required": ["key"],
+                        },
+                    },
+                },
+            ]
         if allow_delegate and spawner is not None:
             self._defs.append({
                 "type": "function",
@@ -402,6 +461,9 @@ class NativeTools:
             res = await asyncio.to_thread(sandbox_mod.run_python, args.get("code", ""))
             return res.as_text()
 
+        if name in ("schedule_job", "list_jobs", "cancel_job"):
+            return self._job_call(name, args)
+
         if name == "set_dial":
             if self.dial is None:
                 return "(cannot change that from here)"
@@ -441,6 +503,36 @@ class NativeTools:
                 return "(the specialists came back with nothing)"
             return f"[{orch.who()}] {orch.result}"
         return f"(no such tool: {name})"
+
+
+    def _job_call(self, name: str, args: dict) -> str:
+        if self.jobs is None:
+            return "(cannot schedule work from here)"
+        if name == "list_jobs":
+            act = self.jobs.active()
+            if not act:
+                return "running nothing on a schedule."
+            return "\n".join(
+                f"- {j.task} ({j.kind}, next "
+                f"{datetime.fromtimestamp(j.next_at).strftime('%a %b %d %H:%M')}"
+                f"{', ' + j.repeat if j.repeat else ', once'}, id {j.id})"
+                for j in act)
+        if name == "cancel_job":
+            j = self.jobs.cancel(args.get("key", ""))
+            return f"stopped: \"{j.task}\"" if j else "no matching job."
+        due = _parse_iso(args.get("first_iso", ""))
+        if due is None:
+            return "(could not read the time, need an ISO datetime)"
+        task = (args.get("task") or "").strip()
+        kind = args.get("kind") or "task"
+        if kind == "brief":
+            task = task or "the morning brief"
+        if not task:
+            return "(need a task to run)"
+        j = self.jobs.add(task, due, repeat=args.get("repeat"), kind=kind)
+        when = datetime.fromtimestamp(j.next_at).strftime("%a %b %d, %H:%M")
+        cadence = f", then {j.repeat}" if j.repeat else ""
+        return f"scheduled: \"{j.task}\", first run {when}{cadence} (id {j.id})"
 
 
 def _parse_iso(s: str):

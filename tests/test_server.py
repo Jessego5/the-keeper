@@ -34,8 +34,21 @@ async def client(monkeypatch, tmp_path):
     # running on this machine, it would otherwise refuse the test its lifespan.
     import instance
     monkeypatch.setattr(instance, "LOCK_PATH", tmp_path / "keeper.lock")
+    # backend/.env is loaded by compose.py on import, so without this the lifespan
+    # builds the REAL embedder and mood classifier and the loop polls the real
+    # KEEPER_FEEDS: these tests were fetching feeds and paying for embeddings on
+    # the developer's key, against the developer's own memory, and a slow feed
+    # stalled the loop past test_proactive_loop_reaches_out's deadline. Found as
+    # a 1-in-4 flake. Offline means offline.
+    monkeypatch.delenv("KEEPER_FEEDS", raising=False)
+    _isolate_stores(monkeypatch, tmp_path)
     async with server.app.router.lifespan_context(server.app):
         server.STATE.generate, server.STATE.fast = compose.stub_generator, None
+        # The lifespan builds these fresh; replace them after it has run.
+        monkeypatch.setattr(server.STATE, "embed", None)
+        monkeypatch.setattr(server.STATE, "llm_mood_signal", None)
+        monkeypatch.setattr(server.STATE, "seen_sources",
+                            sources.SeenStore(tmp_path / "seen.jsonl"))
         transport = httpx.ASGITransport(app=server.app)
         async with httpx.AsyncClient(transport=transport,
                                      base_url="http://localhost") as c:
@@ -144,6 +157,25 @@ async def test_state_shape(client):
 async def test_config_sets_speed(client):
     out = (await client.post("/config", json={"speed": 300})).json()
     assert out["speed"] == 300
+
+
+def _isolate_stores(monkeypatch, tmp_path):
+    """Every store the loop or a turn can read or write, in tmp_path."""
+    import dial
+    import jobs
+    import memory as memory_mod
+    import proposals
+    import reminders
+    import tasks
+    monkeypatch.setattr(server.STATE, "store",
+                        memory_mod.MemoryStore(tmp_path / "facts.jsonl"))
+    monkeypatch.setattr(server.STATE, "goals", tasks.GoalStore(tmp_path / "g.jsonl"))
+    monkeypatch.setattr(server.STATE, "reminders",
+                        reminders.ReminderStore(tmp_path / "r.jsonl"))
+    monkeypatch.setattr(server.STATE, "jobs", jobs.JobStore(tmp_path / "jobs.jsonl"))
+    monkeypatch.setattr(server.STATE, "dial", dial.Dial(tmp_path / "dial.json"))
+    monkeypatch.setattr(server.STATE, "proposals",
+                        proposals.ProposalStore(tmp_path / "proposals.jsonl"))
 
 
 def _isolate_delivery(monkeypatch, tmp_path):
@@ -820,3 +852,89 @@ def test_the_page_never_resumes_into_the_phones_thread(tmp_path):
     store.get_or_create(server.PHONE_KEY, title="telegram")
     store.append(server.PHONE_KEY, "user", "later, on the phone")
     assert store.most_recent_key(exclude=server.PHONE_KEY) == web.key
+
+
+# --- scheduled jobs --- #
+
+@pytest.fixture
+def scheduled(monkeypatch, tmp_path):
+    import dial
+    import jobs
+    import proposals
+    import reminders
+    import tasks
+    _isolate_delivery(monkeypatch, tmp_path)
+    monkeypatch.setattr(server.STATE, "jobs", jobs.JobStore(tmp_path / "jobs.jsonl"))
+    monkeypatch.setattr(server.STATE, "dial", dial.Dial(tmp_path / "dial.json"))
+    monkeypatch.setattr(server.STATE, "proposals",
+                        proposals.ProposalStore(tmp_path / "proposals.jsonl"))
+    monkeypatch.setattr(server.STATE, "reminders",
+                        reminders.ReminderStore(tmp_path / "r.jsonl"))
+    monkeypatch.setattr(server.STATE, "goals", tasks.GoalStore(tmp_path / "g.jsonl"))
+    monkeypatch.setattr(server.STATE, "mcp", tools.MCPManager([]))
+    monkeypatch.setattr(server.compose, "revoice", lambda text, *a, **k: text)
+    return server.STATE.jobs
+
+
+async def test_a_job_comes_back_with_its_result_even_at_off(scheduled, monkeypatch):
+    """They scheduled it, so it is theirs: the dial at off holds the Keeper's own
+    initiative, not work it was asked to do."""
+    server.STATE.dial.set("off")
+
+    async def fake_orchestrate(task, generate, **kw):
+        return server.subagents.OrchestrationResult(
+            task=task, result="The gallery posted dates: Nov 3 to Nov 20.")
+
+    monkeypatch.setattr(server.subagents, "orchestrate", fake_orchestrate)
+    job = scheduled.add("check the gallery's site", time.time() - 1)
+    q: asyncio.Queue = asyncio.Queue()
+    server.STATE.listeners.add(q)
+    try:
+        await server._run_job(job)
+        payload = json.loads(q.get_nowait())
+    finally:
+        server.STATE.listeners.discard(q)
+    assert payload["why"] == "job" and "Nov 3 to Nov 20" in payload["content"]
+    assert job.last_status == "done" and job.runs == 1
+
+
+async def test_a_job_that_finds_nothing_says_nothing(scheduled, monkeypatch):
+    async def empty(task, generate, **kw):
+        return server.subagents.OrchestrationResult(task=task, result="")
+
+    monkeypatch.setattr(server.subagents, "orchestrate", empty)
+    job = scheduled.add("check the gallery's site", time.time() - 1)
+    await server._run_job(job)
+    assert job.last_status == "failed" and server.STATE.unbidden.lines == []
+
+
+def test_the_briefs_ledger_is_read_from_the_stores_not_written(scheduled):
+    """Commitments are listed by code: a model summarising "you promised to call
+    the dentist at three" can summarise it wrong."""
+    now = time.time()
+    server.STATE.reminders.add("call the dentist", now + 60)
+    server.STATE.proposals.add("mail__send", {"to": "sam@example.com"})
+    server.STATE.goals.add("get back to painting", ["[person] set out the paints"])
+    ledger = "\n".join(server._brief_ledger(now))
+    assert "Waiting on your yes: 1 (send (mail))" in ledger
+    assert "call the dentist" in ledger
+    assert "get back to painting (0/1), next: set out the paints" in ledger
+
+
+async def test_an_empty_brief_is_not_sent(scheduled):
+    """No Google, nothing held, nothing waiting: a brief of nothing is noise."""
+    job = scheduled.add("the morning brief", time.time() - 1, kind="brief")
+    await server._run_job(job)
+    assert server.STATE.unbidden.lines == []
+
+
+async def test_the_loop_runs_a_due_job(client, scheduled, monkeypatch):
+    ran = asyncio.Event()
+
+    async def fake_run_job(job):
+        ran.set()
+
+    monkeypatch.setattr(server, "_run_job", fake_run_job)
+    scheduled.add("check the gallery's site", time.time() - 1)
+    server.STATE.wake.set()
+    await asyncio.wait_for(ran.wait(), 10)

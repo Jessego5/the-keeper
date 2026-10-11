@@ -45,13 +45,14 @@ class Why:
     RESTLESS = "restless"        # the battery ran low and the roll said speak
     BACKGROUND = "background"    # a task it was sent off on came back
     PROPOSAL = "proposal"        # it wants to do something and needs a yes
+    JOB = "job"                  # a scheduled job they set up came back
 
 
 # Lines that answer something the person asked for. The proactivity dial silences
 # the Keeper's own initiative, never these: see dial.py. A proposal is on the list
 # because it is a question waiting on them; holding it back would leave a decision
 # they cannot see, aging toward its expiry.
-ASKED_FOR = frozenset({Why.REMINDER, Why.BACKGROUND, Why.PROPOSAL})
+ASKED_FOR = frozenset({Why.REMINDER, Why.BACKGROUND, Why.PROPOSAL, Why.JOB})
 
 
 @dataclass

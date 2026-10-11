@@ -180,6 +180,15 @@
            font-size:0.7rem;"></div>
     </div>
 
+    <!-- Work it runs on a schedule because it was asked to: jobs.py. -->
+    <div class="reflection">
+      <div class="label">on a schedule</div>
+      <div id="jobs"><span class="none">nothing scheduled.</span></div>
+      <div class="sub" id="brief-hint" style="margin-top:0.6rem;color:var(--foam-dim);
+           font-size:0.7rem;display:none;">mail and calendar are connected. ask it for a
+           morning brief, e.g. &ldquo;brief me every weekday at 8&rdquo;.</div>
+    </div>
+
     <div class="reflection">
       <div class="label">what it's tending &mdash; goals</div>
       <div id="goals"><span class="none">nothing taken on yet.</span></div>
@@ -310,6 +319,15 @@
     document.getElementById("proposals-sub").textContent =
       (gated.length ? "behind approval: " + gated.join(", ") : "no tool can change anything yet")
       + " · phone: " + (pr.inbox || "off");
+    const jobs = s.jobs || [];
+    document.getElementById("jobs").innerHTML = jobs.length
+      ? jobs.map(j => '<div class="cons-row"><span class="v-men">'
+          + esc(new Date(j.next_at * 1000).toLocaleString([], {weekday: "short",
+              hour: "2-digit", minute: "2-digit"}))
+          + '</span><span class="cons-t">' + esc(j.kind === "brief" ? "morning brief" : j.task)
+          + (j.repeat ? " · " + esc(j.repeat) : "") + '</span></div>').join("")
+      : '<span class="none">nothing scheduled.</span>';
+    document.getElementById("brief-hint").style.display = s.brief_hint ? "" : "none";
     const level = s.level || "usual";
     for (const b of document.querySelectorAll("#dial .btn"))
       b.classList.toggle("on", b.dataset.level === level);

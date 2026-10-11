@@ -53,6 +53,7 @@ import embedder
 import energy
 import inbox as inbox_mod
 import instance
+import jobs as jobs_mod
 import journal as journal_mod
 import memory
 import mood
@@ -136,6 +137,12 @@ write a file. Those never run when you call them. Calling one PROPOSES it: they 
 shown exactly what you passed and decide. So pass the real thing, the final text and
 the real recipient, never a placeholder, and only what they asked for. Afterwards,
 tell them what you drafted and that it is waiting on their yes. Never say it is done.
+
+You can also run WORK for them on a schedule with schedule_job: "every weekday at
+8, look at my calendar", "each Sunday check the gallery's site". A reminder hands
+back words; a job does the task and brings back what it found. A daily brief or a
+morning summary is kind "brief". Only when they ask; use list_jobs and cancel_job
+when they want to see or stop one.
 
 They decide how often you speak on your own. When they ask you to be quieter, to
 leave them be for a while, or to speak up more, use set_dial: off, quiet, usual or
@@ -260,6 +267,8 @@ class AppState:
     proposals: proposals_mod.ProposalStore = field(
         default_factory=proposals_mod.ProposalStore)   # actions waiting on a yes
     inbox: Optional[inbox_mod.TelegramInbox] = None    # taps back from the phone
+    jobs: jobs_mod.JobStore = field(
+        default_factory=jobs_mod.JobStore)     # errands it runs on a schedule
 
     def minutes_since_user(self) -> Optional[float]:
         if self.last_user_at is None:
@@ -338,6 +347,16 @@ async def _proactive_loop() -> None:
             # A kept promise is not outreach the day's ceiling should count.
             await _deliver_proactive(line, why=unbidden.Why.REMINDER,
                                      counts_toward_day=False)
+
+        # Then the work they scheduled. Like a reminder it is theirs, so it is
+        # exempt from the outreach floor and the day's ceiling; unlike one it takes
+        # a while, so it runs off the loop and comes back when it is done.
+        for job in STATE.jobs.due():
+            if STATE.jobs.claim(job):
+                asyncio.create_task(_run_job(job))
+            else:
+                print(f"[job] {job.id} skipped, too late to be worth running: "
+                      f"{job.task[:50]}", flush=True)
 
         # One shared presence read for this tick, used by both the house routines
         # and the restlessness gate (so we don't ioreg twice).
@@ -467,6 +486,7 @@ async def _proactive_loop() -> None:
         # never sleep past the next due reminder, so kept promises land on time.
         upcoming = [r.due_at for r in STATE.reminders.items
                     if not r.done and not r.delivered]
+        upcoming += [j.next_at for j in STATE.jobs.active()]
         if upcoming:
             wait = min(wait, max(1, min(upcoming) - time.time()))
         assert STATE.wake is not None
@@ -702,7 +722,7 @@ async def _converse(msg: str, key: str, surface: str = "web") -> dict:
         STATE.reminders, goals=STATE.goals,
         planner_generate=STATE.fast or STATE.generate, journal=STATE.journal,
         mcp=STATE.mcp, delegate_generate=STATE.fast or STATE.generate,
-        spawner=_spawn_background, dial=STATE.dial)]
+        spawner=_spawn_background, dial=STATE.dial, jobs=STATE.jobs)]
     if STATE.mcp is not None and STATE.mcp.has_tools:
         providers.append(STATE.mcp)
     proposer = _proposer("chat")
@@ -1243,6 +1263,99 @@ async def _run_background(bg_id: str, description: str) -> None:
     print(f"[bg] {bg_id} delivered", flush=True)
 
 
+async def _run_job(job: jobs_mod.Job) -> None:
+    """Run one scheduled job and bring back what it found, like spawn_task does,
+    through the same delivery path, so the dial and approvals govern it too. A job
+    may PROPOSE (send the summary to someone, say) but never act unasked."""
+    print(f"[job] {job.id} running: {job.task[:60]}", flush=True)
+    try:
+        if job.kind == "brief":
+            text = await _brief()
+        else:
+            sub_native = native_tools.NativeTools(
+                STATE.reminders, goals=STATE.goals,
+                planner_generate=STATE.fast or STATE.generate, journal=STATE.journal,
+                allow_delegate=False)
+            orch = await subagents.orchestrate(
+                job.task, STATE.fast or STATE.generate, mcp=STATE.mcp,
+                native=sub_native, proposer=_proposer(f"job:{job.id}"))
+            found = (orch.result or "").strip()
+            text = ""
+            if found:
+                water = proactive.derive_state(STATE.minutes_since_user())
+                text = await asyncio.to_thread(
+                    compose.revoice,
+                    f"You asked me to do this on a schedule: {job.task}\n\n"
+                    f"Here is what I found: {found}",
+                    water, generate=STATE.fast or STATE.generate)
+    except Exception as exc:  # noqa: BLE001 - a failed job must not kill the loop
+        STATE.jobs.finish(job, f"{type(exc).__name__}: {exc}", ok=False)
+        print(f"[job] {job.id} failed: {exc}", flush=True)
+        return
+    STATE.jobs.finish(job, text or "(found nothing)", ok=bool(text))
+    if text:
+        await _deliver_proactive(text, why=unbidden.Why.JOB,
+                                 counts_toward_day=False)
+        print(f"[job] {job.id} delivered", flush=True)
+
+
+def _has_google() -> bool:
+    return STATE.mcp is not None and any(
+        t["function"]["name"].startswith("google__") for t in STATE.mcp.openai_tools())
+
+
+def _brief_ledger(now: Optional[float] = None) -> list:
+    """The part of the brief the Keeper already KNOWS, read straight from its own
+    stores. Code, not a model: these are commitments, and a commitment summarised
+    by a model is one that can be summarised wrong."""
+    now = now or time.time()
+    end_of_day = datetime.fromtimestamp(now).replace(
+        hour=23, minute=59, second=59).timestamp()
+    lines = []
+    pending = STATE.proposals.pending(now)
+    if pending:
+        what = "; ".join(proposals_mod.render(p.action, p.args).splitlines()[0]
+                         for p in pending[:3])
+        lines.append(f"Waiting on your yes: {len(pending)} ({what})")
+    today = [r for r in STATE.reminders.pending() if r.due_at <= end_of_day]
+    if today:
+        lines.append("Holding for today: " + "; ".join(
+            f"{r.text} ({datetime.fromtimestamp(r.due_at).strftime('%H:%M')})"
+            for r in today[:5]))
+    for g in STATE.goals.active()[:3]:
+        nxt = g.next_step()
+        done, total = g.progress()
+        if nxt is not None:
+            lines.append(f"Tending: {g.title} ({done}/{total}), next: {nxt.text}")
+    return lines
+
+
+async def _brief() -> str:
+    """The morning brief: what today holds in their calendar and inbox, read by
+    the archivist and put in the Keeper's voice, then the ledger, plainly.
+
+    Two halves on purpose. The day ahead is prose worth voicing. The ledger is a
+    list of things they committed to or must decide, and those stay as written."""
+    day = ""
+    if _has_google():
+        found = await subagents.run(
+            subagents.PROFILES["archivist"],
+            "Read today's calendar events and the unread mail from the last day. "
+            "Report today's events with their times, and only the messages that "
+            "look like they need a reply or an action from them, with who sent "
+            "each. Skip newsletters and notifications. Plainly, no preamble.",
+            mcp=STATE.mcp, native=None)
+        if found.result.strip():
+            water = proactive.derive_state(STATE.minutes_since_user())
+            day = await asyncio.to_thread(
+                compose.revoice, found.result, water,
+                generate=STATE.fast or STATE.generate)
+    ledger = _brief_ledger()
+    if not day and not ledger:
+        return ""
+    return "\n\n".join(part for part in (day.strip(), "\n".join(ledger)) if part)
+
+
 async def _maybe_drift_note() -> None:
     """Idle background reflection (never sent to the person). Real-time capped so a
     sped-up demo clock can't flood the store with near-duplicate insights."""
@@ -1467,6 +1580,12 @@ async def state():
         "house": STATE.routines_engine.status(now),
         "working_on": [{"id": t.id, "description": t.description}
                        for t in STATE.background.running()],
+        "jobs": [{"id": j.id, "task": j.task, "kind": j.kind, "next_at": j.next_at,
+                  "repeat": j.repeat, "last_status": j.last_status}
+                 for j in STATE.jobs.active()],
+        # Shown once Google is connected and no brief exists: the "offered once"
+        # is the page's to make, never the Keeper's voice, which may not offer.
+        "brief_hint": _has_google() and not STATE.jobs.has_brief(),
         "proposals": {
             "pending": [{"id": p.id, "action": p.action, "origin": p.origin,
                          "created": p.created}
