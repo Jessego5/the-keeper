@@ -27,6 +27,7 @@ import reminders as reminders_mod
 import sandbox as sandbox_mod
 import subagents as subagents_mod
 import tasks as tasks_mod
+import ways as ways_mod
 
 
 class NativeTools:
@@ -37,10 +38,12 @@ class NativeTools:
                  mcp=None, delegate_generate: Optional[Callable] = None,
                  allow_delegate: bool = True, spawner: Optional[Callable] = None,
                  dial: Optional[dial_mod.Dial] = None,
-                 jobs: Optional[jobs_mod.JobStore] = None):
+                 jobs: Optional[jobs_mod.JobStore] = None,
+                 ways: Optional[ways_mod.WayStore] = None):
         self.store = store
         self.dial = dial                       # only the person's own turn gets it
         self.jobs = jobs                       # likewise: only they schedule work
+        self.ways = ways                       # and only they teach it how
         self.goals = goals
         self._plan_gen = planner_generate      # used to decompose a new goal
         self.journal = journal
@@ -296,6 +299,55 @@ class NativeTools:
                     },
                 },
             ]
+        if ways is not None:
+            self._defs += [
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "keep_way",
+                        "description": "Remember HOW they like a kind of thing done, "
+                                       "when they say it in general: 'from now on', "
+                                       "'always', 'never', 'whenever you'. Not for an "
+                                       "instruction about this one task only ('sign "
+                                       "this one J' is not a way; 'sign my emails J' "
+                                       "is).",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "about": {"type": "string",
+                                          "description": "the kind of task, e.g. "
+                                                         "'emails to Sam', 'any "
+                                                         "email', 'calendar events'"},
+                                "how": {"type": "string",
+                                        "description": "the way, as an instruction"},
+                            },
+                            "required": ["about", "how"],
+                        },
+                    },
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "list_ways",
+                        "description": "List what you have learned about how they "
+                                       "like things done.",
+                        "parameters": {"type": "object", "properties": {}},
+                    },
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "forget_way",
+                        "description": "Stop doing something the way you learned, "
+                                       "when they ask, by a word from it or its id.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {"key": {"type": "string"}},
+                            "required": ["key"],
+                        },
+                    },
+                },
+            ]
         if allow_delegate and spawner is not None:
             self._defs.append({
                 "type": "function",
@@ -463,6 +515,8 @@ class NativeTools:
 
         if name in ("schedule_job", "list_jobs", "cancel_job"):
             return self._job_call(name, args)
+        if name in ("keep_way", "list_ways", "forget_way"):
+            return self._way_call(name, args)
 
         if name == "set_dial":
             if self.dial is None:
@@ -504,6 +558,22 @@ class NativeTools:
             return f"[{orch.who()}] {orch.result}"
         return f"(no such tool: {name})"
 
+
+    def _way_call(self, name: str, args: dict) -> str:
+        if self.ways is None:
+            return "(cannot learn that from here)"
+        if name == "list_ways":
+            act = self.ways.active()
+            if not act:
+                return "nothing learned yet about how they like things done."
+            return "\n".join(f"- {w.line()} (learned from {w.source}, id {w.id})"
+                             for w in act)
+        if name == "forget_way":
+            w = self.ways.forget(args.get("key", ""))
+            return f"forgotten: {w.line()}" if w else "no matching way."
+        w = self.ways.add(args.get("about", ""), args.get("how", ""), source="said",
+                          evidence="they said so")
+        return f"kept: {w.line()}" if w else "(need what it is about, and how)"
 
     def _job_call(self, name: str, args: dict) -> str:
         if self.jobs is None:

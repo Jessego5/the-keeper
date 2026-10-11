@@ -180,6 +180,13 @@
            font-size:0.7rem;"></div>
     </div>
 
+    <!-- How they like things done: ways.py. Every learned habit is visible here,
+         with where it was learned, and can be forgotten in one tap. -->
+    <div class="reflection">
+      <div class="label">how you like things done</div>
+      <div id="ways"><span class="none">nothing learned yet.</span></div>
+    </div>
+
     <!-- Work it runs on a schedule because it was asked to: jobs.py. -->
     <div class="reflection">
       <div class="label">on a schedule</div>
@@ -319,6 +326,21 @@
     document.getElementById("proposals-sub").textContent =
       (gated.length ? "behind approval: " + gated.join(", ") : "no tool can change anything yet")
       + " · phone: " + (pr.inbox || "off");
+    const ways = s.ways || [];
+    const wbox = document.getElementById("ways");
+    wbox.innerHTML = ways.length
+      ? ways.map(w => '<div class="cons-row"><span class="v-men">'
+          + (w.source === "edit" ? "from an edit" : "you said") + '</span><span class="cons-t">'
+          + esc(w.line) + '</span><button class="badge btn" data-forget="' + esc(w.id)
+          + '" title="forget this">forget</button></div>').join("")
+      : '<span class="none">nothing learned yet.</span>';
+    for (const b of wbox.querySelectorAll("[data-forget]"))
+      b.onclick = async () => {
+        await fetch("/ways/forget", {method: "POST",
+          headers: {"content-type": "application/json"},
+          body: JSON.stringify({id: b.dataset.forget})});
+        tick();
+      };
     const jobs = s.jobs || [];
     document.getElementById("jobs").innerHTML = jobs.length
       ? jobs.map(j => '<div class="cons-row"><span class="v-men">'

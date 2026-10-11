@@ -65,6 +65,12 @@ class Proposal:
     decided_at: Optional[float] = None
     decided_via: Optional[str] = None   # web | telegram
     result: str = ""
+    # Set by config, not the model (the account to send from). Shown, never editable.
+    fixed_keys: list = field(default_factory=list)
+    # What the Keeper drafted, kept when the person changed it before approving: the
+    # difference is how ways.py learns what they like (see server._learn_from_edit).
+    original_args: Optional[dict] = None
+    learned: str = ""                   # the way that edit taught, if any
 
     def public(self) -> dict:
         """What a surface needs to draw it: the rendering, not just the args."""
@@ -133,10 +139,11 @@ class ProposalStore:
             json.dumps(asdict(p), ensure_ascii=False) + "\n" for p in self.items))
 
     def add(self, action: str, args: dict, origin: str = "chat",
-            now: Optional[float] = None) -> Proposal:
+            now: Optional[float] = None,
+            fixed_keys: Optional[list] = None) -> Proposal:
         now = now or time.time()
         p = Proposal(action=action, args=dict(args), origin=origin, created=now,
-                     expires_at=now + TTL_S)
+                     expires_at=now + TTL_S, fixed_keys=list(fixed_keys or []))
         self.items.append(p)
         self._save()
         return p
@@ -169,6 +176,35 @@ class ProposalStore:
     def decline(self, p: Proposal, via: str, now: Optional[float] = None) -> None:
         p.status, p.decided_via = DECLINED, via
         p.decided_at = now or time.time()
+        self._save()
+
+    def apply_edit(self, p: Proposal, edited: dict) -> Optional[str]:
+        """The person's own changes, before they approve. Returns why it was refused,
+        or None once applied.
+
+        Rule 1 still holds: they are shown, and approve, exactly what will run,
+        because it is what they wrote. What they may not do is reach past the draft:
+        no field the tool was not already being given, and no field the config
+        fixes, so an edit cannot switch the account a message is sent from."""
+        if p.status != PENDING:
+            return f"already {p.status}"
+        unknown = [k for k in edited if k not in p.args]
+        if unknown:
+            return f"cannot add fields: {', '.join(unknown)}"
+        locked = [k for k in edited
+                  if k in p.fixed_keys and edited[k] != p.args[k]]
+        if locked:
+            return f"set by configuration, not editable: {', '.join(locked)}"
+        changed = {k: v for k, v in edited.items() if v != p.args[k]}
+        if not changed:
+            return None
+        p.original_args = dict(p.args)
+        p.args = {**p.args, **changed}
+        self._save()
+        return None
+
+    def note_learned(self, p: Proposal, line: str) -> None:
+        p.learned = line
         self._save()
 
     def mark_approved(self, p: Proposal, via: str,
@@ -241,7 +277,7 @@ class Proposer:
             # tool will reject wastes the one decision they were asked to make.
             return f"(not proposed: missing {', '.join(missing)})"
         p = self.store.add(name, {**(args or {}), **action.fixed},
-                           origin=self.origin)
+                           origin=self.origin, fixed_keys=list(action.fixed))
         await self._notify(p)
         return (f"proposed, NOT done (id {p.id}). It waits for their yes, and they "
                 f"see exactly what you wrote. Tell them what you drafted and that "

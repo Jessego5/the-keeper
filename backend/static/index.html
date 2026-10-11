@@ -154,6 +154,17 @@
   .proposal button:disabled { opacity: 0.4; cursor: default; }
   .proposal .p-outcome { margin-top: 0.7rem; color: var(--foam-dim);
     font-style: italic; font-size: 0.85rem; }
+  .proposal .p-learned { margin-top: 0.35rem; color: var(--tide);
+    font-size: 0.78rem; letter-spacing: 0.02em; }
+  .proposal .p-edit label { display: block; color: var(--foam-dim);
+    font-size: 0.66rem; letter-spacing: 0.14em; text-transform: uppercase;
+    margin: 0.55rem 0 0.2rem; }
+  .proposal .p-edit textarea {
+    width: 100%; box-sizing: border-box; resize: vertical;
+    background: rgba(8,19,22,0.6); color: var(--foam);
+    border: 1px solid rgba(207,224,218,0.16); border-radius: 0.35rem;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 0.82rem;
+    line-height: 1.45; padding: 0.4rem 0.5rem; }
   .line.me { text-align: right; }
   .line.me .text { font-size: 1rem; color: var(--foam-dim); font-style: italic; }
   .ts {
@@ -278,10 +289,43 @@
   function setProposal(p) {
     const card = proposalCard(p.id);
     if (!card) return;
+    if (p.args) card._args = p.args;
+    if (p.fixed_keys) card._fixed = p.fixed_keys;
     if (p.rendered) card.querySelector("pre").textContent = p.rendered;
     const pending = p.status === "pending";
     card.querySelector(".p-actions").style.display = pending ? "" : "none";
+    // Edit needs the payload itself, which a card rebuilt from history lacks until
+    // the server has been asked; until then there is nothing safe to edit.
+    card.querySelector('[data-d="edit"]').style.display =
+      pending && card._args ? "" : "none";
+    if (!pending) card.querySelector(".p-edit").innerHTML = "";
     card.querySelector(".p-outcome").textContent = pending ? "" : outcomeLine(p);
+    card.querySelector(".p-learned").textContent =
+      p.learned ? "Noted for next time: " + p.learned : "";
+  }
+  // Editing: every text the Keeper wrote becomes a field; what the configuration
+  // fixes (the account it sends from) stays shown and locked. Approving sends the
+  // edits, and the server runs exactly those.
+  function openEdit(card) {
+    const box = card.querySelector(".p-edit");
+    box.innerHTML = "";
+    for (const [key, val] of Object.entries(card._args || {})) {
+      if (typeof val !== "string" || (card._fixed || []).includes(key)) continue;
+      const label = document.createElement("label"); label.textContent = key;
+      const ta = document.createElement("textarea"); ta.dataset.key = key;
+      ta.value = val; ta.rows = Math.min(12, Math.max(1, val.split("\n").length + (val.length > 70 ? 1 : 0)));
+      box.appendChild(label); box.appendChild(ta);
+    }
+    card.querySelector("pre").style.display = "none";
+    card.querySelector('[data-d="edit"]').style.display = "none";
+    card.querySelector('[data-d="approve"]').textContent = "approve as edited";
+  }
+  function editsOf(card) {
+    const fields = card.querySelectorAll(".p-edit textarea");
+    if (!fields.length) return null;
+    const out = {};
+    for (const ta of fields) out[ta.dataset.key] = ta.value;
+    return out;
   }
   function addProposal(p) {
     clearWatermark();
@@ -289,10 +333,14 @@
     const el = document.createElement("div");
     el.className = "proposal"; el.dataset.pid = p.id;
     el.innerHTML = '<div class="p-head">waiting on your yes</div><pre></pre>'
+      + '<div class="p-edit"></div>'
       + '<div class="p-actions"><button data-d="approve">approve</button>'
-      + '<button data-d="decline">decline</button></div><div class="p-outcome"></div>';
+      + '<button data-d="edit">edit</button>'
+      + '<button data-d="decline">decline</button></div><div class="p-outcome"></div>'
+      + '<div class="p-learned"></div>';
     for (const b of el.querySelectorAll("button"))
-      b.addEventListener("click", () => decide(p.id, b.dataset.d, el));
+      b.addEventListener("click", () => b.dataset.d === "edit"
+        ? openEdit(el) : decide(p.id, b.dataset.d, el));
     log.appendChild(el);
     setProposal(p);
     log.scrollTop = log.scrollHeight;
@@ -302,11 +350,20 @@
     if (decision === "approve")
       card.querySelector(".p-outcome").textContent = outcomeLine({status: "approved"});
     try {
+      const edits = decision === "approve" ? editsOf(card) : null;
       const r = await fetch("/proposals/decide", { method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ id: pid, decision }) });
+        body: JSON.stringify(edits ? { id: pid, decision, args: edits }
+                                   : { id: pid, decision }) });
       const data = await r.json();
-      if (data.proposal) setProposal(data.proposal);
+      if (data.proposal) {
+        card.querySelector("pre").style.display = "";
+        setProposal(data.proposal);
+        if (data.proposal.status === "pending") {    // refused: say why, let them retry
+          card.querySelector(".p-outcome").textContent = data.note || "";
+          for (const b of card.querySelectorAll("button")) b.disabled = false;
+        }
+      }
       else card.querySelector(".p-outcome").textContent = data.note || "";
     } catch (e) {
       card.querySelector(".p-outcome").textContent = "The line went quiet; try again.";

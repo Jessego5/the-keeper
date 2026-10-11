@@ -59,6 +59,7 @@ drives the real thing:
 | embedder (`_fake_embed`) | `evals/test_recall_gate.py` |
 | `rerank`, `route`, `critique_plan`, `plan`, `_decompose` | `evals/test_model_seams.py` |
 | `Proposer` (no model at all: the payload and the reply are untested) | `evals/test_proposing.py` |
+| `learn_from_edit` generator, and `keep_way` never reached by a model | `evals/test_learning_ways.py` |
 
 Adding a fake generator to a Tier 1 test means adding its twin here too,
 otherwise the assertion is about output you invented.

@@ -72,6 +72,7 @@ import sensors
 import tools
 import unbidden
 import voice_eval
+import ways as ways_mod
 
 TOOL_MODEL = "gpt-4o"   # model used for the passive tool-calling path
 
@@ -148,6 +149,11 @@ They decide how often you speak on your own. When they ask you to be quieter, to
 leave them be for a while, or to speak up more, use set_dial: off, quiet, usual or
 eager. Never change it on your own judgement, and never suggest it. Off means you
 start nothing yourself; what they asked you to hold or look into still comes back.
+
+They can teach you HOW they like things done. When they say it in general, "from
+now on", "always", "never", keep it with keep_way, so every later draft follows it,
+yours and your specialists'. An instruction for this one task is just followed, not
+kept. list_ways shows what you have learned; forget_way when they ask you to stop.
 
 You keep a JOURNAL: the one thing you can write. Use keep_note to hold a thought they
 ask you to keep, or to record something you found or worked out; use read_journal to
@@ -269,6 +275,8 @@ class AppState:
     inbox: Optional[inbox_mod.TelegramInbox] = None    # taps back from the phone
     jobs: jobs_mod.JobStore = field(
         default_factory=jobs_mod.JobStore)     # errands it runs on a schedule
+    ways: ways_mod.WayStore = field(
+        default_factory=ways_mod.WayStore)     # how they like things done
 
     def minutes_since_user(self) -> Optional[float]:
         if self.last_user_at is None:
@@ -722,7 +730,8 @@ async def _converse(msg: str, key: str, surface: str = "web") -> dict:
         STATE.reminders, goals=STATE.goals,
         planner_generate=STATE.fast or STATE.generate, journal=STATE.journal,
         mcp=STATE.mcp, delegate_generate=STATE.fast or STATE.generate,
-        spawner=_spawn_background, dial=STATE.dial, jobs=STATE.jobs)]
+        spawner=_spawn_background, dial=STATE.dial, jobs=STATE.jobs,
+        ways=STATE.ways)]
     if STATE.mcp is not None and STATE.mcp.has_tools:
         providers.append(STATE.mcp)
     proposer = _proposer("chat")
@@ -730,6 +739,8 @@ async def _converse(msg: str, key: str, surface: str = "web") -> dict:
         providers.append(proposer)
     used_tools = bool(providers)
     tool_trace: list = []
+    ways_used = STATE.ways.for_task(msg)
+    STATE.ways.mark_used(ways_used)
     try:
         if used_tools:
             # Tool path: the Keeper may reach for tools, then answer. A
@@ -738,6 +749,8 @@ async def _converse(msg: str, key: str, surface: str = "web") -> dict:
             system = persona.build_system_prompt(
                 "passive", water, memory=mem, context=ctx)
             system = system + "\n\n---\n\n" + TOOL_ADDENDUM
+            if ways_used:
+                system += "\n\n" + ways_mod.as_guidance(ways_used)
             reply = await compose.tool_reply(
                 system, msg, providers=providers, model=TOOL_MODEL, max_rounds=6,
                 trace=tool_trace, prior=prior)
@@ -772,6 +785,7 @@ async def _converse(msg: str, key: str, surface: str = "web") -> dict:
         "cue": msg,
         "surface": surface,
         "turns_seen": len(prior),
+        "ways_applied": [w.line() for w in ways_used],
         "water_state": water,
         "mood_signal": signal,
         # WHY that register, not just which. The trace exists to answer "why did it
@@ -1081,7 +1095,7 @@ async def _execute_goal_step(goal, step, water) -> bool:
         allow_delegate=False)               # a sub-agent must not spawn sub-agents
     try:
         res = await subagents.orchestrate(
-            f"For their goal \"{goal.title}\", do this: {step.text}",
+            _with_ways(f"For their goal \"{goal.title}\", do this: {step.text}"),
             STATE.fast or STATE.generate, mcp=STATE.mcp, native=sub_native,
             proposer=_proposer(f"goal:{goal.id}"))
     except Exception as exc:  # noqa: BLE001
@@ -1159,7 +1173,8 @@ async def _deliver_proposal(p: proposals_mod.Proposal) -> None:
                       "proposal": p.public()})
 
 
-async def _decide(pid: str, approve: bool, via: str) -> str:
+async def _decide(pid: str, approve: bool, via: str,
+                  edited: Optional[dict] = None) -> str:
     """Approve or decline a proposal, from any surface. Returns a short note for
     the surface that asked (a Telegram toast, the page's card).
 
@@ -1175,6 +1190,10 @@ async def _decide(pid: str, approve: bool, via: str) -> str:
         print(f"[proposal] {p.id} declined via {via}", flush=True)
         await _push_outcome(p)
         return "Declined. Nothing was done."
+    if edited:
+        refused = STATE.proposals.apply_edit(p, edited)
+        if refused:
+            return f"Not approved: {refused}."
     # Saved as approved BEFORE the call. See proposals.py, rule 2.
     STATE.proposals.mark_approved(p, via)
     if STATE.mcp is None:
@@ -1184,6 +1203,8 @@ async def _decide(pid: str, approve: bool, via: str) -> str:
     STATE.proposals.finish(p, result)
     print(f"[proposal] {p.id} approved via {via}: {p.status}", flush=True)
     await _push_outcome(p)
+    if p.original_args is not None and p.status == proposals_mod.DONE:
+        asyncio.create_task(_learn_from_edit(p))
     return "Done." if p.status == proposals_mod.DONE else "Approved, but it failed."
 
 
@@ -1246,8 +1267,8 @@ async def _run_background(bg_id: str, description: str) -> None:
         allow_delegate=False)
     try:
         orch = await subagents.orchestrate(
-            description, STATE.fast or STATE.generate, mcp=STATE.mcp, native=sub_native,
-            proposer=_proposer("background"))
+            _with_ways(description), STATE.fast or STATE.generate, mcp=STATE.mcp,
+            native=sub_native, proposer=_proposer("background"))
         result = (orch.result or "").strip()
     except Exception as exc:  # noqa: BLE001
         STATE.background.finish(bg_id, f"(failed: {exc})", ok=False)
@@ -1265,6 +1286,34 @@ async def _run_background(bg_id: str, description: str) -> None:
     print(f"[bg] {bg_id} delivered", flush=True)
 
 
+def _with_ways(task: str, cue: Optional[str] = None) -> str:
+    """A specialist's task, with how the person likes that kind of thing done.
+
+    Specialists are handed a task and nothing about the person; before this, a
+    draft for a goal or a job ignored everything they had taught the Keeper."""
+    used = STATE.ways.for_task(cue or task)
+    if not used:
+        return task
+    STATE.ways.mark_used(used)
+    return f"{task}\n\n{ways_mod.as_guidance(used)}"
+
+
+async def _learn_from_edit(p: proposals_mod.Proposal) -> None:
+    """After an edited proposal ran: ask what the edit says about how they like
+    this done, keep the answer as a way, and show it on the card. Off the approval
+    path entirely: the approval stands whatever the learner makes of it."""
+    if p.original_args is None:
+        return
+    way = await asyncio.to_thread(
+        ways_mod.learn_from_edit, p.action, p.original_args, p.args,
+        STATE.fast or STATE.generate, STATE.ways)
+    if way is None:
+        return
+    STATE.proposals.note_learned(p, way.line())
+    print(f"[ways] learned from an edit: {way.line()}", flush=True)
+    await _push_outcome(p)
+
+
 async def _run_job(job: jobs_mod.Job) -> None:
     """Run one scheduled job and bring back what it found, like spawn_task does,
     through the same delivery path, so the dial and approvals govern it too. A job
@@ -1279,7 +1328,7 @@ async def _run_job(job: jobs_mod.Job) -> None:
                 planner_generate=STATE.fast or STATE.generate, journal=STATE.journal,
                 allow_delegate=False)
             orch = await subagents.orchestrate(
-                job.task, STATE.fast or STATE.generate, mcp=STATE.mcp,
+                _with_ways(job.task), STATE.fast or STATE.generate, mcp=STATE.mcp,
                 native=sub_native, proposer=_proposer(f"job:{job.id}"))
             found = (orch.result or "").strip()
             text = ""
@@ -1342,10 +1391,12 @@ async def _brief() -> str:
     if _has_google():
         found = await subagents.run(
             subagents.PROFILES["archivist"],
-            "Read today's calendar events and the unread mail from the last day. "
-            "Report today's events with their times, and only the messages that "
-            "look like they need a reply or an action from them, with who sent "
-            "each. Skip newsletters and notifications. Plainly, no preamble.",
+            _with_ways(
+                "Read today's calendar events and the unread mail from the last "
+                "day. Report today's events with their times, and only the "
+                "messages that look like they need a reply or an action from them, "
+                "with who sent each. Skip newsletters and notifications. Plainly, "
+                "no preamble.", cue="morning brief calendar mail"),
             mcp=STATE.mcp, native=None)
         if found.result.strip():
             water = proactive.derive_state(STATE.minutes_since_user())
@@ -1582,6 +1633,8 @@ async def state():
         "house": STATE.routines_engine.status(now),
         "working_on": [{"id": t.id, "description": t.description}
                        for t in STATE.background.running()],
+        "ways": [{"id": w.id, "line": w.line(), "source": w.source, "uses": w.uses}
+                 for w in STATE.ways.active()],
         "jobs": [{"id": j.id, "task": j.task, "kind": j.kind, "next_at": j.next_at,
                   "repeat": j.repeat, "last_status": j.last_status}
                  for j in STATE.jobs.active()],
@@ -1652,6 +1705,7 @@ async def list_proposals():
 class DecideIn(BaseModel):
     id: str
     decision: str     # "approve" | "decline"
+    args: Optional[dict] = None   # the person's edits to the draft, if any
 
 
 @app.post("/proposals/decide")
@@ -1662,10 +1716,23 @@ async def decide_proposal(body: DecideIn, req: Request):
         return {"ok": False, "note": "refused: not from this page"}
     if body.decision not in ("approve", "decline"):
         return {"ok": False, "note": "decision must be approve or decline"}
-    note = await _decide(body.id, body.decision == "approve", "web")
+    note = await _decide(body.id, body.decision == "approve", "web",
+                         edited=body.args if body.decision == "approve" else None)
     p = STATE.proposals.get(body.id)
     return {"ok": p is not None, "note": note,
             "proposal": p.public() if p is not None else None}
+
+
+class ForgetIn(BaseModel):
+    id: str
+
+
+@app.post("/ways/forget")
+async def forget_way(body: ForgetIn, req: Request):
+    if not _same_origin(req):
+        return {"ok": False, "note": "refused: not from this page"}
+    w = STATE.ways.forget(body.id)
+    return {"ok": w is not None}
 
 
 @app.get("/sessions")

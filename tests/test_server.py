@@ -176,6 +176,8 @@ def _isolate_stores(monkeypatch, tmp_path):
     monkeypatch.setattr(server.STATE, "dial", dial.Dial(tmp_path / "dial.json"))
     monkeypatch.setattr(server.STATE, "proposals",
                         proposals.ProposalStore(tmp_path / "proposals.jsonl"))
+    import ways
+    monkeypatch.setattr(server.STATE, "ways", ways.WayStore(tmp_path / "ways.jsonl"))
 
 
 def _isolate_delivery(monkeypatch, tmp_path):
@@ -989,3 +991,67 @@ async def test_a_calendar_watch_asks_about_now_not_the_day_it_was_written(
     (tool, args), = fake.calls
     assert "${" not in args["time_min"] and "${" not in args["time_max"]
     assert args["time_min"][:4].isdigit() and args["time_min"] < args["time_max"]
+
+
+# --- ways: learned, then applied to work --- #
+
+async def test_a_learned_way_reaches_the_chat_turn(monkeypatch, tmp_path):
+    import ways
+    _isolate_delivery(monkeypatch, tmp_path)
+    monkeypatch.setattr(server.STATE, "ways", ways.WayStore(tmp_path / "w.jsonl"))
+    server.STATE.ways.add("emails to Sam", "sign off as J")
+    systems = []
+
+    async def fake_tool_reply(system, user, **kw):
+        systems.append(system)
+        return "drafted"
+
+    monkeypatch.setattr(server.compose, "tool_reply", fake_tool_reply)
+    monkeypatch.setattr(server.compose, "revoice", lambda text, *a, **k: text)
+    monkeypatch.setattr(server.memory, "recall", lambda *a, **k: "")
+    monkeypatch.setattr(server, "_distill_async", _noop_distill)
+    await server.chat(server.ChatIn(message="email Sam that thursday is off"))
+    assert "emails to Sam: sign off as J" in systems[0]
+    assert server.STATE.traces[0]["ways_applied"] == ["emails to Sam: sign off as J"]
+
+
+async def test_a_learned_way_reaches_a_specialists_work(scheduled, monkeypatch,
+                                                         tmp_path):
+    """Before ways, a job's or a goal's draft ignored everything they had taught."""
+    import ways
+    monkeypatch.setattr(server.STATE, "ways", ways.WayStore(tmp_path / "w.jsonl"))
+    server.STATE.ways.add("gallery", "check their Instagram, not the website")
+    tasks_seen = []
+
+    async def fake_orchestrate(task, generate, **kw):
+        tasks_seen.append(task)
+        return server.subagents.OrchestrationResult(task=task, result="")
+
+    monkeypatch.setattr(server.subagents, "orchestrate", fake_orchestrate)
+    await server._run_job(scheduled.add("check the gallery's autumn dates",
+                                        time.time() - 1))
+    assert "check their Instagram, not the website" in tasks_seen[0]
+
+
+async def test_an_edited_approval_runs_the_edit_and_learns_from_it(
+        actions, monkeypatch, tmp_path):
+    import ways
+    monkeypatch.setattr(server.STATE, "ways", ways.WayStore(tmp_path / "w.jsonl"))
+    monkeypatch.setattr(server.STATE, "fast",
+                        lambda s, u: "ABOUT: emails to Sam | HOW: sign off as J")
+    p = await _propose(body="Can't do Thursday.\n\nBest,\nJess")
+    note = await server._decide(p.id, True, "web",
+                                edited={"body": "Can't do Thursday.\n\nJ"})
+    assert note == "Done."
+    assert actions.ran == [("mail__send", {"to": "sam@example.com",
+                                           "body": "Can't do Thursday.\n\nJ"})]
+    await asyncio.sleep(0.2)                   # the learner runs off the path
+    assert p.learned == "emails to Sam: sign off as J"
+    assert [w.line() for w in server.STATE.ways.active()] == [p.learned]
+
+
+async def test_a_refused_edit_runs_nothing(actions):
+    p = await _propose()
+    note = await server._decide(p.id, True, "web", edited={"bcc": "x@else.com"})
+    assert note.startswith("Not approved") and actions.ran == []
+    assert p.status == "pending"
