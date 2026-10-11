@@ -512,7 +512,9 @@ async def lifespan(app: FastAPI):
     print(f"[sources] watching {len(feeds)} feed(s)"
           + (f"; {len(STATE.seen_sources.keys)} already delivered" if feeds else
              ", set KEEPER_FEEDS to a comma-separated list to enable"), flush=True)
-    STATE.current_key = STATE.sessions.most_recent_key()  # resume last on start
+    # Resume the last conversation on start, but never the phone's: the page
+    # would then type into the thread the phone owns.
+    STATE.current_key = STATE.sessions.most_recent_key(exclude=PHONE_KEY)
     STATE.wake = asyncio.Event()
     # Delivery surfaces: web + native banner always; Telegram if a token is set.
     STATE.delivery = channels.build_default(STATE.listeners)
@@ -540,16 +542,39 @@ async def lifespan(app: FastAPI):
                 pass
 
 
+# The phone's conversation. One long thread at a fixed key, so switching
+# conversations on the page can never redirect where the phone is talking.
+PHONE_KEY = "s-telegram"
+
+
+def _phone_thread() -> str:
+    return STATE.sessions.get_or_create(PHONE_KEY, title="telegram").key
+
+
+async def _converse_from_phone(text: str) -> str:
+    result = await _converse(text, _phone_thread(), surface="telegram")
+    return result["reply"]
+
+
+def _phone_hears(kind: str) -> bool:
+    """Whether a line of this kind reaches the phone, so its thread can hold it."""
+    return STATE.delivery is not None and any(
+        c.name == "telegram" and c.wants(kind) for c in STATE.delivery.channels)
+
+
 def _start_inbox() -> Optional[asyncio.Task]:
-    """Listen for taps and dial commands from Telegram, when it is configured."""
+    """Listen for taps, dial commands and conversation from Telegram, when it is
+    configured."""
     token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
     chat_id = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
     if not token or not chat_id or os.environ.get("KEEPER_TELEGRAM_INBOX") == "0":
         STATE.inbox = None
         return None
     STATE.inbox = inbox_mod.TelegramInbox(
-        token, chat_id, decide=_decide, set_level=_set_level_from_phone)
-    print("[inbox] listening on telegram for approvals and the dial", flush=True)
+        token, chat_id, decide=_decide, set_level=_set_level_from_phone,
+        converse=_converse_from_phone)
+    print("[inbox] listening on telegram: conversation, approvals, the dial",
+          flush=True)
     return asyncio.create_task(STATE.inbox.run())
 
 
@@ -987,6 +1012,11 @@ async def _deliver_proactive(text: str, state: Optional[str] = None,
     STATE.history.append({"role": "assistant", "content": text, "ts": line.ts})
     STATE.sessions.append(STATE.current_key, "assistant", text, line.ts,
                           kind="proactive")
+    # It reaches the phone too, so the phone's thread keeps it: a reply there
+    # ("what did he say?") is usually to the line the Keeper just sent.
+    if _phone_hears("proactive") and STATE.current_key != PHONE_KEY:
+        STATE.sessions.append(_phone_thread(), "assistant", text, line.ts,
+                              kind="proactive")
     await _push("assistant", text, "proactive", state,
                 meta={"id": line.seq, "session": line.session, "why": line.why})
 
@@ -1098,6 +1128,9 @@ async def _deliver_proposal(p: proposals_mod.Proposal) -> None:
                                  session=STATE.current_key, ref=p.id)
     STATE.sessions.append(STATE.current_key, "assistant", text, line.ts,
                           kind="proposal", ref=p.id)
+    if _phone_hears("proposal") and STATE.current_key != PHONE_KEY:
+        STATE.sessions.append(_phone_thread(), "assistant", text, line.ts,
+                              kind="proposal", ref=p.id)
     print(f"[proposal] {p.id} from {p.origin}: {p.action}", flush=True)
     await _push("assistant", text, "proposal",
                 meta={"id": line.seq, "session": line.session, "why": line.why,

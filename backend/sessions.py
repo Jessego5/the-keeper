@@ -75,6 +75,16 @@ class SessionStore:
     def get(self, key: str) -> Optional[Session]:
         return self.sessions.get(key)
 
+    def get_or_create(self, key: str, title: str = "") -> Session:
+        """A conversation with a fixed key, made on first use: the phone's thread is
+        one long conversation, always found at the same key."""
+        s = self.sessions.get(key)
+        if s is None:
+            s = Session(key=key, title=title)
+            self.sessions[key] = s
+            self._save(s)
+        return s
+
     def all(self) -> list[Session]:
         """Conversations with at least one message, newest first."""
         return sorted((s for s in self.sessions.values() if s.messages),
@@ -95,6 +105,6 @@ class SessionStore:
             s.title = content.strip()[:80]
         self._save(s)
 
-    def most_recent_key(self) -> Optional[str]:
-        alls = self.all()
+    def most_recent_key(self, exclude: Optional[str] = None) -> Optional[str]:
+        alls = [s for s in self.all() if s.key != exclude]
         return alls[0].key if alls else None

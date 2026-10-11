@@ -8,10 +8,12 @@ ChatGPT's dots message you in Slack when they need a decision; this is the same 
 on the surface the Keeper already uses for your phone.
 
 It long-polls Telegram's getUpdates on the same bot that TelegramChannel sends with.
-Two things are accepted, and only from TELEGRAM_CHAT_ID:
+Three things are accepted, and only from TELEGRAM_CHAT_ID:
 
     a tap on Approve / Decline    -> decide(proposal_id, approve)
     /off /quiet /usual /eager     -> set_level(name), the proactivity dial
+    anything else they write      -> converse(text), a turn of conversation, kept
+                                     in the phone's own thread
 
 Anything from any other chat is ignored without a reply. A bot's username is
 public; the chat id is what makes a tap the person's.
@@ -45,6 +47,10 @@ BACKOFF_S = 15.0
 Fetch = Callable[[str, dict], dict]
 Decide = Callable[[str, bool, str], Awaitable[str]]
 SetLevel = Callable[[str], Optional[str]]
+Converse = Callable[[str], Awaitable[str]]
+
+# Telegram refuses a message over 4096 characters; a long reply goes in parts.
+MAX_REPLY_CHARS = 4000
 
 
 def _http_fetch(url: str, params: dict) -> dict:
@@ -57,11 +63,13 @@ def _http_fetch(url: str, params: dict) -> dict:
 
 class TelegramInbox:
     def __init__(self, token: str, chat_id: str, *, decide: Decide,
-                 set_level: SetLevel, fetch: Optional[Fetch] = None):
+                 set_level: SetLevel, converse: Optional[Converse] = None,
+                 fetch: Optional[Fetch] = None):
         self.token = token
         self.chat_id = str(chat_id)
         self._decide = decide
         self._set_level = set_level
+        self._converse = converse
         self._fetch = fetch or _http_fetch
         self.offset: Optional[int] = None
         self.stopped_because: Optional[str] = None
@@ -122,9 +130,20 @@ class TelegramInbox:
         if msg is None or not self._from_the_person(msg.get("chat")):
             return
         text = (msg.get("text") or "").strip()
+        if not text:
+            return                     # a sticker, a photo: nothing to answer yet
         if not text.startswith("/"):
-            await self._reply("Approvals and the dial live here (/off /quiet "
-                              "/usual /eager). Talk to me on the page.")
+            if self._converse is None:
+                await self._reply("Approvals and the dial live here (/off /quiet "
+                                  "/usual /eager). Talk to me on the page.")
+                return
+            # "typing…" while the turn runs: a tool-using turn can take ten seconds,
+            # and silence on a phone reads as a message that did not arrive.
+            await self._call("sendChatAction",
+                             {"chat_id": self.chat_id, "action": "typing"})
+            reply = await self._converse(text)
+            for start in range(0, max(len(reply), 1), MAX_REPLY_CHARS):
+                await self._reply(reply[start:start + MAX_REPLY_CHARS] or "…")
             return
         # "/quiet@SomeBot" is how a command arrives when the bot was mentioned.
         command = text.split()[0].split("@")[0]

@@ -767,3 +767,56 @@ async def test_chat_hands_the_model_the_thread(monkeypatch, tmp_path):
     await server.chat(server.ChatIn(message="sam asked about thursday"))
     await server.chat(server.ChatIn(message="what did he ask?"))
     assert seen == [[], ["sam asked about thursday", "kept"]]
+
+
+# --- the phone's own thread --- #
+
+class _PhoneChannel:
+    name = "telegram"
+
+    def wants(self, kind):
+        return kind in ("proactive", "proposal", "proposal_update")
+
+    async def deliver(self, *a, **k):
+        return None
+
+
+async def test_the_phone_talks_in_its_own_thread(monkeypatch, tmp_path):
+    """Switching conversations on the page must never move where the phone is
+    talking, so the phone has one fixed thread of its own."""
+    _isolate_delivery(monkeypatch, tmp_path)
+
+    async def fake_tool_reply(system, user, **kw):
+        return "kept"
+
+    monkeypatch.setattr(server.compose, "tool_reply", fake_tool_reply)
+    monkeypatch.setattr(server.compose, "revoice", lambda text, *a, **k: text)
+    monkeypatch.setattr(server.memory, "recall", lambda *a, **k: "")
+    monkeypatch.setattr(server, "_distill_async", _noop_distill)
+    web = server.STATE.sessions.new().key
+    server.STATE.current_key = web
+    assert await server._converse_from_phone("hello from the bus") == "kept"
+    phone = server.STATE.sessions.get(server.PHONE_KEY)
+    assert [m.content for m in phone.messages] == ["hello from the bus", "kept"]
+    assert server.STATE.sessions.get(web).messages == []
+    assert server.STATE.current_key == web
+
+
+async def test_a_line_sent_to_the_phone_is_kept_in_its_thread(monkeypatch, tmp_path):
+    _isolate_delivery(monkeypatch, tmp_path)
+    server.STATE.delivery.channels.append(_PhoneChannel())
+    server.STATE.current_key = server.STATE.sessions.new().key
+    await server._deliver_proactive("Sam wrote back.", why=server.unbidden.Why.NOTICED)
+    phone = server.STATE.sessions.get(server.PHONE_KEY)
+    assert [(m.content, m.kind) for m in phone.messages] == [
+        ("Sam wrote back.", "proactive")]
+
+
+def test_the_page_never_resumes_into_the_phones_thread(tmp_path):
+    import sessions
+    store = sessions.SessionStore(tmp_path)
+    web = store.new()
+    store.append(web.key, "user", "earlier, on the page", 1.0)
+    store.get_or_create(server.PHONE_KEY, title="telegram")
+    store.append(server.PHONE_KEY, "user", "later, on the phone")
+    assert store.most_recent_key(exclude=server.PHONE_KEY) == web.key

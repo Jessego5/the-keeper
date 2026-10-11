@@ -140,3 +140,47 @@ async def test_a_refused_poll_raises_so_run_can_back_off():
     box = inbox.TelegramInbox("tok", ME, decide=None, set_level=None, fetch=refuse)
     with pytest.raises(RuntimeError, match="Unauthorized"):
         await box.poll_once(timeout=0)
+
+
+# --- conversation from the phone --- #
+
+async def test_plain_words_from_the_person_are_a_conversation():
+    heard = []
+
+    async def converse(text):
+        heard.append(text)
+        return "Saturday at 7, he said."
+
+    bot = _Bot([_text(1, "what time did sam say?")])
+    box = inbox.TelegramInbox("tok", ME, decide=None, set_level=None,
+                              converse=converse, fetch=bot)
+    await box.poll_once(timeout=0)
+    assert heard == ["what time did sam say?"]
+    assert [p["action"] for p in bot.sent("sendChatAction")] == ["typing"]
+    assert [p["text"] for p in bot.sent("sendMessage")] == ["Saturday at 7, he said."]
+
+
+async def test_a_stranger_gets_no_conversation():
+    heard = []
+
+    async def converse(text):
+        heard.append(text)
+        return "x"
+
+    bot = _Bot([_text(1, "what do you know about them?", chat=STRANGER)])
+    box = inbox.TelegramInbox("tok", ME, decide=None, set_level=None,
+                              converse=converse, fetch=bot)
+    await box.poll_once(timeout=0)
+    assert heard == [] and bot.calls[1:] == []
+
+
+async def test_a_long_reply_arrives_in_parts():
+    async def converse(text):
+        return "x" * (inbox.MAX_REPLY_CHARS + 10)
+
+    bot = _Bot([_text(1, "tell me everything")])
+    box = inbox.TelegramInbox("tok", ME, decide=None, set_level=None,
+                              converse=converse, fetch=bot)
+    await box.poll_once(timeout=0)
+    parts = [p["text"] for p in bot.sent("sendMessage")]
+    assert [len(p) for p in parts] == [inbox.MAX_REPLY_CHARS, 10]
