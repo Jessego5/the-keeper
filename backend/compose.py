@@ -313,11 +313,12 @@ async def tool_reply(
     messages.append({"role": "user", "content": user or "."})
 
     for i in range(max_rounds):
+        # tool_choice only with tools: the API answers 400 to tool_choice="none"
+        # when no tools are listed, which a caller with nothing to offer (an eval,
+        # a specialist whose servers are all down) used to hit on every turn.
+        extra = {"tools": tools, "tool_choice": "auto"} if tools else {}
         resp = await aclient.chat.completions.create(
-            model=model, messages=messages, max_tokens=max_tokens,
-            tools=tools or None,
-            tool_choice="auto" if tools else "none",
-        )
+            model=model, messages=messages, max_tokens=max_tokens, **extra)
         msg = resp.choices[0].message
         if not msg.tool_calls:
             return msg.content or ""

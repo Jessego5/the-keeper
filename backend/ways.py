@@ -176,10 +176,11 @@ GENERAL way they like this kind of thing done (tone, length, how they sign off, 
 what they always include or leave out, formatting), or only fixes a one-off fact \
 for this one instance (a date, a time, a name, a typo, a number).
 
+Ignore changes to where it goes (a path, an address, a time): those are one-off.
+
 If it is general, answer exactly one line:
-ABOUT: <the kind of task, from the Action and the content, e.g. "notes to their \
-brother" or "any message"> | HOW: <the way, as an instruction that describes \
-exactly the change they made, nothing they did not change>
+ABOUT: <the kind of thing and who it is for, as the content shows it> | HOW: <an \
+instruction for the next draft, in the imperative, covering only what they changed>
 If it is a one-off fix, answer exactly: NONE"""
 
 

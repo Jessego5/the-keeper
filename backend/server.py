@@ -652,33 +652,44 @@ def _recent_turns(key: Optional[str], now: Optional[float] = None) -> list:
 
     Unbidden lines and proposals are included: "what did he say?" is usually a
     reply to something the Keeper said first, and "make it shorter" to a draft it
-    is waiting on a yes for."""
+    is waiting on a yes for. What became of a proposal is added as its own entry
+    at the moment it was decided, not folded into the question: the question is
+    saved mid-turn, so the Keeper's own "it is waiting" comes after it, and an
+    outcome folded in earlier was contradicted by the last thing in the thread.
+    Found in the live demo."""
     s = STATE.sessions.get(key) if key else None
     if s is None:
         return []
     now = now or time.time()
-    recent = [m for m in s.messages if now - m.ts <= RECENT_TURNS_WINDOW_S]
-    return [{"role": "user" if m.role == "user" else "assistant",
-             "content": _as_it_stands(m)} for m in recent[-RECENT_TURNS:]]
+    entries = []
+    for m in s.messages:
+        if now - m.ts > RECENT_TURNS_WINDOW_S:
+            continue
+        entries.append((m.ts, "user" if m.role == "user" else "assistant",
+                        m.content))
+        settled = _outcome_of(m, now)
+        if settled is not None:
+            entries.append(settled)
+    entries.sort(key=lambda e: e[0])
+    return [{"role": role, "content": text}
+            for _, role, text in entries[-RECENT_TURNS:]]
 
 
-def _as_it_stands(m) -> str:
-    """A kept message, with what has become of it if it was a proposal.
-
-    The thread records the question, "Waiting on your yes", and nothing else, so
-    after a failed write the Keeper was asked what it had put in the note and
-    described the note as though it existed. Found in the live demo. The outcome
-    is read from the proposal store at the time of the turn, so it is current."""
+def _outcome_of(m, now: float) -> Optional[tuple]:
+    """(when, role, note) for a decided proposal, read from the store so it is
+    current; None for anything else, or one still waiting."""
     if m.kind != "proposal" or not m.ref:
-        return m.content
+        return None
     p = STATE.proposals.get(m.ref)
-    if p is None or p.status == proposals_mod.PENDING:
-        return m.content
+    if p is None or p.status == proposals_mod.PENDING or not p.decided_at:
+        return None
+    if p.decided_at > now:
+        return None
     note = channels.outcome_line(p.public())
     if p.original_args is not None:
         note += " They edited it first; what ran was:\n" + proposals_mod.render(
             p.action, p.args)
-    return f"{m.content}\n\n[{note}]"
+    return (p.decided_at, "assistant", f"[{note}]")
 
 
 @app.post("/chat")
@@ -1331,9 +1342,12 @@ async def _learn_from_edit(p: proposals_mod.Proposal) -> None:
     path entirely: the approval stands whatever the learner makes of it."""
     if p.original_args is None:
         return
+    # The full model, not the fast one: edits are rare, and on the fast model the
+    # live demo got "removed punctuation in the sign-off" for an edit that only
+    # lowercased the note, a rule that would then shape every later draft.
     way = await asyncio.to_thread(
         ways_mod.learn_from_edit, p.action, p.original_args, p.args,
-        STATE.fast or STATE.generate, STATE.ways)
+        STATE.generate, STATE.ways)
     if way is None:
         return
     STATE.proposals.note_learned(p, way.line())

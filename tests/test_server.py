@@ -1037,7 +1037,7 @@ async def test_an_edited_approval_runs_the_edit_and_learns_from_it(
         actions, monkeypatch, tmp_path):
     import ways
     monkeypatch.setattr(server.STATE, "ways", ways.WayStore(tmp_path / "w.jsonl"))
-    monkeypatch.setattr(server.STATE, "fast",
+    monkeypatch.setattr(server.STATE, "generate",
                         lambda s, u: "ABOUT: emails to Sam | HOW: sign off as J")
     p = await _propose(body="Can't do Thursday.\n\nBest,\nJess")
     note = await server._decide(p.id, True, "web",
@@ -1067,17 +1067,22 @@ async def test_the_thread_knows_what_became_of_a_proposal(actions, monkeypatch):
     monkeypatch.setattr(actions, "call_proposable", refuse)
     p = await _propose()
     await server._decide(p.id, True, "web")
-    (turn,) = server._recent_turns(server.STATE.current_key)
-    assert "Waiting on your yes" in turn["content"]
-    assert "Approved, but it failed" in turn["content"]
-    assert "Access denied" in turn["content"]
+    key = server.STATE.current_key
+    # The Keeper's own reply lands after the question, as it does in a real turn.
+    server.STATE.sessions.append(key, "assistant", "It is waiting on your yes.",
+                                 p.created + 1)
+    p.decided_at = p.created + 2
+    turns = [t["content"] for t in server._recent_turns(key, p.created + 3)]
+    assert "Waiting on your yes" in turns[0]
+    assert turns[1] == "It is waiting on your yes."
+    assert "Approved, but it failed" in turns[-1] and "Access denied" in turns[-1]
 
 
 async def test_an_edit_teaches_even_when_the_tool_then_fails(actions, monkeypatch,
                                                               tmp_path):
     import ways
     monkeypatch.setattr(server.STATE, "ways", ways.WayStore(tmp_path / "w.jsonl"))
-    monkeypatch.setattr(server.STATE, "fast",
+    monkeypatch.setattr(server.STATE, "generate",
                         lambda s, u: "ABOUT: notes to Sam | HOW: all lowercase")
 
     async def refuse(name, args):
