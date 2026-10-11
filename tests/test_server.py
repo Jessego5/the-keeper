@@ -23,10 +23,13 @@ pytestmark = pytest.mark.integration
 
 
 @pytest.fixture
-async def client(monkeypatch):
+async def client(monkeypatch, tmp_path):
     # No MCP (fast, deterministic) and force the offline stub generator.
     monkeypatch.setattr(tools.MCPManager, "from_config",
                         classmethod(lambda cls, *a, **k: tools.MCPManager([])))
+    # Every unbidden line now opens a conversation if none is active and is written
+    # to the log, so a run against the real memory_store/ would leave both behind.
+    _isolate_delivery(monkeypatch, tmp_path)
     async with server.app.router.lifespan_context(server.app):
         server.STATE.generate, server.STATE.fast = compose.stub_generator, None
         transport = httpx.ASGITransport(app=server.app)
@@ -137,6 +140,106 @@ async def test_state_shape(client):
 async def test_config_sets_speed(client):
     out = (await client.post("/config", json={"speed": 300})).json()
     assert out["speed"] == 300
+
+
+def _isolate_delivery(monkeypatch, tmp_path):
+    import sessions
+    import unbidden
+    monkeypatch.setattr(server.STATE, "sessions",
+                        sessions.SessionStore(tmp_path / "sessions"))
+    monkeypatch.setattr(server.STATE, "unbidden",
+                        unbidden.UnbiddenLog(tmp_path / "unbidden.jsonl"))
+    monkeypatch.setattr(server.STATE, "current_key", None)
+    monkeypatch.setattr(server.STATE, "delivery",
+                        server.channels.Delivery(
+                            [server.channels.SSEChannel(server.STATE.listeners)]))
+
+
+class _Req:
+    """Just enough of a Request for /events: the one header it reads."""
+    def __init__(self, last_event_id=None):
+        self.headers = ({"last-event-id": str(last_event_id)}
+                        if last_event_id is not None else {})
+
+
+async def _frames(response, n, timeout=2):
+    """The first n SSE frames off the real /events generator. ASGITransport buffers
+    an infinite stream, so this reads the body iterator directly."""
+    it = response.body_iterator
+    out = []
+    while len(out) < n:
+        frame = await asyncio.wait_for(it.__anext__(), timeout)
+        if not frame.startswith(":"):
+            out.append(frame)
+    await it.aclose()
+    return out
+
+
+async def test_an_unbidden_line_is_kept_even_with_no_conversation_open(
+        monkeypatch, tmp_path):
+    """Regression: a line spoken after "begin again", or on a first run, went to
+    the open page and nowhere else, so a reload had nothing to show for it."""
+    _isolate_delivery(monkeypatch, tmp_path)
+    await server._deliver_proactive("the water stirs", "tidal",
+                                    why=server.unbidden.Why.ROUTINE)
+    key = server.STATE.current_key
+    assert key is not None, "no conversation was opened to keep the line in"
+    msgs = server.STATE.sessions.get(key).messages
+    assert [(m.content, m.kind) for m in msgs] == [("the water stirs", "proactive")]
+    assert server.STATE.unbidden.lines[-1].why == "routine"
+
+
+async def test_the_day_counts_outreach_but_not_kept_promises(monkeypatch, tmp_path):
+    """The split the four copies of this bookkeeping used to make by accident."""
+    _isolate_delivery(monkeypatch, tmp_path)
+    monkeypatch.setattr(server.STATE, "proactive_at", server.deque(maxlen=200))
+    await server._deliver_proactive("restless", why=server.unbidden.Why.RESTLESS)
+    await server._deliver_proactive("a promise", why=server.unbidden.Why.REMINDER,
+                                    counts_toward_day=False)
+    assert server.STATE.proactive_today() == 1
+
+
+async def test_a_reconnecting_page_is_told_what_it_missed(monkeypatch, tmp_path):
+    """The point of the log. A page that last saw line 1 reconnects and gets lines
+    2 and 3, each with its id, so its next reconnect can pick up from there."""
+    _isolate_delivery(monkeypatch, tmp_path)
+    for text in ("one", "two", "three"):
+        await server._deliver_proactive(text)
+    resp = await server.events(_Req(last_event_id=1))
+    frames = await _frames(resp, 2)
+    assert [json.loads(f.split("data: ", 1)[1])["content"] for f in frames] == [
+        "two", "three"]
+    assert frames[0].startswith("id: 2\n")
+
+
+async def test_a_fresh_page_gets_no_replay(monkeypatch, tmp_path):
+    """No Last-Event-ID means a new page, which loads the conversation itself.
+    Replaying to it would draw every line twice."""
+    _isolate_delivery(monkeypatch, tmp_path)
+    await server._deliver_proactive("already in the conversation")
+    resp = await server.events(_Req())
+    it = resp.body_iterator
+    assert (await it.__anext__()).startswith(":")      # the greeting, then nothing
+    with pytest.raises(asyncio.TimeoutError):
+        await asyncio.wait_for(it.__anext__(), 0.2)
+    await it.aclose()
+
+
+async def test_a_line_said_during_the_replay_is_not_sent_twice(
+        monkeypatch, tmp_path):
+    """A line is recorded first and pushed after, so one recorded just before a
+    page reconnects is both in its replay and, a moment later, in its queue. It
+    must arrive once."""
+    _isolate_delivery(monkeypatch, tmp_path)
+    line = server.STATE.unbidden.record("caught in between")   # logged, not pushed
+    resp = await server.events(_Req(last_event_id=0))
+    await server.STATE.delivery.push(                           # ...the push lands
+        "assistant", line.text, "proactive",
+        meta={"id": line.seq, "session": None})
+    await server._deliver_proactive("after")
+    frames = await _frames(resp, 2)
+    contents = [json.loads(f.split("data: ", 1)[1])["content"] for f in frames]
+    assert contents == ["caught in between", "after"]
 
 
 async def test_push_delivers_to_listener():

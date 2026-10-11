@@ -27,6 +27,11 @@ class Msg:
     role: str          # "user" | "assistant"
     content: str
     ts: float = field(default_factory=time.time)
+    # "proactive" for a line the Keeper said unbidden. Without it a reload rendered
+    # every kept line as an ordinary reply, so the one thing that marks a companion
+    # out from a chat window, that it spoke first, vanished on refresh. Files
+    # written before this field load as "reply", which is what they were shown as.
+    kind: str = "reply"
 
 
 @dataclass
@@ -75,13 +80,16 @@ class SessionStore:
                       key=lambda s: s.updated, reverse=True)
 
     def append(self, key: str, role: str, content: str,
-               ts: Optional[float] = None) -> None:
+               ts: Optional[float] = None, kind: str = "reply") -> None:
         s = self.sessions.get(key)
         if s is None:
             return
-        s.messages.append(Msg(role=role, content=content, ts=ts or time.time()))
+        s.messages.append(Msg(role=role, content=content, ts=ts or time.time(),
+                              kind=kind))
         s.updated = time.time()
-        if not s.title and role == "user":
+        # A conversation is titled by whoever opened it. Usually that is the person;
+        # when the Keeper spoke first, its line is the truthful title.
+        if not s.title and (role == "user" or kind == "proactive"):
             s.title = content.strip()[:80]
         self._save(s)
 

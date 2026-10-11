@@ -48,6 +48,9 @@ class SSEChannel:
     fans out to whoever is currently connected."""
 
     name = "web"
+    # The one surface that can be caught up after a gap, so the one that wants the
+    # line's sequence number and conversation. See Delivery.push.
+    takes_meta = True
 
     def __init__(self, listeners: set):
         self.listeners = listeners
@@ -56,9 +59,10 @@ class SSEChannel:
         return True
 
     async def deliver(self, role: str, content: str, kind: str,
-                      state: Optional[str] = None) -> None:
+                      state: Optional[str] = None,
+                      meta: Optional[dict] = None) -> None:
         payload = json.dumps({"role": role, "content": content, "kind": kind,
-                              "ts": time.time()})
+                              "ts": time.time(), **(meta or {})})
         for q in list(self.listeners):
             await q.put(payload)
 
@@ -170,12 +174,20 @@ class Delivery:
         self.channels = [c for c in channels if c is not None]
 
     async def push(self, role: str, content: str, kind: str,
-                   state: Optional[str] = None) -> None:
+                   state: Optional[str] = None,
+                   meta: Optional[dict] = None) -> None:
+        """`meta` (the unbidden line's seq and session) goes only to a channel that
+        declares `takes_meta`. A phone message has no use for a sequence number,
+        and widening every channel's contract for the one that does would break
+        each fake and each surface someone adds later."""
         for ch in self.channels:
             if not ch.wants(kind):
                 continue
             try:
-                await ch.deliver(role, content, kind, state)
+                if meta and getattr(ch, "takes_meta", False):
+                    await ch.deliver(role, content, kind, state, meta=meta)
+                else:
+                    await ch.deliver(role, content, kind, state)
             except Exception as exc:  # noqa: BLE001 - a dead channel never blocks others
                 print(f"[channel:{ch.name}] {type(exc).__name__}: {exc}", flush=True)
 

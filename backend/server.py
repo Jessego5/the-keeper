@@ -21,6 +21,7 @@ the fact store, which persists to memory_store/facts.jsonl.
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import secrets
 import time
@@ -61,6 +62,7 @@ import tasks
 import proactive
 import sensors
 import tools
+import unbidden
 import voice_eval
 
 TOOL_MODEL = "gpt-4o"   # model used for the passive tool-calling path
@@ -234,6 +236,8 @@ class AppState:
     current_key: Optional[str] = None   # active conversation (sidebar)
     routines_engine: routines.RoutineEngine = field(
         default_factory=routines.RoutineEngine)   # the house's presence routines
+    unbidden: unbidden.UnbiddenLog = field(
+        default_factory=unbidden.UnbiddenLog)     # every line it said unasked
 
     def minutes_since_user(self) -> Optional[float]:
         if self.last_user_at is None:
@@ -280,7 +284,7 @@ STATE = AppState()
 
 
 async def _push(role: str, content: str, kind: str,
-                state: Optional[str] = None) -> None:
+                state: Optional[str] = None, meta: Optional[dict] = None) -> None:
     """Fan a line out to every enabled delivery channel: the open web page, a native
     macOS banner, and (if configured) a Telegram message on your phone. See
     channels.py; each is best-effort, so one failing never blocks the others.
@@ -292,7 +296,7 @@ async def _push(role: str, content: str, kind: str,
     if STATE.delivery is None:
         STATE.delivery = channels.build_default(STATE.listeners)
     await STATE.delivery.push(role, content, kind,
-                              state or STATE.current_register)
+                              state or STATE.current_register, meta=meta)
 
 
 # --------------------------------------------------------------------------- #
@@ -309,12 +313,9 @@ async def _proactive_loop() -> None:
         for r in STATE.reminders.due():
             line = f"You asked me to hold this: {r.text}. It's time."
             STATE.reminders.mark_delivered(r.id)
-            STATE.last_proactive_at = time.time()
-            STATE.history.append({"role": "assistant", "content": line,
-                                  "ts": time.time()})
-            if STATE.current_key is not None:
-                STATE.sessions.append(STATE.current_key, "assistant", line)
-            await _push("assistant", line, "proactive")
+            # A kept promise is not outreach the day's ceiling should count.
+            await _deliver_proactive(line, why=unbidden.Why.REMINDER,
+                                     counts_toward_day=False)
 
         # One shared presence read for this tick, used by both the house routines
         # and the restlessness gate (so we don't ioreg twice).
@@ -414,14 +415,11 @@ async def _proactive_loop() -> None:
                           f"(relevance {STATE.pending_item.relevance:.1f}, "
                           f"because {STATE.pending_item.because!r})", flush=True)
                     STATE.pending_item = None
-                STATE.last_proactive_at = time.time()
-                STATE.proactive_at.append(STATE.last_proactive_at)
-                STATE.history.append({"role": "assistant", "content": decision.text,
-                                      "ts": time.time()})
-                if STATE.current_key is not None:
-                    STATE.sessions.append(STATE.current_key, "assistant",
-                                          decision.text)
-                await _push("assistant", decision.text, "proactive")
+                why = (unbidden.Why.NOTICED
+                       if decision.code == proactive.Reason.SPOKE_SOURCE
+                       else unbidden.Why.RESTLESS)
+                await _deliver_proactive(decision.text, decision.water_state,
+                                         why=why)
             else:
                 await _maybe_drift_note()   # nothing to say -> maybe reflect
             wait = max(1, decision.wait_next_s)
@@ -671,12 +669,9 @@ async def _maybe_routine(pres: sensors.Presence) -> bool:
     if result.silent or not result.text:
         return False        # composed nothing on-voice -> let restlessness decide
     STATE.routines_engine.fire(routine, time.time())
-    STATE.last_proactive_at = time.time()
-    STATE.history.append({"role": "assistant", "content": result.text,
-                          "ts": time.time()})
-    if STATE.current_key is not None:
-        STATE.sessions.append(STATE.current_key, "assistant", result.text)
-    await _push("assistant", result.text, "proactive", water)
+    # Routines carry their own cooldowns and have never counted toward the day.
+    await _deliver_proactive(result.text, water, why=unbidden.Why.ROUTINE,
+                             counts_toward_day=False)
     print(f"[routine] {routine.key} spoke", flush=True)
     return True
 
@@ -853,17 +848,34 @@ async def _maybe_advance_goal() -> bool:
     return await _nudge_goal_step(goal, step, water)
 
 
-async def _deliver_proactive(text: str, state: Optional[str] = None) -> None:
-    """Record + fan out one unbidden line (history, session, all channels).
+async def _deliver_proactive(text: str, state: Optional[str] = None,
+                             why: str = unbidden.Why.RESTLESS,
+                             counts_toward_day: bool = True) -> None:
+    """Record + fan out one unbidden line (log, history, session, all channels).
+
+    The only way an unbidden line leaves the Keeper. There used to be four, one per
+    caller, each copying the bookkeeping by hand, and they had already drifted:
+    the tick and goal paths counted toward the day's ceiling while the reminder
+    and routine paths did not, which only an audit of all four could see.
+    `counts_toward_day` keeps that split, now on purpose and in one place.
 
     `state` is the register it was composed in, so the native banner can wear
-    the matching Keeper."""
-    STATE.last_proactive_at = time.time()
-    STATE.proactive_at.append(STATE.last_proactive_at)
-    STATE.history.append({"role": "assistant", "content": text, "ts": time.time()})
-    if STATE.current_key is not None:
-        STATE.sessions.append(STATE.current_key, "assistant", text)
-    await _push("assistant", text, "proactive", state)
+    the matching Keeper. `why` says which part of the Keeper spoke."""
+    # A line with nowhere to be kept is a line the page can never show again. After
+    # "begin again", or on a first run, there is no conversation, so the Keeper's
+    # line opens one, the way a person's first message would.
+    if STATE.current_key is None:
+        STATE.current_key = STATE.sessions.new().key
+    line = STATE.unbidden.record(text, why=why, state=state,
+                                 session=STATE.current_key)
+    STATE.last_proactive_at = line.ts
+    if counts_toward_day:
+        STATE.proactive_at.append(line.ts)
+    STATE.history.append({"role": "assistant", "content": text, "ts": line.ts})
+    STATE.sessions.append(STATE.current_key, "assistant", text, line.ts,
+                          kind="proactive")
+    await _push("assistant", text, "proactive", state,
+                meta={"id": line.seq, "session": line.session, "why": line.why})
 
 
 async def _nudge_goal_step(goal, step, water) -> bool:
@@ -888,7 +900,7 @@ async def _nudge_goal_step(goal, step, water) -> bool:
               f"/{goal.progress()[1]}: {step.text[:44]}", flush=True)
         return False
     STATE.goals.touch(goal, _goal_check_interval())   # nudge, don't complete
-    await _deliver_proactive(result.text, water)
+    await _deliver_proactive(result.text, water, why=unbidden.Why.GOAL)
     done, total = goal.progress()
     print(f"[goal] {goal.id} nudged {done}/{total}: {step.text[:50]}", flush=True)
     return True
@@ -923,7 +935,7 @@ async def _execute_goal_step(goal, step, water) -> bool:
         memory=mem)
     STATE.goals.advance(goal, note=f"[{res.who()}] {result[:130]}",   # who did it
                         interval_s=_goal_check_interval())
-    await _deliver_proactive(voiced, water)
+    await _deliver_proactive(voiced, water, why=unbidden.Why.GOAL)
     done, total = goal.progress()
     print(f"[goal] {goal.id} EXECUTED via {res.who()} {done}/{total}: "
           f"{step.text[:45]}", flush=True)
@@ -986,7 +998,7 @@ async def _run_background(bg_id: str, description: str) -> None:
         compose.revoice,
         f"You asked me to look into this: {description}\n\nHere is what I found: {result}",
         water, generate=STATE.fast or STATE.generate)
-    await _deliver_proactive(voiced, water)
+    await _deliver_proactive(voiced, water, why=unbidden.Why.BACKGROUND)
     print(f"[bg] {bg_id} delivered", flush=True)
 
 
@@ -1086,21 +1098,67 @@ async def _distill_async(user_msg: str, reply: str) -> None:
 
 
 @app.get("/events")
-async def events():
+async def events(req: Request):
     q: asyncio.Queue = asyncio.Queue()
     STATE.listeners.add(q)
+    # A reconnecting EventSource sends back the id of the last line it saw. Whatever
+    # was said after it went to a page that was not listening: say it again now.
+    # Registered as a listener BEFORE reading the log, so nothing said after this
+    # point can fall into the gap. The cost is the opposite overlap: a line already
+    # recorded whose push lands a moment later is in both, and the stream skips it.
+    since = unbidden.parse_last_event_id(req.headers.get("last-event-id"))
+    missed = STATE.unbidden.after(since) if since is not None else []
 
     async def stream():
         try:
             # greet the stream so clients know it's open
             yield ": connected\n\n"
+            replayed = 0
+            for line in missed:
+                replayed = line.seq
+                yield sse_frame(_line_payload(line))
             while True:
                 payload = await q.get()
-                yield f"data: {payload}\n\n"
+                frame = sse_frame(payload)
+                # The queue may hold a line the replay already sent.
+                if replayed and _payload_seq(payload) <= replayed:
+                    continue
+                yield frame
         finally:
             STATE.listeners.discard(q)
 
     return StreamingResponse(stream(), media_type="text/event-stream")
+
+
+def _line_payload(line: unbidden.Line) -> str:
+    """An unbidden line as the web channel would have sent it live."""
+    return json.dumps({"role": "assistant", "content": line.text,
+                       "kind": "proactive", "ts": line.ts, "id": line.seq,
+                       "session": line.session, "why": line.why})
+
+
+def _payload_seq(payload: str) -> int:
+    try:
+        return int(json.loads(payload).get("id") or 0)
+    except (ValueError, TypeError, AttributeError):
+        return 0
+
+
+def sse_frame(payload: str) -> str:
+    """One SSE frame. A line carrying a sequence number goes out with it as the
+    event id, which is what the browser hands back as Last-Event-ID."""
+    seq = _payload_seq(payload)
+    head = f"id: {seq}\n" if seq else ""
+    return f"{head}data: {payload}\n\n"
+
+
+@app.get("/unbidden")
+async def unbidden_lines(after: int = 0, limit: int = 50):
+    """What the Keeper said on its own, and which part of it spoke. The answer to
+    "what did you do while I was away", without having to scroll for it."""
+    return {"lines": [{"seq": ln.seq, "text": ln.text, "why": ln.why,
+                       "state": ln.state, "session": ln.session, "ts": ln.ts}
+                      for ln in STATE.unbidden.after(after, limit=max(1, limit))]}
 
 
 @app.get("/state")
@@ -1203,7 +1261,8 @@ async def session_messages(key: str):
     s = STATE.sessions.get(key)
     if s is None:
         return {"messages": []}
-    return {"messages": [{"role": m.role, "content": m.content, "ts": m.ts}
+    return {"messages": [{"role": m.role, "content": m.content, "ts": m.ts,
+                          "kind": m.kind}
                          for m in s.messages]}
 
 

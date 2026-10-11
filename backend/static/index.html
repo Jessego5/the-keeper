@@ -286,7 +286,8 @@
     }
     showWatermark();
     for (const m of msgs || [])
-      addLine(m.role === "user" ? "user" : "assistant", m.content, "reply", m.ts);
+      addLine(m.role === "user" ? "user" : "assistant", m.content,
+              m.kind || "reply", m.ts);
     if (!msgs || !msgs.length) showWatermark();
     markActive(key);
     entry.focus();
@@ -326,11 +327,18 @@
   // backend (notifier.py) so it reaches you with the browser closed and carries
   // the Keeper's own icon: no browser web-notification here (would double-banner
   // with the browser's logo).
+  //
+  // Each unbidden line arrives with an event id. EventSource remembers the last
+  // one and sends it back when it reconnects, and the server replays whatever was
+  // said in the gap, so a line spoken while the stream was down is not lost.
   const events = new EventSource("/events");
   events.onmessage = (e) => {
     let m; try { m = JSON.parse(e.data); } catch { return; }
     if (!m.content) return;
     addLine("assistant", m.content, m.kind || "proactive", m.ts);
+    // A line spoken into an empty room opens a conversation of its own: adopt it,
+    // so the reply that follows lands in the same thread the sidebar shows.
+    if (m.session && !activeKey) { markActive(m.session); loadSessions(); }
   };
 
   // ── init: show history; open the active thread if one exists ──
