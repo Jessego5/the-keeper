@@ -19,6 +19,7 @@ not failing.
 from __future__ import annotations
 
 import json
+import re
 import os
 from dataclasses import dataclass
 from pathlib import Path
@@ -182,6 +183,9 @@ sounds like YOU: your register, your economy, WITHOUT changing what it says.
 
 Rules, in order of importance:
 - Keep every concrete fact exactly: names, numbers, dates, quotes, file or code contents.
+- Keep who did what to whom: who wrote, who it is for, who said it. A note TO Sam
+  must never become a note FROM someone. Keep what is done apart from what is only
+  drafted, waiting, declined or failed.
 - Add nothing that is not already there. Invent no events, no feelings, no claims.
 - If a line is a plain fact your voice would distort (a number, an address), keep it plain.
 - Do not turn it into a riddle; clarity first, voice second.
@@ -207,7 +211,49 @@ def revoice(text: str, water_state: str = persona.DEFAULT_WATER_STATE, *,
         print(f"[compose] revoice failed, answering plainly "
               f"({type(exc).__name__}: {exc})", flush=True)
         return text
-    return out or text
+    if not out:
+        return text
+    lost = _lost_specifics(text, out)
+    if lost:
+        # The rule above is a request; this is the check. Seen live: "the note to
+        # Sam" came back as "a note from J", Sam gone and the direction inverted.
+        print(f"[compose] revoice dropped {', '.join(sorted(lost))}; answering "
+              f"plainly", flush=True)
+        return text
+    return out
+
+
+# Capitalised words that are only a capital because a sentence starts with them.
+_NOT_NAMES = {"the", "a", "an", "i", "it", "its", "this", "that", "these", "those",
+              "you", "your", "he", "she", "they", "we", "my", "our", "his", "her",
+              "their", "here", "there", "what", "when", "if", "and", "but", "so",
+              "yes", "no", "done", "in", "on", "at", "for", "to", "of", "with",
+              "from", "by", "as", "is", "was", "be", "not", "then", "also", "just",
+              "nothing", "something", "everything", "one", "all", "some", "each"}
+_NUMBER_WORDS = ["zero", "one", "two", "three", "four", "five", "six", "seven",
+                 "eight", "nine", "ten", "eleven", "twelve"]
+_SPECIFIC = re.compile(r"\b(?:\d[\d:.,/-]*\d|\d|[A-Z][\w'-]*)")
+
+
+def _lost_specifics(original: str, voiced: str) -> set:
+    """Names and numbers in `original` that `voiced` no longer contains. The cheap,
+    certain half of "keep every concrete fact": it cannot see a meaning changed,
+    but it can see a name or a number disappear, which is how the worst re-voices
+    go wrong. It can also miss one: a dropped "3 reminders" passes when a "3:15"
+    survives elsewhere, because it checks containment, not counts."""
+    have = voiced.lower()
+    lost = set()
+    for tok in _SPECIFIC.findall(original):
+        if tok.lower().strip("'") in _NOT_NAMES:
+            continue
+        if tok.lower() in have:
+            continue
+        # "3 commits" voiced as "three commits" kept the fact.
+        if tok.isdigit() and int(tok) < len(_NUMBER_WORDS) and re.search(
+                rf"\b{_NUMBER_WORDS[int(tok)]}\b", have):
+            continue
+        lost.add(tok)
+    return lost
 
 
 def _is_silence(text: str) -> bool:
@@ -279,6 +325,7 @@ async def tool_reply(
     max_tokens: int = 400,
     trace: Optional[list] = None,
     prior: Optional[list] = None,
+    steer: str = "",
 ) -> str:
     """Passive-only: let the Keeper use tools, then answer in voice.
 
@@ -293,6 +340,9 @@ async def tool_reply(
     prior: the last few turns of this conversation, oldest first, as
         {"role", "content"} dicts. Without them every message arrived alone, so
         "what did he say?" or "make it shorter" had nothing to refer to.
+    steer: a short note placed directly before the message (learned ways, see
+        ways.py). At the end of a long system prompt such a note was followed in
+        some runs and not others; next to the request it is weighed with it.
 
     Never used by the proactive loop, which stays sealed.
     """
@@ -310,6 +360,8 @@ async def tool_reply(
     messages: list[dict] = [{"role": "system", "content": system}]
     messages += [{"role": m["role"], "content": m["content"]}
                  for m in (prior or []) if m.get("content")]
+    if steer:
+        messages.append({"role": "system", "content": steer})
     messages.append({"role": "user", "content": user or "."})
 
     for i in range(max_rounds):

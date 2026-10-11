@@ -1002,8 +1002,8 @@ async def test_a_learned_way_reaches_the_chat_turn(monkeypatch, tmp_path):
     server.STATE.ways.add("emails to Sam", "sign off as J")
     systems = []
 
-    async def fake_tool_reply(system, user, **kw):
-        systems.append(system)
+    async def fake_tool_reply(system, user, steer="", **kw):
+        systems.append(steer)
         return "drafted"
 
     monkeypatch.setattr(server.compose, "tool_reply", fake_tool_reply)

@@ -91,3 +91,28 @@ def test_a_plain_durable_fact_still_lands(gen):
     for texts in runs:
         joined = " ".join(texts).lower()
         assert "sam" in joined and "paint" in joined, texts
+
+
+def test_an_introduction_is_kept(gen):
+    """Found in the live demo: "hi. i'm jess, i paint, and sam is my brother" was
+    NONE 3/3 on the fast model, because the prompt's "skip small talk" swallowed a
+    greeting that carried three identity facts. The dashboard sat at 0 facts kept
+    after the person had introduced themselves."""
+    runs = [_distill(gen, ("user", "hi. i'm jess, i paint, and sam is my brother."))
+            for _ in range(TRIALS)]
+    for r in runs:
+        joined = " ".join(r).lower()
+        assert "jess" in joined and "paint" in joined and "sam" in joined, runs
+
+
+def test_an_empty_greeting_is_still_skipped(gen):
+    runs = [_distill(gen, ("user", "hi, how are you?")) for _ in range(TRIALS)]
+    assert not any(runs), runs
+
+
+def test_a_name_is_not_given_a_gender(gen):
+    """Seen once: "His name is Marco; he teaches chemistry". Nothing said he."""
+    runs = [_distill(gen, ("user", "hey, im marco, i teach high school chemistry"))
+            for _ in range(TRIALS)]
+    for r in runs:
+        assert not any(w in " ".join(r).lower().split() for w in ("he", "his", "him")), r

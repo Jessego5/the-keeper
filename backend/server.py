@@ -785,11 +785,10 @@ async def _converse(msg: str, key: str, surface: str = "web") -> dict:
             system = persona.build_system_prompt(
                 "passive", water, memory=mem, context=ctx)
             system = system + "\n\n---\n\n" + TOOL_ADDENDUM
-            if ways_used:
-                system += "\n\n" + ways_mod.as_guidance(ways_used)
             reply = await compose.tool_reply(
                 system, msg, providers=providers, model=TOOL_MODEL, max_rounds=6,
-                trace=tool_trace, prior=prior)
+                trace=tool_trace, prior=prior,
+                steer=ways_mod.as_guidance(ways_used))
             # Tool answers come back plain (a changelog, a file dump). Pass them back
             # through the Keeper's voice: preserving every fact: so a tool-grounded
             # reply still sounds like the Keeper, not a report.

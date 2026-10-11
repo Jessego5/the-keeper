@@ -652,6 +652,10 @@ for a companion's long-term memory. Output ONLY facts worth keeping for months: 
 who they are, their situation, relationships, ongoing struggles, things they care \
 about. Skip small talk, passing moods, and anything about the companion.
 
+A greeting that CARRIES facts is not small talk. "hi, i'm Jess, i paint, and Sam is \
+my brother" gives their name, what they do and a relationship: three identity facts \
+to keep. Only a greeting with nothing in it ("hi, how are you") is skipped.
+
 A CHANGE in an ongoing thread of their life is durable and must be kept, even when \
 it is said briefly and in passing: taking something up or stopping it, a practice \
 they've dropped, a relationship shifting, a move, a job ending. "Stopped painting \
@@ -659,7 +663,8 @@ in March" is exactly the kind of fact to keep. A "passing mood" means how they f
 in this moment ("tired today"), not something in their life that changed.
 
 Write each fact as ONE short third-person statement of the fact itself: the thing \
-that is true, not the act of saying it. Write "Has a brother, Sam; not spoken since \
+that is true, not the act of saying it. Never guess their gender from a name: no he \
+or she unless they said so; write "Name is Marco; teaches chemistry". Write "Has a brother, Sam; not spoken since \
 spring," never "Mentioned a brother."
 
 NEVER capture the companion's OWN words: its metaphors, its tide/water imagery, its \
