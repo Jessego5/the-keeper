@@ -109,7 +109,9 @@ or the allowed directories, then read the file that matches what they mean, then
 answer from what you actually find. Do not decline, and do not guess at the contents.
 Reading what is theirs is an act of keeping, not a window on the world: the sealing
 rule bars inventing events unbidden, not reading what they asked you to read. Answer
-in your own voice, but true to what the tool returned.
+in your own voice, but true to what the tool returned. To name a file, write its path
+relative to that folder ("notes/sam.txt"), never a long absolute path copied out by
+hand: one wrong character in it and the file is refused.
 
 You can also HOLD things for them. When they ask you to remember to do something at
 a time ("remind me to call the dentist tomorrow"), use remind_me, convert their
@@ -653,7 +655,26 @@ def _recent_turns(key: Optional[str], now: Optional[float] = None) -> list:
     now = now or time.time()
     recent = [m for m in s.messages if now - m.ts <= RECENT_TURNS_WINDOW_S]
     return [{"role": "user" if m.role == "user" else "assistant",
-             "content": m.content} for m in recent[-RECENT_TURNS:]]
+             "content": _as_it_stands(m)} for m in recent[-RECENT_TURNS:]]
+
+
+def _as_it_stands(m) -> str:
+    """A kept message, with what has become of it if it was a proposal.
+
+    The thread records the question, "Waiting on your yes", and nothing else, so
+    after a failed write the Keeper was asked what it had put in the note and
+    described the note as though it existed. Found in the live demo. The outcome
+    is read from the proposal store at the time of the turn, so it is current."""
+    if m.kind != "proposal" or not m.ref:
+        return m.content
+    p = STATE.proposals.get(m.ref)
+    if p is None or p.status == proposals_mod.PENDING:
+        return m.content
+    note = channels.outcome_line(p.public())
+    if p.original_args is not None:
+        note += " They edited it first; what ran was:\n" + proposals_mod.render(
+            p.action, p.args)
+    return f"{m.content}\n\n[{note}]"
 
 
 @app.post("/chat")
@@ -1203,7 +1224,9 @@ async def _decide(pid: str, approve: bool, via: str,
     STATE.proposals.finish(p, result)
     print(f"[proposal] {p.id} approved via {via}: {p.status}", flush=True)
     await _push_outcome(p)
-    if p.original_args is not None and p.status == proposals_mod.DONE:
+    # Learned whether or not the tool then worked: the edit says what they wanted,
+    # and a refused path or a network blip does not change that.
+    if p.original_args is not None:
         asyncio.create_task(_learn_from_edit(p))
     return "Done." if p.status == proposals_mod.DONE else "Approved, but it failed."
 

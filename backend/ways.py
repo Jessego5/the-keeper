@@ -65,6 +65,16 @@ def _stems(text: str) -> set:
     return tasks_mod._stems(text)
 
 
+def _overlap(a: set, b: set) -> int:
+    """Shared words, counting two stems as one word when they share their first
+    four letters. tasks._stems is crude on purpose, and it leaves "writing" as
+    "writ" and "write" as "write": found in the live demo, where the way "any
+    writing: sign with J" was not handed to "write a short note to Sam"."""
+    def same(x: str, y: str) -> bool:
+        return x == y or (len(x) >= 4 and len(y) >= 4 and x[:4] == y[:4])
+    return sum(1 for x in a if any(same(x, y) for y in b))
+
+
 class WayStore:
     def __init__(self, path: Path = WAYS_PATH):
         self.path = path
@@ -132,7 +142,7 @@ class WayStore:
             return []
         scored = []
         for w in self.active():
-            overlap = len(cue & _stems(w.about))
+            overlap = _overlap(cue, _stems(w.about))
             if overlap:
                 scored.append((overlap, w.created, w))
         scored.sort(key=lambda t: (-t[0], -t[1]))

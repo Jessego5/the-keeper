@@ -1055,3 +1055,36 @@ async def test_a_refused_edit_runs_nothing(actions):
     note = await server._decide(p.id, True, "web", edited={"bcc": "x@else.com"})
     assert note.startswith("Not approved") and actions.ran == []
     assert p.status == "pending"
+
+
+async def test_the_thread_knows_what_became_of_a_proposal(actions, monkeypatch):
+    """Regression from the live demo: after a write failed, "what did you put in
+    the note?" was answered as though the note existed, because the thread only
+    held the question."""
+    async def refuse(name, args):
+        return "(tool error: Access denied - path outside allowed directories)"
+
+    monkeypatch.setattr(actions, "call_proposable", refuse)
+    p = await _propose()
+    await server._decide(p.id, True, "web")
+    (turn,) = server._recent_turns(server.STATE.current_key)
+    assert "Waiting on your yes" in turn["content"]
+    assert "Approved, but it failed" in turn["content"]
+    assert "Access denied" in turn["content"]
+
+
+async def test_an_edit_teaches_even_when_the_tool_then_fails(actions, monkeypatch,
+                                                              tmp_path):
+    import ways
+    monkeypatch.setattr(server.STATE, "ways", ways.WayStore(tmp_path / "w.jsonl"))
+    monkeypatch.setattr(server.STATE, "fast",
+                        lambda s, u: "ABOUT: notes to Sam | HOW: all lowercase")
+
+    async def refuse(name, args):
+        return "(tool error: refused)"
+
+    monkeypatch.setattr(actions, "call_proposable", refuse)
+    p = await _propose(body="Can't do Thursday.")
+    await server._decide(p.id, True, "web", edited={"body": "can't do thursday."})
+    await asyncio.sleep(0.2)
+    assert p.status == "failed" and p.learned == "notes to Sam: all lowercase"

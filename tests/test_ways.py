@@ -53,6 +53,13 @@ def test_a_way_reaches_the_work_it_is_about(store):
     assert all("calendar" not in w.about for w in found)
 
 
+def test_writing_and_write_are_the_same_word(store):
+    """Regression from the live demo: the stemmer left "writing" as "writ" and
+    "write" as "write", so a way about writing never reached a note being written."""
+    w = store.add("any writing", "sign with 'J'")
+    assert store.for_task("write a short note to sam") == [w]
+
+
 def test_a_way_matches_on_what_it_is_about_not_on_its_wording(store):
     """'keep it short' says nothing about which tasks it governs."""
     store.add("emails to Sam", "keep it short")
