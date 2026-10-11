@@ -190,10 +190,15 @@ class ProposalStore:
 
 @dataclass
 class Action:
-    """A tool that may only run on a yes. `name` is what the model calls."""
+    """A tool that may only run on a yes. `name` is what the model calls.
+
+    `fixed` holds what the config supplies (which account to send from). It is
+    merged into the stored arguments, so the approval shows it: it is part of
+    what will run, and rule 1 is about everything that will run."""
     name: str
     description: str
     parameters: dict
+    fixed: dict = field(default_factory=dict)
 
 
 class Proposer:
@@ -235,7 +240,8 @@ class Proposer:
             # Caught here, not at approval: asking someone to approve a payload the
             # tool will reject wastes the one decision they were asked to make.
             return f"(not proposed: missing {', '.join(missing)})"
-        p = self.store.add(name, args or {}, origin=self.origin)
+        p = self.store.add(name, {**(args or {}), **action.fixed},
+                           origin=self.origin)
         await self._notify(p)
         return (f"proposed, NOT done (id {p.id}). It waits for their yes, and they "
                 f"see exactly what you wrote. Tell them what you drafted and that "

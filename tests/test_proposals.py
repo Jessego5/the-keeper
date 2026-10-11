@@ -150,3 +150,19 @@ def test_a_decided_proposal_never_expires(store):
 def test_public_carries_the_rendering(store):
     p = store.add("gmail__send_message", {"to": "a@b.c"})
     assert "to: a@b.c" in p.public()["rendered"]
+
+
+async def test_the_approval_shows_the_account_it_will_act_as(store):
+    """Fixed arguments are part of what will run, so rule 1 covers them: they are
+    stored with the rest and shown, and the model cannot override them."""
+    async def notify(p):
+        return None
+
+    send = proposals.Action(SEND.name, SEND.description, SEND.parameters,
+                            fixed={"user_google_email": "me@example.com"})
+    await proposals.Proposer(store, [send], notify).call(
+        SEND.name, {"to": "sam@example.com", "subject": "s", "body": "b",
+                    "user_google_email": "admin@else.com"})
+    (p,) = store.items
+    assert p.args["user_google_email"] == "me@example.com"
+    assert "user_google_email: me@example.com" in p.public()["rendered"]

@@ -1,5 +1,5 @@
 {
-  "_comment": "Copy to backend/mcp.json and edit the paths. mcp.json is gitignored. ${KEEPER_ROOT} expands to the app root, so one config works on the host AND in the container. The manager applies a read-only filter by default; 'tools' is an explicit allowlist (only these pass), 'deny' blocks by name, and 'required' names the tools this server MUST provide - if one is missing the server shows as degraded in /state and on the dashboard instead of quietly going absent. uvx servers pin 'mcp<2' because the published fetch/time/git servers target the mcp 1.x API while the client uses mcp 2.x. 'propose' names tools that CHANGE something: they skip the read-only filter but never run when the model calls them; calling one records a proposal, the person sees the exact arguments and approves or declines, and only an approved one runs (see proposals.py). 'deny' still wins over 'propose'.",
+  "_comment": "Copy to backend/mcp.json and edit the paths. mcp.json is gitignored. ${KEEPER_ROOT} expands to the app root, so one config works on the host AND in the container. The manager applies a read-only filter by default; 'tools' is an explicit allowlist (only these pass), 'deny' blocks by name, and 'required' names the tools this server MUST provide - if one is missing the server shows as degraded in /state and on the dashboard instead of quietly going absent. uvx servers pin 'mcp<2' because the published fetch/time/git servers target the mcp 1.x API while the client uses mcp 2.x. 'propose' names tools that CHANGE something: they skip the read-only filter but never run when the model calls them; calling one records a proposal, the person sees the exact arguments and approves or declines, and only an approved one runs (see proposals.py). 'deny' still wins over 'propose'. 'requires_env' keeps a server off, and reported as off rather than broken, until those variables are set in backend/.env.",
   "servers": [
     {
       "name": "files",
@@ -72,6 +72,48 @@
       "required": [
         "git_log",
         "git_status"
+      ]
+    },
+    {
+      "name": "google",
+      "_note": "Gmail + Calendar via taylorwilsdon/google_workspace_mcp. Least privilege: gmail:send (read, labels, drafts, send) and calendar:full, nothing else. Reads are an explicit allowlist, because a name filter lags each new server's verbs. Sending and changing events sit under 'propose': the model can only ask, you approve the exact payload. 'fixed_args' sets the account from backend/.env; the model never sees or chooses it. First run: scripts/google_auth.py.",
+      "requires_env": [
+        "GOOGLE_OAUTH_CLIENT_ID",
+        "GOOGLE_OAUTH_CLIENT_SECRET",
+        "KEEPER_GOOGLE_EMAIL"
+      ],
+      "command": "uvx",
+      "args": [
+        "workspace-mcp",
+        "--single-user",
+        "--permissions",
+        "gmail:send",
+        "calendar:full"
+      ],
+      "env": {
+        "GOOGLE_OAUTH_CLIENT_ID": "${GOOGLE_OAUTH_CLIENT_ID}",
+        "GOOGLE_OAUTH_CLIENT_SECRET": "${GOOGLE_OAUTH_CLIENT_SECRET}",
+        "USER_GOOGLE_EMAIL": "${KEEPER_GOOGLE_EMAIL}"
+      },
+      "fixed_args": {
+        "user_google_email": "${KEEPER_GOOGLE_EMAIL}"
+      },
+      "tools": [
+        "search_gmail_messages",
+        "get_gmail_message_content",
+        "get_gmail_thread_content",
+        "list_calendars",
+        "get_events",
+        "query_freebusy"
+      ],
+      "propose": [
+        "send_gmail_message",
+        "manage_event"
+      ],
+      "required": [
+        "search_gmail_messages",
+        "get_events",
+        "send_gmail_message"
       ]
     }
   ],

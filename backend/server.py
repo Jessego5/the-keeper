@@ -1026,7 +1026,8 @@ def _proposer(origin: str) -> Optional[proposals_mod.Proposer]:
     have to approve. A queue anyone can fill trains people to tap yes."""
     if STATE.mcp is None:
         return None
-    actions = [proposals_mod.Action(t["name"], t["description"], t["parameters"])
+    actions = [proposals_mod.Action(t["name"], t["description"], t["parameters"],
+                                    fixed=dict(t.get("fixed") or {}))
                for t in STATE.mcp.proposable()]
     if not actions:
         return None

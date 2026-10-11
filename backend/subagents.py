@@ -8,8 +8,9 @@ specialist. This is the reference agent's supervisor + sub-agent pattern, as fou
 instead of a fleet framework.
 
 The researcher looks things up on the open web and synthesizes an answer, holding
-search and fetch. The archivist digs through the person's own files, notes, journal
-and project history, holding files, git and time alongside the native tools. The
+search and fetch. The archivist digs through the person's own files, notes, journal,
+project history, mail and calendar, holding files, git, time and google alongside
+the native tools (google's reads only: what would send sits behind approval). The
 scribe drafts text, a message or a note or a short plan, on the native tools alone.
 And the analyst works things out by running code, for calculations, date math and
 data crunching, which it does through run_python.
@@ -59,7 +60,7 @@ PROFILES: dict[str, SubAgentProfile] = {
         role="You are the Keeper's archivist. Look through their files, journal, and "
              "project history to find what is asked, then report plainly what you "
              "found and where. Do not invent anything not in the materials.",
-        servers=("files", "git", "time"), use_native=True),
+        servers=("files", "git", "time", "google"), use_native=True),
     "scribe": SubAgentProfile(
         name="scribe",
         blurb="drafts text: a message, a note, a short plan",

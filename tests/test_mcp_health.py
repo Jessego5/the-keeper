@@ -184,3 +184,78 @@ async def test_an_approved_call_that_failed_says_so(mgr):
 async def test_an_ordinary_call_reads_as_it_always_did(mgr):
     mgr._route["mail__read"] = (_Failing(), "read")
     assert await mgr.call("mail__read", {}) == "401 unauthorized"
+
+
+# --- a server that can act on someone's behalf (Google Workspace) --- #
+
+@pytest.mark.parametrize("name", [
+    "send_gmail_message", "draft_gmail_message", "manage_event",
+    "manage_gmail_filter", "manage_out_of_office", "batch_modify_gmail_message_labels",
+    "create_calendar",
+])
+def test_the_workspace_servers_verbs_count_as_mutating(name):
+    """Regression, found by listing the real server's tools before wiring it in:
+    send, draft and manage matched none of the filesystem-era verbs, so "send an
+    email" would have passed the read-only filter as a read."""
+    assert tools._is_mutating(name)
+
+
+@pytest.mark.parametrize("name", [
+    "search_gmail_messages", "get_gmail_message_content", "get_events",
+    "list_calendars", "query_freebusy", "read_text_file", "list_directory",
+    "get_current_time", "git_log", "fetch",
+])
+def test_reading_tools_still_read(name):
+    assert not tools._is_mutating(name)
+
+
+def test_env_references_expand_and_report_what_is_missing(monkeypatch):
+    monkeypatch.setenv("KEEPER_GOOGLE_EMAIL", "me@example.com")
+    monkeypatch.delenv("NOT_SET_ANYWHERE", raising=False)
+    missing = set()
+    out = tools._expand_env({"a": "${KEEPER_GOOGLE_EMAIL}",
+                             "b": ["x-${NOT_SET_ANYWHERE}"]}, missing)
+    assert out == {"a": "me@example.com", "b": ["x-"]}
+    assert missing == {"NOT_SET_ANYWHERE"}
+
+
+def test_a_fixed_argument_is_hidden_from_the_model():
+    schema = {"type": "object",
+              "properties": {"user_google_email": {}, "to": {}},
+              "required": ["user_google_email", "to"]}
+    out = tools._without(schema, {"user_google_email": "me@example.com"})
+    assert list(out["properties"]) == ["to"] and out["required"] == ["to"]
+
+
+class _Echo:
+    """A server that answers with the arguments it was actually called with."""
+    async def call_tool(self, name, arguments):
+        import json as _json
+
+        class R:
+            content = [type("B", (), {"text": _json.dumps(arguments,
+                                                          sort_keys=True)})()]
+        return R()
+
+
+async def test_the_config_chooses_the_account_not_the_model(mgr):
+    """Which mailbox to act as is configuration. A model told by a fetched page
+    to "use admin@..." must not be able to switch it."""
+    mgr._route["google__search"] = (_Echo(), "search")
+    mgr._fixed["google__search"] = {"user_google_email": "me@example.com"}
+    out = await mgr.call("google__search", {"query": "x",
+                                            "user_google_email": "admin@else.com"})
+    assert '"user_google_email": "me@example.com"' in out
+
+
+async def test_an_opt_in_server_is_off_not_broken(monkeypatch):
+    """Copying mcp.example.json whole includes the google server. Without its
+    credentials it is switched off and says how to turn it on; it must not read
+    as a fault on the dashboard, or launch at all."""
+    monkeypatch.delenv("KEEPER_GOOGLE_EMAIL", raising=False)
+    mgr = tools.MCPManager([{"name": "google", "command": "definitely-not-run",
+                             "requires_env": ["KEEPER_GOOGLE_EMAIL"]}])
+    await mgr.connect()
+    assert mgr.health == [{"name": "google", "status": "off",
+                           "needs": ["KEEPER_GOOGLE_EMAIL"]}]
+    assert mgr.problems() == [] and mgr.summary() == ""

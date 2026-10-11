@@ -80,6 +80,48 @@ def _expand_obj(obj):
         return {k: _expand_obj(v) for k, v in obj.items()}
     return obj
 
+_ENV_REF = re.compile(r"\$\{([A-Z0-9_]+)\}")
+
+
+def _expand_env(obj, missing: set):
+    """${NAME} from the environment, inside a server's "env" and "fixed_args".
+
+    So a secret can live in backend/.env (gitignored, loaded by compose.py) and
+    mcp.json can say where it goes without holding it. Only those two fields:
+    args keep the narrower ${KEEPER_ROOT} rule above, so a literal "${...}" a
+    server wants as an argument is not silently emptied. A name that is not set
+    expands to "" and is collected in `missing`, so the server can be reported
+    as misconfigured instead of failing later on every call."""
+    if isinstance(obj, str):
+        def sub(m):
+            name = m.group(1)
+            if name == "KEEPER_ROOT":
+                return KEEPER_ROOT
+            value = os.environ.get(name)
+            if value is None:
+                missing.add(name)
+                return ""
+            return value
+        return _ENV_REF.sub(sub, obj)
+    if isinstance(obj, dict):
+        return {k: _expand_env(v, missing) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_expand_env(x, missing) for x in obj]
+    return obj
+
+
+def _without(schema: dict, keys) -> dict:
+    """The schema with `keys` removed, for arguments the config fills in itself."""
+    if not keys:
+        return schema
+    props = {k: v for k, v in (schema.get("properties") or {}).items()
+             if k not in keys}
+    out = {**schema, "properties": props}
+    if "required" in schema:
+        out["required"] = [r for r in schema["required"] if r not in keys]
+    return out
+
+
 # OpenAI tool names must match ^[a-zA-Z0-9_-]+$, so we join server+tool with "__".
 _QUALIFY = "__"
 _NAME_OK = re.compile(r"[^a-zA-Z0-9_-]")
@@ -87,9 +129,19 @@ _NAME_OK = re.compile(r"[^a-zA-Z0-9_-]")
 # Tool names hinting at mutation. Blocked by default so the Keeper can READ what
 # is yours but never change it. A server spec may opt back in with
 # "read_only": false (or narrow it with "tools"/"deny" allow/deny lists).
+#
+# The list was written against the filesystem server and its verbs. The Google
+# Workspace server's verbs are different, and send_gmail_message, draft_gmail_message
+# and manage_event matched none of them: pointed at that server, the Keeper would
+# have been handed "send an email" as a read. A name heuristic will always lag the
+# next server's vocabulary, which is why a server that can act should also carry
+# an explicit "tools" allowlist, as mcp.example.json's google entry does.
 _MUTATING = (
     "write", "edit", "delete", "remove", "move", "rename", "create", "mkdir",
     "unlink", "patch", "append", "modify", "update", "truncate", "drop", "put",
+    # outward verbs: things that leave the machine or touch someone else
+    "send", "draft", "reply", "forward", "share", "invite", "post", "publish",
+    "submit", "manage",
 )
 
 
@@ -129,6 +181,10 @@ class MCPManager:
         # an approved proposal. See proposals.py.
         self._proposable: list[dict] = []
         self._proposable_route: dict[str, tuple[Any, str]] = {}
+        # Arguments the config supplies (a server's "fixed_args"), per qualified
+        # name. Hidden from the model's schema and merged into every call, so a
+        # choice like which account to act as is never the model's to make.
+        self._fixed: dict[str, dict] = {}
         self.connected = False
         self.health: list[dict] = []    # one entry per configured server
 
@@ -154,8 +210,9 @@ class MCPManager:
         self.health.append({"name": name, "status": status, **fields})
 
     def problems(self) -> list[dict]:
-        """Servers that failed to start, or came up without a tool they declared."""
-        return [h for h in self.health if h["status"] != "ok"]
+        """Servers that failed to start, or came up without a tool they declared.
+        One switched off by its own requires_env is a choice, not a problem."""
+        return [h for h in self.health if h["status"] not in ("ok", "off")]
 
     def summary(self) -> str:
         """One line per unhealthy server, for a log line or the state surface."""
@@ -196,15 +253,32 @@ class MCPManager:
 
         for spec in self.specs:
             name = _safe(spec.get("name", "srv"))
+            # Opt-in servers: copying mcp.example.json whole must not launch a
+            # Google server with no credentials at every boot and report it broken.
+            off_until = [v for v in (spec.get("requires_env") or [])
+                         if not os.environ.get(v, "").strip()]
+            if off_until:
+                print(f"[mcp] {name}: off, set {', '.join(off_until)} to enable",
+                      flush=True)
+                self._record(name, "off", needs=off_until)
+                continue
             read_only = spec.get("read_only", True)
             allow = set(spec.get("tools") or [])   # if set, ONLY these (by real name)
             deny = set(spec.get("deny") or [])
             propose = set(spec.get("propose") or [])
             required = list(spec.get("required") or [])
+            unset: set[str] = set()
+            fixed = _expand_env(dict(spec.get("fixed_args") or {}), unset)
+            env = _expand_env(spec.get("env"), unset) if spec.get("env") else None
+            if unset:
+                # Started anyway: a missing account email should read as a fault on
+                # the dashboard, not as the whole server silently absent.
+                print(f"[mcp] {name}: unset in the environment: "
+                      f"{', '.join(sorted(unset))}", flush=True)
             try:
                 params = StdioServerParameters(
                     command=spec["command"], args=_expand(spec.get("args", [])),
-                    env=spec.get("env"))
+                    env=env)
                 read, write = await self._stack.enter_async_context(
                     stdio_client(params))
                 session = await self._stack.enter_async_context(
@@ -234,6 +308,9 @@ class MCPManager:
                 schema = (getattr(t, "input_schema", None)
                           or getattr(t, "inputSchema", None)
                           or {"type": "object", "properties": {}})
+                schema = _without(schema, fixed)
+                if fixed:
+                    self._fixed[qualified] = fixed
                 # Behind approval: exempt from the read-only filter, because a yes
                 # is a stronger guard than a name heuristic, but never from deny.
                 if t.name in propose and t.name not in deny:
@@ -241,6 +318,7 @@ class MCPManager:
                         "name": qualified,
                         "description": (t.description or "")[:900],
                         "parameters": schema,
+                        "fixed": fixed,
                     })
                     self._proposable_route[qualified] = (session, t.name)
                     kept_real.add(t.name)
@@ -280,6 +358,8 @@ class MCPManager:
                     f"{m} (offered, but blocked by this server's own filter)"
                     if m in offered else m for m in missing)
                 print(f"[mcp] {name}: MISSING required {detail}", flush=True)
+            if unset:
+                missing = missing + [f"${{{v}}} (unset)" for v in sorted(unset)]
             self._record(name, "degraded" if missing else "ok",
                          tools=len(kept_real), blocked=blocked, missing=missing,
                          # the confusing subset: present upstream, removed by us
@@ -315,9 +395,11 @@ class MCPManager:
         if route is None:
             return f"(no such tool: {qualified_name})"
         session, real = route
+        # The config's values win over anything the model passed for the same key.
+        arguments = {**(arguments or {}), **self._fixed.get(qualified_name, {})}
         try:
             result = await asyncio.wait_for(
-                session.call_tool(real, arguments or {}), CALL_TIMEOUT_S)
+                session.call_tool(real, arguments), CALL_TIMEOUT_S)
         except asyncio.TimeoutError:
             # Answer the model rather than hanging the turn. It can say so, or
             # try something else, which is what a person would do.
