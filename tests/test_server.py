@@ -549,3 +549,181 @@ async def test_the_fetch_interval_still_holds(polling, monkeypatch):
         polling.store.add(f"Fact number {i}.", kind="fact")
         await server._poll_sources()
     assert len(fake.calls) == 1, f"refetched {len(fake.calls)} times inside the interval"
+
+
+# --- proposals: what it would do, and the yes it waits on --- #
+
+class _FakeActions:
+    """An MCP manager with one tool behind approval, recording what actually ran."""
+    def __init__(self):
+        self.ran = []
+
+    def proposable(self):
+        return [{"name": "mail__send", "description": "Send an email.",
+                 "parameters": {"type": "object",
+                                "properties": {"to": {"type": "string"},
+                                               "body": {"type": "string"}},
+                                "required": ["to", "body"]}}]
+
+    async def call_proposable(self, name, args):
+        self.ran.append((name, dict(args)))
+        return "sent"
+
+    has_tools = False
+    watches: list = []
+
+    def openai_tools(self):
+        return []
+
+    health: list = []
+
+    def summary(self):
+        return ""
+
+
+@pytest.fixture
+def actions(monkeypatch, tmp_path):
+    import proposals
+    _isolate_delivery(monkeypatch, tmp_path)
+    fake = _FakeActions()
+    monkeypatch.setattr(server.STATE, "mcp", fake)
+    monkeypatch.setattr(server.STATE, "proposals",
+                        proposals.ProposalStore(tmp_path / "proposals.jsonl"))
+    return fake
+
+
+async def _propose(to="sam@example.com", body="I can't make Thursday."):
+    proposer = server._proposer("chat")
+    await proposer.call("mail__send", {"to": to, "body": body})
+    return server.STATE.proposals.items[-1]
+
+
+async def test_a_proposal_is_shown_and_kept_without_running(actions):
+    q: asyncio.Queue = asyncio.Queue()
+    server.STATE.listeners.add(q)
+    try:
+        p = await _propose()
+        payload = json.loads(q.get_nowait())
+    finally:
+        server.STATE.listeners.discard(q)
+    assert actions.ran == []
+    assert payload["kind"] == "proposal" and payload["proposal"]["id"] == p.id
+    assert "to: sam@example.com" in payload["proposal"]["rendered"]
+    (msg,) = server.STATE.sessions.get(server.STATE.current_key).messages
+    assert (msg.kind, msg.ref) == ("proposal", p.id)
+
+
+async def test_asking_permission_spends_none_of_the_outreach_budget(actions):
+    """A proposal from the chat path lands mid-conversation. Counting it as the
+    Keeper reaching out would silence a restless line for no reason, and spend
+    a day's ceiling on paperwork."""
+    server.STATE.last_proactive_at = None
+    before = len(server.STATE.proactive_at)
+    await _propose()
+    assert server.STATE.last_proactive_at is None
+    assert len(server.STATE.proactive_at) == before
+
+
+async def test_approving_runs_exactly_what_was_shown_once(actions):
+    p = await _propose()
+    assert await server._decide(p.id, True, "web") == "Done."
+    assert await server._decide(p.id, True, "telegram") == "Already done."
+    assert actions.ran == [("mail__send", {"to": "sam@example.com",
+                                           "body": "I can't make Thursday."})]
+    assert p.status == "done" and p.decided_via == "web" and p.result == "sent"
+
+
+async def test_declining_runs_nothing(actions):
+    p = await _propose()
+    assert "Nothing was done" in await server._decide(p.id, False, "telegram")
+    assert await server._decide(p.id, True, "web") == "Already declined."
+    assert actions.ran == []
+
+
+async def test_a_decision_is_announced_to_the_page(actions):
+    p = await _propose()
+    q: asyncio.Queue = asyncio.Queue()
+    server.STATE.listeners.add(q)
+    try:
+        await server._decide(p.id, True, "telegram")
+        update = json.loads(q.get_nowait())
+    finally:
+        server.STATE.listeners.discard(q)
+    assert update["kind"] == "proposal_update"
+    assert update["proposal"]["status"] == "done"
+    assert "Approved in telegram" in update["content"]
+
+
+async def test_a_replayed_proposal_comes_back_as_it_now_stands(actions):
+    """Decided from the phone while the page was away. The replay must not hand
+    the page live buttons for something already done."""
+    p = await _propose()
+    await server._decide(p.id, False, "telegram")
+    resp = await server.events(_Req(last_event_id=0))
+    (frame,) = await _frames(resp, 1)
+    replayed = json.loads(frame.split("data: ", 1)[1])
+    assert replayed["kind"] == "proposal"
+    assert replayed["proposal"]["status"] == "declined"
+
+
+async def test_the_dial_at_off_still_asks(actions, monkeypatch, tmp_path):
+    """A proposal is a question waiting on them. Holding it back at off would
+    leave a decision they cannot see, ageing toward its expiry."""
+    import dial
+    d = dial.Dial(tmp_path / "dial.json")
+    d.set("off")
+    monkeypatch.setattr(server.STATE, "dial", d)
+    q: asyncio.Queue = asyncio.Queue()
+    server.STATE.listeners.add(q)
+    try:
+        await _propose()
+        assert json.loads(q.get_nowait())["kind"] == "proposal"
+    finally:
+        server.STATE.listeners.discard(q)
+
+
+async def test_decide_endpoint_refuses_another_site(client, actions):
+    """A plain cross-site form POST carries Host: localhost and passes the Host
+    check. Origin is what it cannot forge."""
+    p = await _propose()
+    r = await client.post("/proposals/decide",
+                          json={"id": p.id, "decision": "approve"},
+                          headers={"origin": "https://evil.example.com"})
+    assert r.json()["ok"] is False and actions.ran == []
+    ok = await client.post("/proposals/decide",
+                           json={"id": p.id, "decision": "approve"},
+                           headers={"origin": "http://localhost:8790"})
+    assert ok.json()["proposal"]["status"] == "done"
+    listed = (await client.get("/proposals")).json()
+    assert listed["pending"] == [] and listed["recent"][0]["id"] == p.id
+
+
+async def test_no_proposer_without_a_tool_behind_approval(monkeypatch):
+    monkeypatch.setattr(server.STATE, "mcp", tools.MCPManager([]))
+    assert server._proposer("chat") is None
+
+
+async def test_the_person_can_be_asked_but_a_peer_agent_cannot(actions,
+                                                                monkeypatch):
+    """Chat gets the proposer; A2A does not. A queue anyone can fill trains
+    people to tap yes."""
+    import proposals
+    seen = {}
+
+    async def fake_tool_reply(system, user, *, providers=None, **kw):
+        seen.setdefault("calls", []).append(providers or [])
+        return "ok"
+
+    monkeypatch.setattr(server.compose, "tool_reply", fake_tool_reply)
+    monkeypatch.setattr(server.compose, "revoice", lambda text, *a, **k: text)
+    monkeypatch.setattr(server.memory, "recall", lambda *a, **k: "")
+    monkeypatch.setattr(server, "_distill_async", _noop_distill)
+    await server.chat(server.ChatIn(message="email sam that i can't do thursday"))
+    await server._answer_as_keeper("send an email for me")
+    chat_providers, peer_providers = seen["calls"]
+    assert any(isinstance(p, proposals.Proposer) for p in chat_providers)
+    assert not any(isinstance(p, proposals.Proposer) for p in peer_providers)
+
+
+async def _noop_distill(*a, **k):
+    return None

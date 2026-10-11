@@ -1,5 +1,5 @@
 {
-  "_comment": "Copy to backend/mcp.json and edit the paths. mcp.json is gitignored. ${KEEPER_ROOT} expands to the app root, so one config works on the host AND in the container. The manager applies a read-only filter by default; 'tools' is an explicit allowlist (only these pass), 'deny' blocks by name, and 'required' names the tools this server MUST provide - if one is missing the server shows as degraded in /state and on the dashboard instead of quietly going absent. uvx servers pin 'mcp<2' because the published fetch/time/git servers target the mcp 1.x API while the client uses mcp 2.x.",
+  "_comment": "Copy to backend/mcp.json and edit the paths. mcp.json is gitignored. ${KEEPER_ROOT} expands to the app root, so one config works on the host AND in the container. The manager applies a read-only filter by default; 'tools' is an explicit allowlist (only these pass), 'deny' blocks by name, and 'required' names the tools this server MUST provide - if one is missing the server shows as degraded in /state and on the dashboard instead of quietly going absent. uvx servers pin 'mcp<2' because the published fetch/time/git servers target the mcp 1.x API while the client uses mcp 2.x. 'propose' names tools that CHANGE something: they skip the read-only filter but never run when the model calls them; calling one records a proposal, the person sees the exact arguments and approves or declines, and only an approved one runs (see proposals.py). 'deny' still wins over 'propose'.",
   "servers": [
     {
       "name": "files",
@@ -12,6 +12,9 @@
       "required": [
         "read_text_file",
         "list_directory"
+      ],
+      "propose": [
+        "write_file"
       ]
     },
     {

@@ -6,7 +6,9 @@ A lean, single-user FastAPI service that wires the whole backend together:
     POST /chat        the passive loop: message -> recall -> compose -> distill
     GET  /events      Server-Sent Events: proactive lines pushed as they happen
     GET  /state       debug: energy, base_score, time since contact
-    POST /config      live knobs (speed) so proactivity demos in seconds
+    POST /config      live knobs (speed, the dial) so proactivity demos in seconds
+    GET  /proposals   what it wants to do and is waiting on a yes for
+    POST /proposals/decide   approve or decline one
     GET  /            health / info
 
 A background task runs the proactive loop: every tick it decides, cooldown,
@@ -32,6 +34,7 @@ from datetime import datetime
 from typing import Optional
 
 from pathlib import Path
+from urllib.parse import urlparse
 
 from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, StreamingResponse
@@ -48,11 +51,13 @@ import dial as dial_mod
 import drift
 import embedder
 import energy
+import inbox as inbox_mod
 import journal as journal_mod
 import memory
 import mood
 import native_tools
 import persona
+import proposals as proposals_mod
 import reminders
 import routines
 import relevance
@@ -124,6 +129,12 @@ the paints out"), use advance_goal to mark it and move to the next. Use list_goa
 to see what you are helping with, and complete_goal when the whole thing is
 finished or they want to set it down. A goal is for tending over time; a reminder
 is for one moment, choose the one that fits.
+
+Some of your tools CHANGE things in the world: send an email, add to a calendar,
+write a file. Those never run when you call them. Calling one PROPOSES it: they are
+shown exactly what you passed and decide. So pass the real thing, the final text and
+the real recipient, never a placeholder, and only what they asked for. Afterwards,
+tell them what you drafted and that it is waiting on their yes. Never say it is done.
 
 They decide how often you speak on your own. When they ask you to be quieter, to
 leave them be for a while, or to speak up more, use set_dial: off, quiet, usual or
@@ -245,6 +256,9 @@ class AppState:
     unbidden: unbidden.UnbiddenLog = field(
         default_factory=unbidden.UnbiddenLog)     # every line it said unasked
     dial: dial_mod.Dial = field(default_factory=dial_mod.Dial)  # the person's say
+    proposals: proposals_mod.ProposalStore = field(
+        default_factory=proposals_mod.ProposalStore)   # actions waiting on a yes
+    inbox: Optional[inbox_mod.TelegramInbox] = None    # taps back from the phone
 
     def minutes_since_user(self) -> Optional[float]:
         if self.last_user_at is None:
@@ -502,15 +516,40 @@ async def lifespan(app: FastAPI):
     except Exception as exc:  # noqa: BLE001 - never let MCP break startup
         print(f"[mcp] connect failed: {exc}", flush=True)
     task = asyncio.create_task(_proactive_loop())
+    inbox_task = _start_inbox()
     try:
         yield
     finally:
         task.cancel()
+        if inbox_task is not None:
+            inbox_task.cancel()
         if STATE.mcp is not None:
             try:
                 await STATE.mcp.aclose()
             except Exception:  # noqa: BLE001
                 pass
+
+
+def _start_inbox() -> Optional[asyncio.Task]:
+    """Listen for taps and dial commands from Telegram, when it is configured."""
+    token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
+    chat_id = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
+    if not token or not chat_id or os.environ.get("KEEPER_TELEGRAM_INBOX") == "0":
+        STATE.inbox = None
+        return None
+    STATE.inbox = inbox_mod.TelegramInbox(
+        token, chat_id, decide=_decide, set_level=_set_level_from_phone)
+    print("[inbox] listening on telegram for approvals and the dial", flush=True)
+    return asyncio.create_task(STATE.inbox.run())
+
+
+def _set_level_from_phone(level: str) -> Optional[str]:
+    set_to = STATE.dial.set(level)
+    if set_to is not None:
+        print(f"[dial] set to {set_to} from telegram", flush=True)
+        if STATE.wake is not None:
+            STATE.wake.set()
+    return set_to
 
 
 app = FastAPI(title="The Keeper", lifespan=lifespan)
@@ -599,6 +638,9 @@ async def chat(body: ChatIn):
         spawner=_spawn_background, dial=STATE.dial)]
     if STATE.mcp is not None and STATE.mcp.has_tools:
         providers.append(STATE.mcp)
+    proposer = _proposer("chat")
+    if proposer is not None:
+        providers.append(proposer)
     used_tools = bool(providers)
     tool_trace: list = []
     try:
@@ -945,7 +987,8 @@ async def _execute_goal_step(goal, step, water) -> bool:
     try:
         res = await subagents.orchestrate(
             f"For their goal \"{goal.title}\", do this: {step.text}",
-            STATE.fast or STATE.generate, mcp=STATE.mcp, native=sub_native)
+            STATE.fast or STATE.generate, mcp=STATE.mcp, native=sub_native,
+            proposer=_proposer(f"goal:{goal.id}"))
     except Exception as exc:  # noqa: BLE001
         print(f"[goal] execute error: {exc}", flush=True)
         STATE.goals.touch(goal, _goal_check_interval())
@@ -968,6 +1011,98 @@ async def _execute_goal_step(goal, step, water) -> bool:
     print(f"[goal] {goal.id} EXECUTED via {res.who()} {done}/{total}: "
           f"{step.text[:45]}", flush=True)
     return True
+
+
+# --------------------------------------------------------------------------- #
+# Proposals: what the Keeper wants to do in the world, waiting on a yes.
+# --------------------------------------------------------------------------- #
+
+def _proposer(origin: str) -> Optional[proposals_mod.Proposer]:
+    """A provider for the tools that may only run on a yes, or None when no server
+    lists any. Built per call so each proposal remembers where it came from.
+
+    Never built for the A2A path: a peer agent may ask the Keeper things, but it
+    must not be able to put actions in front of the person, even ones they would
+    have to approve. A queue anyone can fill trains people to tap yes."""
+    if STATE.mcp is None:
+        return None
+    actions = [proposals_mod.Action(t["name"], t["description"], t["parameters"])
+               for t in STATE.mcp.proposable()]
+    if not actions:
+        return None
+    return proposals_mod.Proposer(STATE.proposals, actions, _deliver_proposal,
+                                  origin=origin)
+
+
+def _proposal_text(p: proposals_mod.Proposal) -> str:
+    """Machinery, not voice: the exact payload and nothing the model wrote about it.
+    The Keeper's own words about the draft are in its chat reply."""
+    return f"Waiting on your yes:\n\n{proposals_mod.render(p.action, p.args)}"
+
+
+async def _deliver_proposal(p: proposals_mod.Proposal) -> None:
+    """Put a proposal in front of the person on every surface that can carry it.
+
+    Logged and kept in the conversation like an unbidden line, so a page that was
+    closed when it was asked still shows it, and a reconnect replays it. It does
+    not touch the outreach clocks: asking permission is not the Keeper reaching out,
+    and must not spend the day's ceiling or reset the cooldown."""
+    if STATE.current_key is None:
+        STATE.current_key = STATE.sessions.new().key
+    text = _proposal_text(p)
+    line = STATE.unbidden.record(text, why=unbidden.Why.PROPOSAL,
+                                 session=STATE.current_key, ref=p.id)
+    STATE.sessions.append(STATE.current_key, "assistant", text, line.ts,
+                          kind="proposal", ref=p.id)
+    print(f"[proposal] {p.id} from {p.origin}: {p.action}", flush=True)
+    await _push("assistant", text, "proposal",
+                meta={"id": line.seq, "session": line.session, "why": line.why,
+                      "proposal": p.public()})
+
+
+async def _decide(pid: str, approve: bool, via: str) -> str:
+    """Approve or decline a proposal, from any surface. Returns a short note for
+    the surface that asked (a Telegram toast, the page's card).
+
+    Idempotent: a second tap, a tap on the page after one on the phone, or a tap on
+    something already expired is told what already happened and changes nothing."""
+    p = STATE.proposals.get(pid)
+    if p is None:
+        return "No such proposal."
+    if p.status != proposals_mod.PENDING:
+        return f"Already {p.status}."
+    if not approve:
+        STATE.proposals.decline(p, via)
+        print(f"[proposal] {p.id} declined via {via}", flush=True)
+        await _push_outcome(p)
+        return "Declined. Nothing was done."
+    # Saved as approved BEFORE the call. See proposals.py, rule 2.
+    STATE.proposals.mark_approved(p, via)
+    if STATE.mcp is None:
+        result = "(tool error: no tools are connected right now)"
+    else:
+        result = await STATE.mcp.call_proposable(p.action, p.args)
+    STATE.proposals.finish(p, result)
+    print(f"[proposal] {p.id} approved via {via}: {p.status}", flush=True)
+    await _push_outcome(p)
+    return "Done." if p.status == proposals_mod.DONE else "Approved, but it failed."
+
+
+async def _push_outcome(p: proposals_mod.Proposal) -> None:
+    public = p.public()
+    await _push("assistant", channels.outcome_line(public), "proposal_update",
+                meta={"proposal": public})
+
+
+def _same_origin(req: Request) -> bool:
+    """A cross-site page can make the browser POST here: a plain form submission
+    carries Host: localhost, so TrustedHostMiddleware passes it. What it cannot
+    forge is Origin. Absent (curl, a script) is allowed; that caller could reach
+    127.0.0.1 anyway."""
+    origin = req.headers.get("origin")
+    if origin is None:
+        return True
+    return urlparse(origin).hostname in ("localhost", "127.0.0.1")
 
 
 async def _answer_as_keeper(text: str) -> str:
@@ -1012,7 +1147,8 @@ async def _run_background(bg_id: str, description: str) -> None:
         allow_delegate=False)
     try:
         orch = await subagents.orchestrate(
-            description, STATE.fast or STATE.generate, mcp=STATE.mcp, native=sub_native)
+            description, STATE.fast or STATE.generate, mcp=STATE.mcp, native=sub_native,
+            proposer=_proposer("background"))
         result = (orch.result or "").strip()
     except Exception as exc:  # noqa: BLE001
         STATE.background.finish(bg_id, f"(failed: {exc})", ok=False)
@@ -1160,9 +1296,16 @@ async def events(req: Request):
 
 def _line_payload(line: unbidden.Line) -> str:
     """An unbidden line as the web channel would have sent it live."""
-    return json.dumps({"role": "assistant", "content": line.text,
-                       "kind": "proactive", "ts": line.ts, "id": line.seq,
-                       "session": line.session, "why": line.why})
+    payload = {"role": "assistant", "content": line.text, "kind": "proactive",
+               "ts": line.ts, "id": line.seq, "session": line.session,
+               "why": line.why}
+    if line.why == unbidden.Why.PROPOSAL and line.ref:
+        p = STATE.proposals.get(line.ref)
+        if p is not None:
+            # Replayed with its CURRENT status: one decided from the phone while
+            # the page was away must not come back with live buttons on it.
+            payload.update(kind="proposal", proposal=p.public())
+    return json.dumps(payload)
 
 
 def _payload_seq(payload: str) -> int:
@@ -1247,6 +1390,16 @@ async def state():
         "house": STATE.routines_engine.status(now),
         "working_on": [{"id": t.id, "description": t.description}
                        for t in STATE.background.running()],
+        "proposals": {
+            "pending": [{"id": p.id, "action": p.action, "origin": p.origin,
+                         "created": p.created}
+                        for p in STATE.proposals.pending()],
+            "behind_approval": ([t["name"] for t in STATE.mcp.proposable()]
+                                if STATE.mcp else []),
+            "inbox": ("telegram" if STATE.inbox is not None
+                      and STATE.inbox.stopped_because is None
+                      else "stopped" if STATE.inbox is not None else "off"),
+        },
         "embedder": "openai" if STATE.embed is not None else "keyword",
         "speed": STATE.config.speed,
         "backend": "openai" if STATE.fast is not None else "stub",
@@ -1292,6 +1445,31 @@ async def set_config(body: ConfigIn):
     return out
 
 
+@app.get("/proposals")
+async def list_proposals():
+    return {"pending": [p.public() for p in STATE.proposals.pending()],
+            "recent": [p.public() for p in reversed(STATE.proposals.recent())]}
+
+
+class DecideIn(BaseModel):
+    id: str
+    decision: str     # "approve" | "decline"
+
+
+@app.post("/proposals/decide")
+async def decide_proposal(body: DecideIn, req: Request):
+    """A JSON body, deliberately: a cross-site form cannot send one without a CORS
+    preflight, which nothing here answers. _same_origin is the second lock."""
+    if not _same_origin(req):
+        return {"ok": False, "note": "refused: not from this page"}
+    if body.decision not in ("approve", "decline"):
+        return {"ok": False, "note": "decision must be approve or decline"}
+    note = await _decide(body.id, body.decision == "approve", "web")
+    p = STATE.proposals.get(body.id)
+    return {"ok": p is not None, "note": note,
+            "proposal": p.public() if p is not None else None}
+
+
 @app.get("/sessions")
 async def list_sessions():
     return {
@@ -1308,7 +1486,7 @@ async def session_messages(key: str):
     if s is None:
         return {"messages": []}
     return {"messages": [{"role": m.role, "content": m.content, "ts": m.ts,
-                          "kind": m.kind}
+                          "kind": m.kind, "ref": m.ref}
                          for m in s.messages]}
 
 

@@ -58,6 +58,7 @@ drives the real thing:
 | `revoice` generator | `evals/test_revoice.py` |
 | embedder (`_fake_embed`) | `evals/test_recall_gate.py` |
 | `rerank`, `route`, `critique_plan`, `plan`, `_decompose` | `evals/test_model_seams.py` |
+| `Proposer` (no model at all: the payload and the reply are untested) | `evals/test_proposals.py` |
 
 Adding a fake generator to a Tier 1 test means adding its twin here too,
 otherwise the assertion is about output you invented.

@@ -7,7 +7,7 @@
 <style>
   :root {
     --deep:#081316; --sea:#0d2327; --surface:#14383a; --foam:#cfe0da;
-    --foam-dim:#7ea59d; --tide:#5aa39a; --current:#2c5254;
+    --foam-dim:#7ea59d; --tide:#5aa39a; --current:#2c5254; --amber:#e8b17a;
     --serif:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
   }
   * { box-sizing:border-box; }
@@ -171,6 +171,15 @@
            font-size:0.7rem;"></div>
     </div>
 
+    <!-- What it would do in the world, if you say yes. Decided on the chat page
+         or from Telegram; listed here so a pending decision is never invisible. -->
+    <div class="reflection">
+      <div class="label">waiting on your yes</div>
+      <div id="proposals"><span class="none">nothing waiting.</span></div>
+      <div class="sub" id="proposals-sub" style="margin-top:0.6rem;color:var(--foam-dim);
+           font-size:0.7rem;"></div>
+    </div>
+
     <div class="reflection">
       <div class="label">what it's tending &mdash; goals</div>
       <div id="goals"><span class="none">nothing taken on yet.</span></div>
@@ -292,6 +301,15 @@
     document.getElementById("b-speed").textContent = "speed " + (s.speed ?? 1) + "×";
     document.getElementById("crank").disabled = (s.speed ?? 1) > 1;
     document.getElementById("uncrank").disabled = (s.speed ?? 1) <= 1;
+    const pr = s.proposals || {}, pend = pr.pending || [];
+    document.getElementById("proposals").innerHTML = pend.length
+      ? pend.map(p => '<div class="cons-row"><span class="v-int">' + esc(p.origin)
+          + '</span><span class="cons-t">' + esc(p.action) + '</span></div>').join("")
+      : '<span class="none">nothing waiting.</span>';
+    const gated = pr.behind_approval || [];
+    document.getElementById("proposals-sub").textContent =
+      (gated.length ? "behind approval: " + gated.join(", ") : "no tool can change anything yet")
+      + " · phone: " + (pr.inbox || "off");
     const level = s.level || "usual";
     for (const b of document.querySelectorAll("#dial .btn"))
       b.classList.toggle("on", b.dataset.level === level);

@@ -101,7 +101,8 @@ def test_decompose_single_is_one():
 @pytest.fixture
 def stub_worker(monkeypatch):
     """Stub run() so each worker returns a tagged result without a real tool loop."""
-    async def fake_run(profile, task, *, mcp=None, native=None, model="gpt-4o"):
+    async def fake_run(profile, task, *, mcp=None, native=None, model="gpt-4o",
+                       proposer=None):
         return subagents.SubAgentResult(profile=profile.name, task=task,
                                         result=f"did:{task}")
     monkeypatch.setattr(subagents, "run", fake_run)

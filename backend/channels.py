@@ -9,6 +9,12 @@ AND a phone message, whatever is switched on.
     SSEChannel       -> the open web page (Server-Sent Events)
     NotifierChannel  -> a native macOS banner (works with the browser closed)
     TelegramChannel  -> a message on your phone (opt-in: needs a bot token)
+    DiscordChannel   -> a message in a Discord channel (opt-in: a webhook URL)
+
+Besides unbidden lines ("proactive") there are two kinds that are not the Keeper's
+voice at all: "proposal", something it wants to do and needs a yes for, and
+"proposal_update", the outcome once the person has answered. Those are machinery and
+read like it. Only the page and Telegram can take the answer; the others say where to.
 
 This is the reference agent's channel abstraction (infra/channels: web/telegram/qq behind one
 contract) fitted to the Keeper. Adding a surface is adding a Channel: the loop that
@@ -73,7 +79,9 @@ class NotifierChannel:
     name = "native"
 
     def wants(self, kind: str) -> bool:
-        return kind == "proactive"     # only unbidden lines become banners
+        # Unbidden lines, and a decision waiting on the person. Not the outcome of
+        # one: they made it a moment ago and do not need a banner to hear it.
+        return kind in ("proactive", "proposal")
 
     async def deliver(self, role: str, content: str, kind: str,
                       state: Optional[str] = None) -> None:
@@ -83,15 +91,29 @@ class NotifierChannel:
 class TelegramChannel:
     """A message on your phone via the Telegram Bot API. Opt-in, only built when
     TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID are set. The HTTP send is injectable so
-    it can be tested without the network."""
+    it can be tested without the network.
+
+    A proposal arrives with Approve and Decline buttons. The taps come back through
+    inbox.py, which polls the same bot; once decided, the message is edited to say
+    what happened and its buttons go, so a decided proposal cannot be tapped again.
+    """
 
     name = "telegram"
+    takes_meta = True
+    # Telegram's own cap is 4096. A proposal longer than this is not shown in part
+    # with buttons under it: approving text you could not see is the exact failure
+    # proposals.py exists to prevent, so the buttons go and the page decides.
+    MAX_PROPOSAL_CHARS = 3500
 
     def __init__(self, token: str, chat_id: str,
-                 sender: Optional[Callable[[str, dict], None]] = None):
+                 sender: Optional[Callable[[str, dict], Optional[dict]]] = None):
         self.token = token
         self.chat_id = chat_id
         self._sender = sender or _http_post
+        # proposal id -> (message_id, text sent), so the outcome can be written onto
+        # the same message. In memory only: after a restart an outcome is sent as a
+        # new message instead, which is uglier and still true.
+        self._asked: dict[str, tuple] = {}
 
     @classmethod
     def from_env(cls) -> Optional["TelegramChannel"]:
@@ -102,13 +124,61 @@ class TelegramChannel:
         return cls(token, chat_id)
 
     def wants(self, kind: str) -> bool:
-        return kind == "proactive"     # don't echo your own web chat to your phone
+        # Not "chat": don't echo your own web chat to your phone.
+        return kind in ("proactive", "proposal", "proposal_update")
+
+    def _api(self, method: str) -> str:
+        return f"https://api.telegram.org/bot{self.token}/{method}"
 
     async def deliver(self, role: str, content: str, kind: str,
-                      state: Optional[str] = None) -> None:
-        url = f"https://api.telegram.org/bot{self.token}/sendMessage"
+                      state: Optional[str] = None,
+                      meta: Optional[dict] = None) -> None:
+        proposal = (meta or {}).get("proposal")
+        if kind == "proposal" and proposal:
+            await self._ask(proposal)
+            return
+        if kind == "proposal_update" and proposal:
+            await self._settle(proposal)
+            return
+        if kind != "proactive":
+            return
         data = {"chat_id": self.chat_id, "text": f"{KEEPER_NAME}\n\n{content}"}
-        await asyncio.to_thread(self._sender, url, data)
+        await asyncio.to_thread(self._sender, self._api("sendMessage"), data)
+
+    async def _ask(self, proposal: dict) -> None:
+        rendered = proposal.get("rendered", "")
+        head = f"{KEEPER_NAME} needs a yes\n\n"
+        data = {"chat_id": self.chat_id}
+        if len(rendered) > self.MAX_PROPOSAL_CHARS:
+            data["text"] = (head + rendered[:self.MAX_PROPOSAL_CHARS]
+                            + "\n\n[too long to show here in full. Decide on the "
+                              "page.]")
+        else:
+            data["text"] = head + rendered
+            pid = proposal["id"]
+            data["reply_markup"] = json.dumps({"inline_keyboard": [[
+                {"text": "Approve", "callback_data": f"approve:{pid}"},
+                {"text": "Decline", "callback_data": f"decline:{pid}"},
+            ]]})
+        resp = await asyncio.to_thread(self._sender, self._api("sendMessage"), data)
+        message_id = ((resp or {}).get("result") or {}).get("message_id")
+        if message_id is not None:
+            self._asked[proposal["id"]] = (message_id, data["text"])
+
+    async def _settle(self, proposal: dict) -> None:
+        line = outcome_line(proposal)
+        asked = self._asked.pop(proposal["id"], None)
+        if asked is not None:
+            message_id, text = asked
+            # No reply_markup: editing without one removes the buttons.
+            data = {"chat_id": self.chat_id, "message_id": message_id,
+                    "text": f"{text}\n\n{line}"[:4096]}
+            await asyncio.to_thread(self._sender, self._api("editMessageText"), data)
+            return
+        title = proposal.get("action", "").partition("__")[2] or proposal.get(
+            "action", "")
+        data = {"chat_id": self.chat_id, "text": f"{KEEPER_NAME}\n\n{title}: {line}"}
+        await asyncio.to_thread(self._sender, self._api("sendMessage"), data)
 
 
 class DiscordChannel:
@@ -138,10 +208,14 @@ class DiscordChannel:
         return cls(url) if url else None
 
     def wants(self, kind: str) -> bool:
-        return kind == "proactive"     # don't echo your own web chat to a channel
+        # Not "chat": don't echo your own web chat to a channel. A webhook cannot
+        # carry buttons back, so a proposal here only says where to answer it.
+        return kind in ("proactive", "proposal")
 
     async def deliver(self, role: str, content: str, kind: str,
                       state: Optional[str] = None) -> None:
+        if kind == "proposal":
+            content = f"{content}\n\n(decide on the page, or in Telegram)"
         body = f"**{KEEPER_NAME}**\n{content}"[:self.MAX_CHARS]
         await asyncio.to_thread(self._sender, self.webhook_url, {"content": body})
 
@@ -156,13 +230,34 @@ def _json_post(url: str, data: dict) -> None:
         resp.read()
 
 
-def _http_post(url: str, data: dict) -> None:
-    """POST form-encoded data. Stdlib only; short timeout; never raises upward-
-    important errors are logged by the Delivery wrapper."""
+def _http_post(url: str, data: dict) -> Optional[dict]:
+    """POST form-encoded data and return the JSON reply (Telegram's carries the
+    message id a proposal's outcome is later written onto). Stdlib only, short
+    timeout; anything that raises is logged by the Delivery wrapper."""
     body = urllib.parse.urlencode(data).encode()
     req = urllib.request.Request(url, data=body, method="POST")
     with urllib.request.urlopen(req, timeout=8) as resp:  # noqa: S310 - fixed https host
-        resp.read()
+        raw = resp.read()
+    try:
+        return json.loads(raw)
+    except ValueError:
+        return None
+
+
+def outcome_line(proposal: dict) -> str:
+    """One plain line for what became of a proposal, the same on every surface."""
+    status = proposal.get("status", "")
+    via = proposal.get("decided_via")
+    result = (proposal.get("result") or "").strip()
+    if status == "done":
+        return f"Approved{' in ' + via if via else ''}. Done: {result[:300]}"
+    if status == "failed":
+        return f"Approved, but it failed: {result[:300]}"
+    if status == "declined":
+        return f"Declined{' in ' + via if via else ''}. Nothing was done."
+    if status == "expired":
+        return "Expired unanswered. Nothing was done."
+    return status
 
 
 # --------------------------------------------------------------------------- #

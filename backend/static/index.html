@@ -131,6 +131,29 @@
     content: "\223F"; color: var(--tide); margin-right: 0.55rem;
     font-style: normal; text-shadow: 0 0 10px rgba(90,163,154,0.5);
   }
+  /* A proposal is machinery, not the Keeper's voice: the exact thing it would do,
+     set apart so it cannot be mistaken for something it said. */
+  .proposal {
+    margin: 1.35rem 0; padding: 0.9rem 1rem 0.8rem;
+    border: 1px solid rgba(207,224,218,0.16); border-radius: 0.5rem;
+    background: rgba(8,19,22,0.45); animation: rise 1.3s ease both;
+  }
+  .proposal .p-head { color: var(--tide); font-size: 0.62rem; letter-spacing: 0.22em;
+    text-transform: uppercase; margin-bottom: 0.6rem; }
+  .proposal pre { margin: 0; white-space: pre-wrap; word-break: break-word;
+    color: var(--foam); font-size: 0.82rem; line-height: 1.5;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+  .proposal .p-actions { display: flex; gap: 0.6rem; margin-top: 0.8rem; }
+  .proposal button {
+    background: rgba(20,56,58,0.35); border: 1px solid rgba(207,224,218,0.14);
+    border-radius: 999px; cursor: pointer; color: var(--foam-dim);
+    font-family: var(--serif); font-style: italic; font-size: 0.85rem;
+    padding: 0.3rem 1rem; transition: color 0.3s, border-color 0.3s;
+  }
+  .proposal button:hover { color: var(--foam); border-color: var(--tide); }
+  .proposal button:disabled { opacity: 0.4; cursor: default; }
+  .proposal .p-outcome { margin-top: 0.7rem; color: var(--foam-dim);
+    font-style: italic; font-size: 0.85rem; }
   .line.me { text-align: right; }
   .line.me .text { font-size: 1rem; color: var(--foam-dim); font-style: italic; }
   .ts {
@@ -238,6 +261,66 @@
     log.scrollTop = log.scrollHeight;
     return el;
   }
+  // ── proposals: things it would do, waiting on a yes ──
+  function outcomeLine(p) {
+    const via = p.decided_via ? " in " + p.decided_via : "";
+    const res = (p.result || "").slice(0, 300);
+    if (p.status === "done") return "Approved" + via + ". Done: " + res;
+    if (p.status === "failed") return "Approved, but it failed: " + res;
+    if (p.status === "declined") return "Declined" + via + ". Nothing was done.";
+    if (p.status === "expired") return "Expired unanswered. Nothing was done.";
+    if (p.status === "approved") return "Approved. Working on it\u2026";
+    return "";
+  }
+  function proposalCard(pid) {
+    return log.querySelector('.proposal[data-pid="' + CSS.escape(pid) + '"]');
+  }
+  function setProposal(p) {
+    const card = proposalCard(p.id);
+    if (!card) return;
+    if (p.rendered) card.querySelector("pre").textContent = p.rendered;
+    const pending = p.status === "pending";
+    card.querySelector(".p-actions").style.display = pending ? "" : "none";
+    card.querySelector(".p-outcome").textContent = pending ? "" : outcomeLine(p);
+  }
+  function addProposal(p) {
+    clearWatermark();
+    if (proposalCard(p.id)) { setProposal(p); return; }
+    const el = document.createElement("div");
+    el.className = "proposal"; el.dataset.pid = p.id;
+    el.innerHTML = '<div class="p-head">waiting on your yes</div><pre></pre>'
+      + '<div class="p-actions"><button data-d="approve">approve</button>'
+      + '<button data-d="decline">decline</button></div><div class="p-outcome"></div>';
+    for (const b of el.querySelectorAll("button"))
+      b.addEventListener("click", () => decide(p.id, b.dataset.d, el));
+    log.appendChild(el);
+    setProposal(p);
+    log.scrollTop = log.scrollHeight;
+  }
+  async function decide(pid, decision, card) {
+    for (const b of card.querySelectorAll("button")) b.disabled = true;
+    if (decision === "approve")
+      card.querySelector(".p-outcome").textContent = outcomeLine({status: "approved"});
+    try {
+      const r = await fetch("/proposals/decide", { method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ id: pid, decision }) });
+      const data = await r.json();
+      if (data.proposal) setProposal(data.proposal);
+      else card.querySelector(".p-outcome").textContent = data.note || "";
+    } catch (e) {
+      card.querySelector(".p-outcome").textContent = "The line went quiet; try again.";
+      for (const b of card.querySelectorAll("button")) b.disabled = false;
+    }
+  }
+  // A card drawn from the conversation knows only what was asked. Its status may
+  // have moved since (decided from the phone, expired), so ask the server.
+  async function refreshProposals() {
+    let data;
+    try { data = await (await fetch("/proposals")).json(); } catch (e) { return; }
+    for (const p of (data.recent || [])) setProposal(p);
+  }
+
   function showPending() {
     clearWatermark();
     pending = document.createElement("div");
@@ -285,9 +368,18 @@
         body: JSON.stringify({ session_id: key }) }); } catch (e) {}
     }
     showWatermark();
-    for (const m of msgs || [])
+    let asked = false;
+    for (const m of msgs || []) {
+      if (m.kind === "proposal" && m.ref) {
+        addProposal({ id: m.ref, status: "pending",
+                      rendered: m.content.replace(/^Waiting on your yes:\n\n/, "") });
+        asked = true;
+        continue;
+      }
       addLine(m.role === "user" ? "user" : "assistant", m.content,
               m.kind || "reply", m.ts);
+    }
+    if (asked) refreshProposals();
     if (!msgs || !msgs.length) showWatermark();
     markActive(key);
     entry.focus();
@@ -334,8 +426,10 @@
   const events = new EventSource("/events");
   events.onmessage = (e) => {
     let m; try { m = JSON.parse(e.data); } catch { return; }
-    if (!m.content) return;
-    addLine("assistant", m.content, m.kind || "proactive", m.ts);
+    if (m.kind === "proposal_update" && m.proposal) { setProposal(m.proposal); return; }
+    if (m.kind === "proposal" && m.proposal) addProposal(m.proposal);
+    else if (!m.content) return;
+    else addLine("assistant", m.content, m.kind || "proactive", m.ts);
     // A line spoken into an empty room opens a conversation of its own: adopt it,
     // so the reply that follows lands in the same thread the sidebar shows.
     if (m.session && !activeKey) { markActive(m.session); loadSessions(); }

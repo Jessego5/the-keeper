@@ -32,6 +32,7 @@ class Msg:
     # out from a chat window, that it spoke first, vanished on refresh. Files
     # written before this field load as "reply", which is what they were shown as.
     kind: str = "reply"
+    ref: Optional[str] = None   # what a "proposal" line is about: its proposal id
 
 
 @dataclass
@@ -80,12 +81,13 @@ class SessionStore:
                       key=lambda s: s.updated, reverse=True)
 
     def append(self, key: str, role: str, content: str,
-               ts: Optional[float] = None, kind: str = "reply") -> None:
+               ts: Optional[float] = None, kind: str = "reply",
+               ref: Optional[str] = None) -> None:
         s = self.sessions.get(key)
         if s is None:
             return
         s.messages.append(Msg(role=role, content=content, ts=ts or time.time(),
-                              kind=kind))
+                              kind=kind, ref=ref))
         s.updated = time.time()
         # A conversation is titled by whoever opened it. Usually that is the person;
         # when the Keeper spoke first, its line is the truthful title.

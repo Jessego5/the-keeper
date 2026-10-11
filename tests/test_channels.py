@@ -57,9 +57,12 @@ async def test_none_channels_are_dropped():
 
 # --- native banner gating --- #
 
-def test_notifier_channel_only_wants_proactive():
+def test_notifier_channel_wants_unbidden_lines_and_decisions_only():
+    """A decision waiting on the person earns a banner; its outcome does not: they
+    made it a moment ago. Their own chat never does."""
     ch = channels.NotifierChannel()
-    assert ch.wants("proactive") and not ch.wants("chat")
+    assert ch.wants("proactive") and ch.wants("proposal")
+    assert not ch.wants("chat") and not ch.wants("proposal_update")
 
 
 # --- Telegram (opt-in, injectable sender) --- #
@@ -186,3 +189,82 @@ async def test_a_line_with_no_register_still_delivers():
     await d.push("assistant", "still lands", "proactive")
     assert a.delivered == [("assistant", "still lands", "proactive")]
     assert a.states == [None]
+
+
+# --- proposals on the phone --- #
+
+_PROPOSAL = {"id": "p-abc", "action": "gmail__send_message", "status": "pending",
+             "rendered": "send_message (gmail)\n  to: sam@example.com\n  body: hi"}
+
+
+class _TelegramAPI:
+    def __init__(self):
+        self.calls = []
+
+    def __call__(self, url, data):
+        self.calls.append((url.rsplit("/", 1)[-1], data))
+        return {"ok": True, "result": {"message_id": 77}}
+
+
+async def test_a_proposal_reaches_the_phone_with_buttons():
+    import json
+    api = _TelegramAPI()
+    ch = channels.TelegramChannel("t", "42", sender=api)
+    await ch.deliver("assistant", "Waiting on your yes", "proposal",
+                     meta={"proposal": _PROPOSAL})
+    (method, data), = api.calls
+    assert method == "sendMessage" and "to: sam@example.com" in data["text"]
+    buttons = json.loads(data["reply_markup"])["inline_keyboard"][0]
+    assert [b["callback_data"] for b in buttons] == ["approve:p-abc", "decline:p-abc"]
+
+
+async def test_a_proposal_too_long_to_show_gets_no_buttons():
+    """Approving text you could not see is the failure proposals exist to stop."""
+    api = _TelegramAPI()
+    ch = channels.TelegramChannel("t", "42", sender=api)
+    long = dict(_PROPOSAL, rendered="x" * (ch.MAX_PROPOSAL_CHARS + 1))
+    await ch.deliver("assistant", "", "proposal", meta={"proposal": long})
+    (_, data), = api.calls
+    assert "reply_markup" not in data and "Decide on the page" in data["text"]
+
+
+async def test_the_outcome_is_written_onto_the_same_message():
+    """Editing without a reply_markup removes the buttons, so a decided proposal
+    cannot be tapped again from the phone."""
+    api = _TelegramAPI()
+    ch = channels.TelegramChannel("t", "42", sender=api)
+    await ch.deliver("assistant", "", "proposal", meta={"proposal": _PROPOSAL})
+    done = dict(_PROPOSAL, status="done", decided_via="web", result="sent, id 9")
+    await ch.deliver("assistant", "", "proposal_update", meta={"proposal": done})
+    method, data = api.calls[-1]
+    assert method == "editMessageText" and data["message_id"] == 77
+    assert "reply_markup" not in data
+    assert "Approved in web. Done: sent, id 9" in data["text"]
+
+
+async def test_an_outcome_after_a_restart_is_sent_fresh():
+    """The message id lived in memory. After a restart there is nothing to edit,
+    so the outcome goes as a new message: uglier, and still true."""
+    api = _TelegramAPI()
+    ch = channels.TelegramChannel("t", "42", sender=api)
+    gone = dict(_PROPOSAL, status="declined", decided_via="web")
+    await ch.deliver("assistant", "", "proposal_update", meta={"proposal": gone})
+    (method, data), = api.calls
+    assert method == "sendMessage" and "send_message: Declined" in data["text"]
+
+
+async def test_a_proposal_on_discord_says_where_to_answer():
+    sent = {}
+    c = channels.DiscordChannel("https://x/h", sender=lambda u, d: sent.update(data=d))
+    assert c.wants("proposal") and not c.wants("proposal_update")
+    await c.deliver("assistant", "Waiting on your yes", "proposal")
+    assert "decide on the page" in sent["data"]["content"]
+
+
+@pytest.mark.parametrize("status,expected", [
+    ("done", "Done: ok"), ("failed", "failed: ok"), ("declined", "Nothing was done"),
+    ("expired", "Expired unanswered"),
+])
+def test_outcome_lines(status, expected):
+    assert expected in channels.outcome_line(
+        {"status": status, "result": "ok", "decided_via": "telegram"})

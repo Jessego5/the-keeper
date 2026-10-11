@@ -38,6 +38,11 @@ class SubAgentProfile:
     servers: tuple          # MCP server names it may use (by prefix)
     use_native: bool        # whether it gets the native tools (journal, etc.)
     max_rounds: int = 6
+    # Whether it may PROPOSE world-changing actions (proposals.py). Only the scribe:
+    # it is the one that drafts messages, and a draft is the thing worth sending.
+    # A researcher reading strangers' pages is the last specialist that should be
+    # able to put an email in front of the person, even one they must approve.
+    may_propose: bool = False
 
 
 PROFILES: dict[str, SubAgentProfile] = {
@@ -59,8 +64,10 @@ PROFILES: dict[str, SubAgentProfile] = {
         name="scribe",
         blurb="drafts text: a message, a note, a short plan",
         role="You are the Keeper's scribe. Draft exactly the text asked for, plainly "
-             "and warmly, ready to use. Keep it in the journal only if asked.",
-        servers=(), use_native=True),
+             "and warmly, ready to use. Keep it in the journal only if asked. If you "
+             "hold a tool that would send or save it, you may propose it: the person "
+             "approves before anything happens.",
+        servers=(), use_native=True, may_propose=True),
     "analyst": SubAgentProfile(
         name="analyst",
         blurb="works things out by running code, calculations, dates, data crunching",
@@ -120,11 +127,14 @@ def route(task: str, generate: Generator) -> SubAgentProfile:
 
 
 async def run(profile: SubAgentProfile, task: str, *,
-              mcp=None, native=None, model: str = "gpt-4o") -> SubAgentResult:
+              mcp=None, native=None, model: str = "gpt-4o",
+              proposer=None) -> SubAgentResult:
     """Run one specialist's own tool loop on `task` and return its result."""
     providers: list = []
     if native is not None and profile.use_native:
         providers.append(native)
+    if proposer is not None and profile.may_propose and proposer.has_tools:
+        providers.append(proposer)
     if mcp is not None and profile.servers:
         view = _FilteredMCP(mcp, profile.servers)
         if view.has_tools:
@@ -139,10 +149,12 @@ async def run(profile: SubAgentProfile, task: str, *,
 
 
 async def delegate(task: str, generate: Generator, *,
-                   mcp=None, native=None, model: str = "gpt-4o") -> SubAgentResult:
+                   mcp=None, native=None, model: str = "gpt-4o",
+                   proposer=None) -> SubAgentResult:
     """Route `task` to ONE specialist and run it. The single-worker primitive."""
     profile = route(task, generate)
-    return await run(profile, task, mcp=mcp, native=native, model=model)
+    return await run(profile, task, mcp=mcp, native=native, model=model,
+                     proposer=proposer)
 
 
 # --------------------------------------------------------------------------- #
@@ -189,20 +201,22 @@ def _decompose(task: str, generate: Generator) -> list[str]:
 
 
 async def orchestrate(task: str, generate: Generator, *,
-                      mcp=None, native=None, model: str = "gpt-4o") -> OrchestrationResult:
+                      mcp=None, native=None, model: str = "gpt-4o",
+                      proposer=None) -> OrchestrationResult:
     """The deep multi-agent path: decompose `task` into subtasks, run each on the right
     specialist CONCURRENTLY, then synthesize their findings into one answer. Degrades to
     a single specialist (no synthesis) when the task doesn't split."""
     subtasks = _decompose(task, generate)
 
     if len(subtasks) == 1:
-        res = await delegate(subtasks[0], generate, mcp=mcp, native=native, model=model)
+        res = await delegate(subtasks[0], generate, mcp=mcp, native=native,
+                             model=model, proposer=proposer)
         return OrchestrationResult(task=task, result=res.result, workers=[res])
 
     # Route each subtask (cheap, sequential), then run the workers in PARALLEL.
     assignments = [(route(st, generate), st) for st in subtasks]
     settled = await asyncio.gather(
-        *[run(prof, st, mcp=mcp, native=native, model=model)
+        *[run(prof, st, mcp=mcp, native=native, model=model, proposer=proposer)
           for prof, st in assignments],
         return_exceptions=True)
     workers = [r for r in settled

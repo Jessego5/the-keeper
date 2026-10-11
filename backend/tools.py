@@ -122,6 +122,13 @@ class MCPManager:
         self._stack = AsyncExitStack()
         self._tools: list[dict] = []
         self._route: dict[str, tuple[Any, str]] = {}  # qualified -> (session, real)
+        # Tools that change the world, listed under a server's "propose". Kept
+        # apart from _tools and _route on purpose: nothing that iterates those (the
+        # chat path, a sub-agent's view of a server) can reach one of these, so the
+        # only way to run one is call_proposable(), and the only caller of that is
+        # an approved proposal. See proposals.py.
+        self._proposable: list[dict] = []
+        self._proposable_route: dict[str, tuple[Any, str]] = {}
         self.connected = False
         self.health: list[dict] = []    # one entry per configured server
 
@@ -192,6 +199,7 @@ class MCPManager:
             read_only = spec.get("read_only", True)
             allow = set(spec.get("tools") or [])   # if set, ONLY these (by real name)
             deny = set(spec.get("deny") or [])
+            propose = set(spec.get("propose") or [])
             required = list(spec.get("required") or [])
             try:
                 params = StdioServerParameters(
@@ -219,7 +227,25 @@ class MCPManager:
             offered = {t.name for t in listed.tools}
             kept_real: set[str] = set()
             blocked = 0
+            gated = 0
             for t in listed.tools:
+                qualified = f"{name}{_QUALIFY}{_safe(t.name)}"
+                # SDK versions differ: input_schema (snake) vs inputSchema (camel).
+                schema = (getattr(t, "input_schema", None)
+                          or getattr(t, "inputSchema", None)
+                          or {"type": "object", "properties": {}})
+                # Behind approval: exempt from the read-only filter, because a yes
+                # is a stronger guard than a name heuristic, but never from deny.
+                if t.name in propose and t.name not in deny:
+                    self._proposable.append({
+                        "name": qualified,
+                        "description": (t.description or "")[:900],
+                        "parameters": schema,
+                    })
+                    self._proposable_route[qualified] = (session, t.name)
+                    kept_real.add(t.name)
+                    gated += 1
+                    continue
                 # Filter: explicit allow/deny first, then the read-only default.
                 if allow and t.name not in allow:
                     continue
@@ -228,11 +254,6 @@ class MCPManager:
                 if read_only and _is_mutating(t.name):
                     blocked += 1
                     continue
-                qualified = f"{name}{_QUALIFY}{_safe(t.name)}"
-                # SDK versions differ: input_schema (snake) vs inputSchema (camel).
-                schema = (getattr(t, "input_schema", None)
-                          or getattr(t, "inputSchema", None)
-                          or {"type": "object", "properties": {}})
                 self._tools.append({
                     "type": "function",
                     "function": {
@@ -244,6 +265,8 @@ class MCPManager:
                 self._route[qualified] = (session, t.name)
                 kept_real.add(t.name)
             note = f" ({blocked} mutating blocked, read-only)" if blocked else ""
+            if gated:
+                note += f" ({gated} behind approval)"
             print(f"[mcp] {name}: {len(kept_real)} tools{note}", flush=True)
 
             # What this server PROMISED to provide, checked against what it did.
@@ -272,9 +295,23 @@ class MCPManager:
     def has_tools(self) -> bool:
         return bool(self._tools)
 
+    def proposable(self) -> list[dict]:
+        """The tools that may only run on a yes: name, description, parameters."""
+        return list(self._proposable)
+
     async def call(self, qualified_name: str, arguments: dict) -> str:
         """Execute a tool call and return its result as text for the model."""
-        route = self._route.get(qualified_name)
+        return await self._invoke(self._route, qualified_name, arguments)
+
+    async def call_proposable(self, qualified_name: str, arguments: dict) -> str:
+        """Run a tool that sits behind approval. Only an approved proposal calls
+        this (server._decide); nothing hands it to a model."""
+        return await self._invoke(self._proposable_route, qualified_name, arguments,
+                                  flag_errors=True)
+
+    async def _invoke(self, routes: dict, qualified_name: str,
+                      arguments: dict, flag_errors: bool = False) -> str:
+        route = routes.get(qualified_name)
         if route is None:
             return f"(no such tool: {qualified_name})"
         session, real = route
@@ -293,7 +330,14 @@ class MCPManager:
             text = getattr(block, "text", None)
             if text:
                 parts.append(text)
-        return "\n".join(parts) if parts else "(no output)"
+        out = "\n".join(parts) if parts else "(no output)"
+        # A server reports a failed call in the result, not by raising. To a model
+        # reading it that is just text; to an approved action it is the difference
+        # between telling someone their email went out and telling them it did not.
+        if flag_errors and (getattr(result, "isError", False)
+                            or getattr(result, "is_error", False)):
+            return f"(tool error: {out})"
+        return out
 
     async def aclose(self) -> None:
         await self._stack.aclose()

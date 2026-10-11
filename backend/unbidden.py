@@ -44,11 +44,14 @@ class Why:
     NOTICED = "noticed"          # something it watches bore on a kept fact
     RESTLESS = "restless"        # the battery ran low and the roll said speak
     BACKGROUND = "background"    # a task it was sent off on came back
+    PROPOSAL = "proposal"        # it wants to do something and needs a yes
 
 
 # Lines that answer something the person asked for. The proactivity dial silences
-# the Keeper's own initiative, never these: see dial.py.
-ASKED_FOR = frozenset({Why.REMINDER, Why.BACKGROUND})
+# the Keeper's own initiative, never these: see dial.py. A proposal is on the list
+# because it is a question waiting on them; holding it back would leave a decision
+# they cannot see, aging toward its expiry.
+ASKED_FOR = frozenset({Why.REMINDER, Why.BACKGROUND, Why.PROPOSAL})
 
 
 @dataclass
@@ -59,6 +62,7 @@ class Line:
     state: Optional[str] = None  # the register it was composed in
     session: Optional[str] = None
     ts: float = field(default_factory=time.time)
+    ref: Optional[str] = None    # for a proposal line, the proposal's id
 
 
 class UnbiddenLog:
@@ -87,12 +91,12 @@ class UnbiddenLog:
 
     def record(self, text: str, why: str = Why.RESTLESS,
                state: Optional[str] = None, session: Optional[str] = None,
-               now: Optional[float] = None) -> Line:
+               now: Optional[float] = None, ref: Optional[str] = None) -> Line:
         """Append one line, and only then hand it back to be delivered. Writing
         first is the point: a line that was delivered but never recorded is exactly
         the line a reconnecting page cannot get back."""
         line = Line(seq=self.last_seq + 1, text=text, why=why, state=state,
-                    session=session, ts=now or time.time())
+                    session=session, ts=now or time.time(), ref=ref)
         self.lines.append(line)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self.path.open("a") as f:

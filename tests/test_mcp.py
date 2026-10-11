@@ -180,3 +180,37 @@ async def test_strict_mode_refuses_a_degraded_server(sandbox, monkeypatch):
     with pytest.raises(RuntimeError, match="no_such_tool"):
         await mgr.connect()
     await mgr.aclose()
+
+
+@requires_node
+async def test_a_write_behind_approval_runs_only_through_the_approved_route(sandbox):
+    """The offline demo of proposals, against the real server: write_file is
+    listed under propose, so the model is never handed it as a runnable tool, and
+    the approved route is the only one that writes."""
+    mgr = tools.MCPManager([_spec(sandbox, propose=["write_file"])])
+    await mgr.connect()
+    try:
+        names = [t["function"]["name"] for t in mgr.openai_tools()]
+        assert "files__write_file" not in names
+        assert [t["name"] for t in mgr.proposable()] == ["files__write_file"]
+        assert "no such tool" in await mgr.call(
+            "files__write_file", {"path": "note.txt", "content": "x"})
+        assert not (sandbox / "note.txt").exists()
+        out = await mgr.call_proposable(
+            "files__write_file",
+            {"path": str(sandbox / "note.txt"), "content": "kept for you"})
+        assert not out.startswith("(tool error"), out
+        assert (sandbox / "note.txt").read_text() == "kept for you"
+    finally:
+        await mgr.aclose()
+
+
+@requires_node
+async def test_deny_still_wins_over_propose(sandbox):
+    mgr = tools.MCPManager([_spec(sandbox, propose=["write_file"],
+                                  deny=["write_file"])])
+    await mgr.connect()
+    try:
+        assert mgr.proposable() == []
+    finally:
+        await mgr.aclose()

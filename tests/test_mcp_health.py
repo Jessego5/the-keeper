@@ -150,3 +150,37 @@ def test_an_unreadable_config_watches_nothing(tmp_path):
     cfg.write_text("{not json")
     mgr = tools.MCPManager.from_config(cfg)
     assert mgr.watches == [] and mgr.specs == []
+
+
+# --- tools behind approval --- #
+
+class _Failing:
+    """A server that answers, but reports the call failed in the result."""
+    async def call_tool(self, name, arguments):
+        class R:
+            content = [type("B", (), {"text": "401 unauthorized"})()]
+            isError = True
+        return R()
+
+
+async def test_a_tool_behind_approval_cannot_be_reached_as_an_ordinary_one(mgr):
+    """The separation proposals.py depends on: nothing that walks the ordinary
+    tools (the chat path, a sub-agent's view) can run one that needs a yes."""
+    mgr._proposable_route["mail__send"] = (_Fine(), "send")
+    mgr._proposable.append({"name": "mail__send", "description": "",
+                            "parameters": {}})
+    assert mgr.openai_tools() == []
+    assert "no such tool" in await mgr.call("mail__send", {})
+    assert await mgr.call_proposable("mail__send", {}) == "ok"
+
+
+async def test_an_approved_call_that_failed_says_so(mgr):
+    """A model reading "401 unauthorized" understands it. A proposal reading it
+    would have told the person their email went."""
+    mgr._proposable_route["mail__send"] = (_Failing(), "send")
+    assert (await mgr.call_proposable("mail__send", {})).startswith("(tool error")
+
+
+async def test_an_ordinary_call_reads_as_it_always_did(mgr):
+    mgr._route["mail__read"] = (_Failing(), "read")
+    assert await mgr.call("mail__read", {}) == "401 unauthorized"
