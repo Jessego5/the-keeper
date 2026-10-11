@@ -177,8 +177,9 @@ what they always include or leave out, formatting), or only fixes a one-off fact
 for this one instance (a date, a time, a name, a typo, a number).
 
 If it is general, answer exactly one line:
-ABOUT: <the kind of task, short, e.g. "emails to Sam" or "any email"> | HOW: <the \
-way, as an instruction, e.g. "sign off as J, not with their full name">
+ABOUT: <the kind of task, from the Action and the content, e.g. "notes to their \
+brother" or "any message"> | HOW: <the way, as an instruction that describes \
+exactly the change they made, nothing they did not change>
 If it is a one-off fix, answer exactly: NONE"""
 
 
