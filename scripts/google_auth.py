@@ -26,7 +26,6 @@ import json
 import os
 import re
 import sys
-import webbrowser
 from pathlib import Path
 
 _BACKEND = Path(__file__).resolve().parent.parent / "backend"
@@ -42,6 +41,22 @@ import tools  # noqa: E402
 
 SERVER = "google"
 _URL = re.compile(r"https://accounts\.google\.com/[^\s)\]>\"']+")
+
+# Where the server keeps the token once consent completes (google_auth.py in
+# workspace-mcp). Watching this directory is how the wait below learns you are done.
+CREDS_DIR = Path(os.path.expanduser(
+    os.environ.get("WORKSPACE_MCP_CREDENTIALS_DIR")
+    or os.environ.get("GOOGLE_MCP_CREDENTIALS_DIR")
+    or "~/.google_workspace_mcp/credentials"))
+
+
+def _say(text: str) -> None:
+    # Flushed: under a pipe, buffered output hid the link until the script exited.
+    print(text, flush=True)
+
+
+def _newest_token_mtime() -> float:
+    return max((f.stat().st_mtime for f in CREDS_DIR.glob("*.json")), default=0.0)
 
 
 def _spec() -> dict:
@@ -73,11 +88,16 @@ async def main(wait_s: float) -> int:
         sys.exit(f"set these in backend/.env first: {', '.join(sorted(unset))}")
     email = fixed.get("user_google_email", "")
 
+    # The server opens a browser window for every sign-in flow it starts. This
+    # script prints one link instead, for a private window signed in as the right
+    # account: a window that pops up in the default browser may well be signed in
+    # as the wrong one.
+    env = {**env, "BROWSER": "true"}
     params = StdioServerParameters(command=spec["command"],
                                    args=tools._expand(spec.get("args", [])), env=env)
     async with stdio_client(params) as (read, write):
         async with ClientSession(read, write) as session:
-            print("· starting the google server (the first run downloads it)…")
+            _say("· starting the google server (the first run downloads it)…")
             await asyncio.wait_for(session.initialize(), tools.STARTUP_TIMEOUT_S)
 
             async def probe() -> str:
@@ -86,9 +106,10 @@ async def main(wait_s: float) -> int:
                     {"query": "in:inbox", "page_size": 1, **fixed})
                 return "\n".join(getattr(b, "text", "") for b in res.content or [])
 
-            first = await probe()
-            if not _needs_consent(first):
-                print(f"· already connected as {email}. Nothing to do.")
+            # Probe only if a token already exists. Without one, a probe does
+            # nothing but start a sign-in flow of its own.
+            if _newest_token_mtime() and not _needs_consent(await probe()):
+                _say(f"· already connected as {email}. Nothing to do.")
                 return 0
 
             res = await session.call_tool(
@@ -97,22 +118,32 @@ async def main(wait_s: float) -> int:
             text = "\n".join(getattr(b, "text", "") for b in res.content or [])
             url = _URL.search(text)
             if url is None:
-                print(text)
-                print("· no consent URL came back; see the message above.")
+                _say(text)
+                _say("· no consent URL came back; see the message above.")
                 return 1
-            print(f"· open this to let the Keeper act as {email}:\n\n  "
-                  f"{url.group(0)}\n")
-            webbrowser.open(url.group(0))
+            _say(f"· open this in a PRIVATE window, signed in as {email}:\n\n  "
+                 f"{url.group(0)}\n")
+            _say("· waiting for you to finish. Nothing will pop up meanwhile; "
+                 "keep this running until it says connected.")
 
+            # Wait by watching for the token file, not by calling Gmail: every call
+            # made before consent completes starts another flow, and each flow used
+            # to open another browser window over the one being signed in to.
+            started = _newest_token_mtime()
             loop = asyncio.get_running_loop()
             deadline = loop.time() + wait_s
             while loop.time() < deadline:
-                await asyncio.sleep(5)
-                if not _needs_consent(await probe()):
-                    print(f"· connected. The Keeper can now read {email}'s mail and "
-                          f"calendar, and propose what you approve.")
-                    return 0
-            print("· timed out waiting for consent. Run this again when ready.")
+                await asyncio.sleep(2)
+                if _newest_token_mtime() > started:
+                    await asyncio.sleep(1)       # let the server finish writing it
+                    if not _needs_consent(await probe()):
+                        _say(f"· connected. The Keeper can now read {email}'s mail "
+                             f"and calendar, and propose what you approve.")
+                        return 0
+                    _say("· a token arrived but Gmail still refused it; run this "
+                         "again.")
+                    return 1
+            _say("· timed out waiting for consent. Run this again when ready.")
             return 1
 
 

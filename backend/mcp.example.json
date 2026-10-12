@@ -76,7 +76,7 @@
     },
     {
       "name": "google",
-      "_note": "Gmail + Calendar via taylorwilsdon/google_workspace_mcp. Least privilege: gmail:send (read, labels, drafts, send) and calendar:full, nothing else. Reads are an explicit allowlist, because a name filter lags each new server's verbs. Sending and changing events sit under 'propose': the model can only ask, you approve the exact payload. 'fixed_args' sets the account from backend/.env; the model never sees or chooses it. First run: scripts/google_auth.py.",
+      "_note": "Gmail + Calendar via taylorwilsdon/google_workspace_mcp. Least privilege: gmail:send (read, labels, drafts, send) and calendar:full, nothing else. Reads are an explicit allowlist, because a name filter lags each new server's verbs. Sending and changing events sit under 'propose': the model can only ask, you approve the exact payload. 'fixed_args' sets the account from backend/.env; the model never sees or chooses it. First run: scripts/google_auth.py. BROWSER=true stops the server opening a browser window whenever it needs sign-in: from a background check that would pop a window on every poll. Run scripts/google_auth.py instead.",
       "requires_env": [
         "GOOGLE_OAUTH_CLIENT_ID",
         "GOOGLE_OAUTH_CLIENT_SECRET",
@@ -93,7 +93,8 @@
       "env": {
         "GOOGLE_OAUTH_CLIENT_ID": "${GOOGLE_OAUTH_CLIENT_ID}",
         "GOOGLE_OAUTH_CLIENT_SECRET": "${GOOGLE_OAUTH_CLIENT_SECRET}",
-        "USER_GOOGLE_EMAIL": "${KEEPER_GOOGLE_EMAIL}"
+        "USER_GOOGLE_EMAIL": "${KEEPER_GOOGLE_EMAIL}",
+        "BROWSER": "true"
       },
       "fixed_args": {
         "user_google_email": "${KEEPER_GOOGLE_EMAIL}"
