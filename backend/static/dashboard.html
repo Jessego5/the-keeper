@@ -185,6 +185,14 @@
            font-size:0.7rem;"></div>
     </div>
 
+    <!-- What the calendar holds this week, read through the google server and
+         cached on the server side (/upcoming). Read-only: changing an event goes
+         through a proposal like anything else that acts. -->
+    <div class="reflection" id="upcoming-box" style="display:none;">
+      <div class="label">coming up</div>
+      <div id="upcoming"><span class="none">nothing in the next week.</span></div>
+    </div>
+
     <!-- How they like things done: ways.py. Every learned habit is visible here,
          with where it was learned, and can be forgotten in one tap. -->
     <div class="reflection">
@@ -370,6 +378,25 @@
     tb.classList.toggle("warn", bad);
   }
   tick(); setInterval(tick, 3000);
+
+  function fmtWhen(iso) {
+    const d = new Date(iso);
+    if (isNaN(d)) return iso;
+    return d.toLocaleString([], {weekday: "short", month: "short", day: "numeric",
+                                 hour: "2-digit", minute: "2-digit"});
+  }
+  async function upcomingTick() {
+    let u; try { u = await (await fetch("/upcoming")).json(); } catch (e) { return; }
+    const box = document.getElementById("upcoming-box");
+    box.style.display = u.connected ? "" : "none";
+    const evs = u.events || [];
+    document.getElementById("upcoming").innerHTML = evs.length
+      ? evs.map(e => '<div class="cons-row"><span class="v-men">' + esc(fmtWhen(e.start))
+          + '</span><a class="cons-t" href="' + esc(e.url) + '" target="_blank" rel="noopener">'
+          + esc(e.title) + '</a></div>').join("")
+      : '<span class="none">nothing in the next week.</span>';
+  }
+  upcomingTick(); setInterval(upcomingTick, 60000);
 
   async function setSpeed(speed, cooldown){
     await fetch("/config", {method:"POST",

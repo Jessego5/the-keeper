@@ -1111,3 +1111,37 @@ async def test_the_suite_never_reaches_a_real_surface(client):
     page and nowhere else, and listens to no bot."""
     assert server.STATE.delivery.names() == ["web"]
     assert server.STATE.inbox is None
+
+
+# --- the dashboard's week ahead --- #
+
+class _FakeCalendar(_FakeActions):
+    def __init__(self, text):
+        super().__init__()
+        self.text, self.calls = text, 0
+
+    def openai_tools(self):
+        return [{"function": {"name": "google__get_events"}}]
+
+    async def call(self, name, args):
+        self.calls += 1
+        return self.text
+
+
+async def test_the_week_ahead_is_read_once_and_kept_a_while(monkeypatch):
+    cal = _FakeCalendar('- "Call the gallery" (Starts: 2026-10-13T15:00:00-05:00, '
+                        'Ends: 2026-10-13T15:30:00-05:00) ID: e9 | Link: https://x/e9')
+    monkeypatch.setattr(server.STATE, "mcp", cal)
+    monkeypatch.setitem(server._upcoming, "at", 0.0)
+    first = await server.upcoming()
+    await server.upcoming()
+    assert cal.calls == 1, "the dashboard's refresh must not reach Google each time"
+    assert first["connected"] and first["events"][0]["title"] == "Call the gallery"
+
+
+async def test_a_refused_calendar_is_not_an_empty_week(monkeypatch):
+    monkeypatch.setattr(server.STATE, "mcp",
+                        _FakeCalendar("(tool error: token expired)"))
+    monkeypatch.setitem(server._upcoming, "at", 0.0)
+    out = await server.upcoming()
+    assert out == {"events": [], "connected": False}

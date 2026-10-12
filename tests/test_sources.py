@@ -418,3 +418,14 @@ def test_now_is_filled_in_at_each_poll():
     assert out["time_max"].startswith("2026-10-12T08:00:00")
     assert out["since"][0].startswith("2026-10-11T02:00:00")
     assert out["n"] == 10
+
+
+def test_a_saved_time_loses_the_servers_note():
+    """The server annotates times it saved with a bracket for the model. A title or
+    a dashboard row wants the time alone."""
+    text = ('- "Call the gallery" (Starts: 2026-10-13T15:00:00-05:00 [America/Chicago; '
+            'weekday: Tuesday; ISO weekday: 2], Ends: 2026-10-13T15:30:00-05:00) '
+            'ID: e9 | Link: https://calendar.google.com/event?eid=e9')
+    (e,) = sources.calendar_events(text)
+    assert e["start"] == "2026-10-13T15:00:00-05:00"
+    assert e["end"] == "2026-10-13T15:30:00-05:00" and e["title"] == "Call the gallery"

@@ -228,19 +228,31 @@ _EVENT = re.compile(
     r'(?P<rest>.*?)ID: (?P<id>\S+) \| Link: (?P<link>\S+)', re.M | re.S)
 
 
+# The server annotates a time it saved: "2026-10-13T15:00:00-05:00 [America/Chicago;
+# weekday: Tuesday; ISO weekday: 2]". The bracket is for a model reading the reply;
+# a title or a dashboard row wants the time alone.
+_TIME_NOTE = re.compile(r"\s*\[[^\]]*\]?\s*$")
+
+
+def calendar_events(text: str, max_items: int = 10) -> list[dict]:
+    """get_events as plain records: title, start, end, link, id."""
+    out = []
+    for m in list(_EVENT.finditer(text or ""))[:max_items]:
+        out.append({"title": m.group("title").strip(),
+                    "start": _TIME_NOTE.sub("", m.group("start")).strip(),
+                    "end": _TIME_NOTE.sub("", m.group("end")).strip(),
+                    "url": m.group("link").strip(), "id": m.group("id")})
+    return out
+
+
 def parse_calendar_events(text: str, source: str = "calendar",
                           max_items: int = 10) -> list[SourceItem]:
     """get_events. Keyed by event id AND start time: a meeting that MOVES is news,
     and keying by id alone would have decided it had already been told."""
-    items: list[SourceItem] = []
-    for m in list(_EVENT.finditer(text or ""))[:max_items]:
-        start = m.group("start").strip()
-        items.append(SourceItem(
-            source=source, title=f"{m.group('title').strip()} at {start}"[:200],
-            url=m.group("link").strip(),
-            body=f"Starts: {start}\nEnds: {m.group('end').strip()}",
-            key=delivery_key(f"cal:{m.group('id')}@{start}", "")))
-    return items
+    return [SourceItem(source=source, title=f"{e['title']} at {e['start']}"[:200],
+                       url=e["url"], body=f"Starts: {e['start']}\nEnds: {e['end']}",
+                       key=delivery_key(f"cal:{e['id']}@{e['start']}", ""))
+            for e in calendar_events(text, max_items)]
 
 
 PARSERS = {"gmail": parse_gmail_search, "calendar": parse_calendar_events}

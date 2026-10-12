@@ -1787,6 +1787,33 @@ async def set_config(body: ConfigIn):
     return out
 
 
+# What the calendar holds for the coming week, for the dashboard. Cached: the
+# dashboard refreshes every few seconds, and the calendar does not need asking that
+# often, or at the cost of a call to Google each time.
+UPCOMING_TTL_S = 300.0
+_upcoming: dict = {"at": 0.0, "events": [], "connected": False}
+
+
+@app.get("/upcoming")
+async def upcoming():
+    now = time.time()
+    if now - _upcoming["at"] < UPCOMING_TTL_S:
+        return {k: _upcoming[k] for k in ("events", "connected")}
+    connected = _has_google()
+    events: list = []
+    if connected:
+        out = await STATE.mcp.call("google__get_events", sources.expand_time(
+            {"time_min": "${NOW}", "time_max": "${NOW+7d}", "max_results": 8}))
+        if out.lstrip().startswith("("):
+            # A refused call (an expired sign-in, say) is shown as such, not as an
+            # empty week: "nothing coming up" would be a claim about the calendar.
+            connected = False
+        else:
+            events = sources.calendar_events(out, max_items=8)
+    _upcoming.update(at=now, events=events, connected=connected)
+    return {"events": events, "connected": connected}
+
+
 @app.get("/proposals")
 async def list_proposals():
     return {"pending": [p.public() for p in STATE.proposals.pending()],
