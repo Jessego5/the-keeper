@@ -326,6 +326,7 @@ async def tool_reply(
     trace: Optional[list] = None,
     prior: Optional[list] = None,
     steer: str = "",
+    expect_one_of: Optional[set] = None,
 ) -> str:
     """Passive-only: let the Keeper use tools, then answer in voice.
 
@@ -340,6 +341,12 @@ async def tool_reply(
     prior: the last few turns of this conversation, oldest first, as
         {"role", "content"} dicts. Without them every message arrived alone, so
         "what did he say?" or "make it shorter" had nothing to refer to.
+    expect_one_of: tool names the request plainly calls for (see
+        server._expected_tools). If the model answers without calling any of them,
+        it gets ONE more round, told so. Measured in the live tier: asked "brief me
+        every weekday at 8", it said "the tide will bring a summary at 8" and called
+        nothing, so no brief existed. In its own voice a claim like that slips past
+        any word list, so the check is on what was asked, not on what was said.
     steer: a short note placed directly before the message (learned ways, see
         ways.py). At the end of a long system prompt such a note was followed in
         some runs and not others; next to the request it is weighed with it.
@@ -364,6 +371,9 @@ async def tool_reply(
         messages.append({"role": "system", "content": steer})
     messages.append({"role": "user", "content": user or "."})
 
+    called: set = set()        # tools that ran and did what they were asked
+    refused: dict = {}         # tool -> why its last call was turned away
+    nudged = False
     for i in range(max_rounds):
         # tool_choice only with tools: the API answers 400 to tool_choice="none"
         # when no tools are listed, which a caller with nothing to offer (an eval,
@@ -373,6 +383,25 @@ async def tool_reply(
             model=model, messages=messages, max_tokens=max_tokens, **extra)
         msg = resp.choices[0].message
         if not msg.tool_calls:
+            nudge = ""
+            if refused and not nudged:
+                # Live tier: a draft turned away for a "[Your Name]" slot was then
+                # described to the person as drafted, though nothing was proposed.
+                name, why = next(iter(refused.items()))
+                nudge = (f"Your call to {name} did not go through: {why} Call it "
+                         f"again now with that fixed, or say plainly that nothing "
+                         f"was made.")
+            elif expect_one_of and not (called & expect_one_of) and not nudged:
+                nudge = ("You answered without calling "
+                         + " or ".join(sorted(expect_one_of))
+                         + ". If the request called for it, call it now. If it did "
+                         "not, answer as you would, and never say something is set "
+                         "or kept that you did not set or keep.")
+            if nudge:
+                nudged = True
+                messages.append({"role": "assistant", "content": msg.content or ""})
+                messages.append({"role": "system", "content": nudge})
+                continue
             return msg.content or ""
         # Record the assistant's tool-call turn, then satisfy each call.
         messages.append({
@@ -391,6 +420,13 @@ async def tool_reply(
             provider = route.get(tc.function.name)
             out = (await provider.call(tc.function.name, args)
                    if provider is not None else f"(no such tool: {tc.function.name})")
+            # A tool that answered "(...)" did not do the thing: an error, a time it
+            # could not read, a proposal turned away.
+            if out.lstrip().startswith("("):
+                refused[tc.function.name] = out.strip()
+            else:
+                called.add(tc.function.name)
+                refused.pop(tc.function.name, None)
             if trace is not None:      # observability: what the Keeper actually did
                 trace.append({"tool": tc.function.name, "args": args,
                               "result": out[:160]})

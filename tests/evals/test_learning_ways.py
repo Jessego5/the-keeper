@@ -8,6 +8,7 @@ date into a habit makes every later draft wrong in a new way. A model that keeps
 that does not follow it is a dashboard entry and nothing more.
 """
 import os
+import re
 from datetime import datetime
 
 import pytest
@@ -46,7 +47,11 @@ def test_a_changed_sign_off_is_a_habit(gen, tmp_path):
         w = ways.learn_from_edit("mail__send", {"body": _body("Best regards,\nJessica")},
                                  {"body": _body("J")}, gen, store)
         assert w is not None, f"trial {n}: learned nothing"
-        assert "j" in w.how.lower() and "email" in w.about.lower(), f"trial {n}: {w}"
+        # How the task is named varies ("emails to Sam", "sign-offs"); what must
+        # hold is that the way says to sign J.
+        how = w.how.lower()
+        assert re.search(r"\bj\b", how) or "initial" in how, f"trial {n}: {w}"
+        assert "content shows" not in w.about, f"trial {n}: copied the template"
 
 
 def test_a_corrected_day_is_not_a_habit(gen, tmp_path):
@@ -66,7 +71,8 @@ async def _turn(tmp_path, n, text, providers_extra=()):
     system = (persona.build_system_prompt("passive", "tidal", memory="", context=ctx)
               + "\n\n---\n\n" + server.TOOL_ADDENDUM)
     await compose.tool_reply(system, text, providers=[tools, *providers_extra],
-                             model=server.TOOL_MODEL, max_rounds=4)
+                             model=server.TOOL_MODEL, max_rounds=4,
+                             expect_one_of=server._expected_tools(text))
     return store
 
 
@@ -106,6 +112,7 @@ async def test_a_learned_way_is_followed_in_a_draft(tmp_path):
             system, "email sam@example.com that thursday is off but saturday works",
             providers=[proposals.Proposer(pstore, [send], notify)],
             model=server.TOOL_MODEL, max_rounds=4)
-        (p,) = pstore.items
+        assert pstore.items, f"trial {n}: proposed nothing"
+        p = pstore.items[-1]
         tail = p.args["body"].strip().splitlines()[-1].strip()
         assert tail.rstrip(".") == "J", f"trial {n}: signed off {tail!r}"

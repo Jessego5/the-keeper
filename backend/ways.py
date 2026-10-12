@@ -179,7 +179,7 @@ for this one instance (a date, a time, a name, a typo, a number).
 Ignore changes to where it goes (a path, an address, a time): those are one-off.
 
 If it is general, answer exactly one line:
-ABOUT: <the kind of thing and who it is for, as the content shows it> | HOW: <an \
+ABOUT: <the kind of thing, and who it is for if the content says> | HOW: <an \
 instruction for the next draft, in the imperative, covering only what they changed>
 If it is a one-off fix, answer exactly: NONE"""
 

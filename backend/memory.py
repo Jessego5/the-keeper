@@ -662,6 +662,11 @@ they've dropped, a relationship shifting, a move, a job ending. "Stopped paintin
 in March" is exactly the kind of fact to keep. A "passing mood" means how they feel \
 in this moment ("tired today"), not something in their life that changed.
 
+When a new fact REPLACES an older one (a new job, a new city, a habit taken up or \
+dropped), name what it replaced in the same line: "Left the bank job; now teaches \
+art," "Moved from Leeds to Glasgow." A bare "Now teaches art" cannot be matched to \
+the job it ended, and both would be kept as true.
+
 Write each fact as ONE short third-person statement of the fact itself: the thing \
 that is true, not the act of saying it. Never guess their gender from a name: no he \
 or she unless they said so; write "Name is Marco; teaches chemistry". Write "Has a brother, Sam; not spoken since \

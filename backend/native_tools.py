@@ -310,7 +310,8 @@ class NativeTools:
                                        "'always', 'never', 'whenever you'. Not for an "
                                        "instruction about this one task only ('sign "
                                        "this one J' is not a way; 'sign my emails J' "
-                                       "is).",
+                                       "is). If they say 'this once', 'only this "
+                                       "time' or 'for this one', do not call it.",
                         "parameters": {
                             "type": "object",
                             "properties": {

@@ -166,3 +166,46 @@ async def test_the_approval_shows_the_account_it_will_act_as(store):
     (p,) = store.items
     assert p.args["user_google_email"] == "me@example.com"
     assert "user_google_email: me@example.com" in p.public()["rendered"]
+
+
+async def test_the_same_proposal_twice_in_a_turn_is_one_card(store):
+    """Seen in the live tier: a model retrying a call it had already made put two
+    identical drafts in front of the person. One decision, one card."""
+    asked = []
+
+    async def notify(p):
+        asked.append(p)
+
+    proposer = proposals.Proposer(store, [SEND], notify)
+    args = {"to": "sam@example.com", "subject": "s", "body": "b"}
+    await proposer.call(SEND.name, args)
+    again = await proposer.call(SEND.name, dict(args))
+    assert "already proposed" in again and len(store.items) == 1 and len(asked) == 1
+    await proposer.call(SEND.name, {**args, "to": "ana@example.com"})
+    assert len(store.items) == 2          # a different email is a different card
+
+
+@pytest.mark.parametrize("body", [
+    "Thursday is off.\n\nBest,\n[Your Name]", "Hi {name}, Thursday is off.",
+    "Thursday is off. <your signature>", "Cheers, [name]",
+])
+async def test_a_draft_with_a_slot_left_in_it_is_not_put_to_the_person(store, body):
+    asked = []
+
+    async def notify(p):
+        asked.append(p)
+
+    out = await proposals.Proposer(store, [SEND], notify).call(
+        SEND.name, {"to": "sam@example.com", "subject": "Thursday", "body": body})
+    assert out.startswith("(not proposed") and "placeholder" in out
+    assert store.items == [] and asked == []
+
+
+async def test_brackets_that_are_not_slots_are_fine(store):
+    async def notify(p):
+        return None
+
+    await proposals.Proposer(store, [SEND], notify).call(
+        SEND.name, {"to": "sam@example.com", "subject": "Notes [draft 2]",
+                    "body": "See section [3] of the lease.\n\nJ"})
+    assert len(store.items) == 1

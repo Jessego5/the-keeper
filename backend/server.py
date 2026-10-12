@@ -25,6 +25,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 import secrets
 import time
 from collections import deque
@@ -139,7 +140,10 @@ is for one moment, choose the one that fits.
 Some of your tools CHANGE things in the world: send an email, add to a calendar,
 write a file. Those never run when you call them. Calling one PROPOSES it: they are
 shown exactly what you passed and decide. So pass the real thing, the final text and
-the real recipient, never a placeholder, and only what they asked for. Afterwards,
+the real recipient, and only what they asked for. Fill in what they left unsaid
+yourself, a short subject line, a greeting, rather than asking or leaving a gap: never
+write a placeholder like [Your Name]. If you do not know how they sign off, end
+without a name. Afterwards,
 tell them what you drafted and that it is waiting on their yes. Never say it is done.
 Earlier proposals in the conversation carry what became of them in [brackets]. If
 one failed or was declined and it comes up, say so plainly before anything else:
@@ -148,7 +152,13 @@ never describe a note that was never saved as though it exists.
 You can also run WORK for them on a schedule with schedule_job: "every weekday at
 8, look at my calendar", "each Sunday check the gallery's site". A reminder hands
 back words; a job does the task and brings back what it found. A daily brief or a
-morning summary is kind "brief". Only when they ask; use list_jobs and cancel_job
+morning summary is kind "brief". "Brief me every weekday at 8" is complete as it
+stands: call schedule_job with kind "brief" straight away rather than asking what it
+should contain.
+
+Never say you have set, scheduled, held, kept or sent something unless the tool that
+does it has just told you it did. Saying it is not doing it: if you did not call the
+tool, it did not happen. Only when they ask; use list_jobs and cancel_job
 when they want to see or stop one.
 
 They decide how often you speak on your own. When they ask you to be quieter, to
@@ -159,7 +169,7 @@ start nothing yourself; what they asked you to hold or look into still comes bac
 They can teach you HOW they like things done. When they say it in general, "from
 now on", "always", "never", keep it with keep_way, so every later draft follows it,
 yours and your specialists'. An instruction for this one task is just followed, not
-kept. list_ways shows what you have learned; forget_way when they ask you to stop.
+kept: "this once", "only this time", "for this email" are never ways. list_ways shows what you have learned; forget_way when they ask you to stop.
 
 You keep a JOURNAL: the one thing you can write. Use keep_note to hold a thought they
 ask you to keep, or to record something you found or worked out; use read_journal to
@@ -647,6 +657,33 @@ RECENT_TURNS = 8
 RECENT_TURNS_WINDOW_S = 2 * 3600.0
 
 
+_TIMED_ASK = re.compile(
+    r"\b(remind me|brief me|every (day|weekday|week|morning|evening|night|"
+    r"monday|tuesday|wednesday|thursday|friday|saturday|sunday)|each (day|"
+    r"morning|evening|week|weekday)|daily|weekly|schedule|tomorrow at|at \d)",
+    re.I)
+
+
+_STANDING_ASK = re.compile(
+    r"\b(from now on|going forward|from here on|always|never|every time|whenever)\b",
+    re.I)
+
+
+def _expected_tools(msg: str) -> Optional[set]:
+    """The tools a request plainly calls for, or None. Narrow on purpose: a request
+    about time, where "it is set" without setting it leaves the person waiting for
+    something that never comes, and a standing instruction, where "noted, from now
+    on" without keep_way is a promise nothing will keep (2 runs in 4, live). A
+    false match costs one extra round and changes nothing: the nudge says to carry
+    on if the tool was not called for."""
+    expected: set = set()
+    if _TIMED_ASK.search(msg or ""):
+        expected |= {"remind_me", "schedule_job"}
+    if _STANDING_ASK.search(msg or ""):
+        expected.add("keep_way")
+    return expected or None
+
+
 def _recent_turns(key: Optional[str], now: Optional[float] = None) -> list:
     """The tail of a conversation as chat messages, oldest first.
 
@@ -788,7 +825,8 @@ async def _converse(msg: str, key: str, surface: str = "web") -> dict:
             reply = await compose.tool_reply(
                 system, msg, providers=providers, model=TOOL_MODEL, max_rounds=6,
                 trace=tool_trace, prior=prior,
-                steer=ways_mod.as_guidance(ways_used))
+                steer=ways_mod.as_guidance(ways_used),
+                expect_one_of=_expected_tools(msg))
             # Tool answers come back plain (a changelog, a file dump). Pass them back
             # through the Keeper's voice: preserving every fact: so a tool-grounded
             # reply still sounds like the Keeper, not a report.

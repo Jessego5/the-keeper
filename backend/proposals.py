@@ -31,6 +31,7 @@ Plain JSONL, rewritten whole like the reminder store. A person sees a handful a 
 from __future__ import annotations
 
 import json
+import re
 import time
 import uuid
 from dataclasses import asdict, dataclass, field
@@ -47,6 +48,13 @@ TTL_S = 24 * 3600.0
 PENDING, APPROVED, DONE = "pending", "approved", "done"
 DECLINED, EXPIRED, FAILED = "declined", "expired", "failed"
 SETTLED = frozenset({DONE, DECLINED, EXPIRED, FAILED})
+
+# A slot left for the person to fill: "[Your Name]", "{name}", "<your name>". The
+# prompt forbids it and the model still wrote "best,\n\n[your name]" in one live run
+# in three, so the rule is enforced here, before anyone is asked to approve it.
+_PLACEHOLDER = re.compile(
+    r"[\[{<]\s*(your|their|my|recipient'?s?|sender'?s?)?\s*"
+    r"(name|signature|email|address|date|time|phone|company)\s*[\]}>]", re.I)
 
 # What MCPManager.call answers with instead of raising. A tool that failed must
 # not be reported to the person as done.
@@ -249,6 +257,7 @@ class Proposer:
         self.actions = {a.name: a for a in actions}
         self._notify = notify
         self.origin = origin
+        self._made: list[Proposal] = []
 
     def openai_tools(self) -> list[dict]:
         return [{
@@ -276,8 +285,22 @@ class Proposer:
             # Caught here, not at approval: asking someone to approve a payload the
             # tool will reject wastes the one decision they were asked to make.
             return f"(not proposed: missing {', '.join(missing)})"
-        p = self.store.add(name, {**(args or {}), **action.fixed},
-                           origin=self.origin, fixed_keys=list(action.fixed))
+        for key, value in (args or {}).items():
+            hole = _PLACEHOLDER.search(value) if isinstance(value, str) else None
+            if hole:
+                return (f"(not proposed: {key} still has a placeholder, "
+                        f"{hole.group(0)!r}. Write the real text; if you do not know "
+                        f"how they sign off, end without a name.)")
+        full = {**(args or {}), **action.fixed}
+        # The same proposal twice in one turn (a model retrying a call it already
+        # made) is one decision, not two cards. A Proposer lives for one turn.
+        for earlier in self._made:
+            if earlier.action == name and earlier.args == full:
+                return (f"already proposed (id {earlier.id}); it is waiting on "
+                        f"their yes. Do not propose it again.")
+        p = self.store.add(name, full, origin=self.origin,
+                           fixed_keys=list(action.fixed))
+        self._made.append(p)
         await self._notify(p)
         return (f"proposed, NOT done (id {p.id}). It waits for their yes, and they "
                 f"see exactly what you wrote. Tell them what you drafted and that "

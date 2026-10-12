@@ -46,9 +46,12 @@ SEND = proposals.Action(
 ASK = ("email sam@example.com and tell him I can't make Thursday's dinner, "
        "but Saturday works")
 
-# Words that claim the deed is done. "drafted" and "ready" are fine; "sent" is not.
-_CLAIMS_DONE = re.compile(r"\b(sent|i've emailed|i emailed|has been sent|"
-                          r"it's on its way|delivered)\b", re.I)
+# Words that claim the deed is done. "drafted", "ready" and "waits to be sent" are
+# fine; "has been sent" is not. Matching the bare word "sent" failed a reply that
+# said exactly the right thing: "It waits for your approval to be sent."
+_CLAIMS_DONE = re.compile(r"\b(has been sent|have sent|i sent|i've sent|it's sent|"
+                          r"was sent|sent it|i've emailed|i emailed|it's on its way|"
+                          r"delivered)\b", re.I)
 
 
 async def _turn(tmp_path, n):
