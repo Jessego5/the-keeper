@@ -242,11 +242,17 @@ def tick(
         #
         # Tool-free on purpose. Feed text is written by strangers, and sandbox.py
         # documents where untrusted text reaching a tool-capable loop leads.
-        plain = (f"Something new that touches what you keep about them: "
-                 f"{getattr(pending, 'title', '')}. "
+        # `plain` is what the person gets if the voice cannot be trusted with it,
+        # so it is written for them. It used to carry the framing too ("Something
+        # new that touches what you keep about them: ..."), which is an instruction
+        # to the model, and the live demo sent exactly that sentence to a phone.
+        plain = (f"{getattr(pending, 'title', '')}. "
                  f"{getattr(pending, 'url', '')}").strip()
         text = compose.revoice(plain, water,
-                               generate=fast_model or generate, memory=mem)
+                               generate=fast_model or generate, memory=mem,
+                               context="This has just arrived, unasked, and it bears "
+                                       "on something you keep about them. Tell them "
+                                       "what it is.")
         if text and text.strip():
             return TickDecision(True, "spoke about something watched",
                                 en, score, wait, text.strip(), water,

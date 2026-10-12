@@ -213,6 +213,11 @@ def revoice(text: str, water_state: str = persona.DEFAULT_WATER_STATE, *,
         return text
     if not out:
         return text
+    # A link is kept, not judged: put back any the voice dropped, rather than
+    # throwing the whole re-voice away over a URL nobody reads aloud.
+    for link in _LINK.findall(text):
+        if link not in out:
+            out = f"{out}\n{link}"
     lost = _lost_specifics(text, out)
     if lost:
         # The rule above is a request; this is the check. Seen live: "the note to
@@ -230,6 +235,9 @@ _NOT_NAMES = {"the", "a", "an", "i", "it", "its", "this", "that", "these", "thos
               "yes", "no", "done", "in", "on", "at", "for", "to", "of", "with",
               "from", "by", "as", "is", "was", "be", "not", "then", "also", "just",
               "nothing", "something", "everything", "one", "all", "some", "each"}
+_LINK = re.compile(r"https?://\S+")
+_ADDRESS = re.compile(r"\b[\w.+-]+@[\w-]+\.[\w.]+\b")
+
 _NUMBER_WORDS = ["zero", "one", "two", "three", "four", "five", "six", "seven",
                  "eight", "nine", "ten", "eleven", "twelve"]
 _SPECIFIC = re.compile(r"\b(?:\d[\d:.,/-]*\d|\d|[A-Z][\w'-]*)")
@@ -243,7 +251,10 @@ def _lost_specifics(original: str, voiced: str) -> set:
     survives elsewhere, because it checks containment, not counts."""
     have = voiced.lower()
     lost = set()
-    for tok in _SPECIFIC.findall(original):
+    # Inside a link or an address, letters and digits are not facts to say; the
+    # link is checked whole, above, and an address is spoken or not as a unit.
+    scan = _ADDRESS.sub(" ", _LINK.sub(" ", original))
+    for tok in _SPECIFIC.findall(scan):
         if tok.lower().strip("'") in _NOT_NAMES:
             continue
         if tok.lower() in have:

@@ -182,3 +182,15 @@ def test_a_request_to_act_expects_the_tools_that_act():
     assert server._expected_tools("what's in my inbox?", acts) is None
     # no acting tools connected: nothing to expect
     assert server._expected_tools("send an email to sam", set()) is None
+
+
+
+def test_a_dropped_link_is_put_back_not_a_reason_to_go_plain():
+    """Live demo: a re-voiced inbox item lost the Gmail link, the guard fell back to
+    the plain input, and the plain input was an instruction to the model."""
+    original = ("The Riverside Gallery wants your paintings (from sam@example.com). "
+                "https://mail.google.com/mail/u/0/#all/1a12eb80c73dad04")
+    out = compose.revoice(original, generate=lambda s, u: (
+        "A letter from the Riverside Gallery: they want your paintings."))
+    assert out.startswith("A letter from the Riverside Gallery")
+    assert out.endswith("https://mail.google.com/mail/u/0/#all/1a12eb80c73dad04")
