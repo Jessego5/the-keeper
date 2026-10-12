@@ -56,7 +56,12 @@ def _say(text: str) -> None:
 
 
 def _newest_token_mtime() -> float:
-    return max((f.stat().st_mtime for f in CREDS_DIR.glob("*.json")), default=0.0)
+    """When a token was last written. Token files are named for the account, its
+    "@" URL-encoded; the same directory also holds oauth_states.json, the server's
+    PENDING sign-ins, which changes whenever a flow starts and is no sign of being
+    done. Counting it once made this script think a token already existed."""
+    return max((f.stat().st_mtime for f in CREDS_DIR.glob("*.json")
+                if "@" in f.name or "%40" in f.name), default=0.0)
 
 
 def _spec() -> dict:
