@@ -41,9 +41,19 @@ async def client(monkeypatch, tmp_path):
     # stalled the loop past test_proactive_loop_reaches_out's deadline. Found as
     # a 1-in-4 flake. Offline means offline.
     monkeypatch.delenv("KEEPER_FEEDS", raising=False)
+    # The same goes for every outward surface. Once a real bot token was in .env,
+    # the lifespan built the real Telegram channel and started polling the real
+    # bot: a run of this suite could message the developer's phone, and fought the
+    # running Keeper for its updates (found when the suite slowed from 20s to 126s).
+    for key in ("TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID", "DISCORD_WEBHOOK_URL"):
+        monkeypatch.delenv(key, raising=False)
+    monkeypatch.setenv("KEEPER_TELEGRAM_INBOX", "0")
     _isolate_stores(monkeypatch, tmp_path)
     async with server.app.router.lifespan_context(server.app):
         server.STATE.generate, server.STATE.fast = compose.stub_generator, None
+        # The lifespan rebuilds delivery; keep it to the page alone.
+        monkeypatch.setattr(server.STATE, "delivery", server.channels.Delivery(
+            [server.channels.SSEChannel(server.STATE.listeners)]))
         # The lifespan builds these fresh; replace them after it has run.
         monkeypatch.setattr(server.STATE, "embed", None)
         monkeypatch.setattr(server.STATE, "llm_mood_signal", None)
@@ -1093,3 +1103,11 @@ async def test_an_edit_teaches_even_when_the_tool_then_fails(actions, monkeypatc
     await server._decide(p.id, True, "web", edited={"body": "can't do thursday."})
     await asyncio.sleep(0.2)
     assert p.status == "failed" and p.learned == "notes to Sam: all lowercase"
+
+
+
+async def test_the_suite_never_reaches_a_real_surface(client):
+    """The guard above, pinned: whatever is in .env, a test run delivers to the
+    page and nowhere else, and listens to no bot."""
+    assert server.STATE.delivery.names() == ["web"]
+    assert server.STATE.inbox is None
