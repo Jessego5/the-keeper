@@ -167,3 +167,18 @@ def test_a_standing_instruction_expects_keep_way():
     assert server._expected_tools("from now on, sign my emails J") == {"keep_way"}
     assert server._expected_tools("always remind me at 9") == {
         "keep_way", "remind_me", "schedule_job"}
+
+
+
+def test_a_request_to_act_expects_the_tools_that_act():
+    """Live demo: an email request was answered with the email typed out and a
+    claim it was waiting for approval. Nothing had been proposed."""
+    import server
+    acts = {"google__send_gmail_message", "google__manage_event"}
+    assert server._expected_tools("send an email to sam saying thursday is off",
+                                  acts) == acts
+    assert server._expected_tools("add lunch with ana to my calendar friday",
+                                  acts) == acts
+    assert server._expected_tools("what's in my inbox?", acts) is None
+    # no acting tools connected: nothing to expect
+    assert server._expected_tools("send an email to sam", set()) is None

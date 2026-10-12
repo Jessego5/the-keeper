@@ -669,7 +669,13 @@ _STANDING_ASK = re.compile(
     re.I)
 
 
-def _expected_tools(msg: str) -> Optional[set]:
+_ACTION_ASK = re.compile(
+    r"\b(send|e-?mail|reply to|write (to|back)|forward|invite|"
+    r"(add|put)\b[^.]*\b(calendar|diary)|(make|book|schedule) a (meeting|call|event)|"
+    r"(save|write|put)\b[^.]*\b(file|note|sandbox))\b", re.I)
+
+
+def _expected_tools(msg: str, proposable: Optional[set] = None) -> Optional[set]:
     """The tools a request plainly calls for, or None. Narrow on purpose: a request
     about time, where "it is set" without setting it leaves the person waiting for
     something that never comes, and a standing instruction, where "noted, from now
@@ -677,6 +683,12 @@ def _expected_tools(msg: str) -> Optional[set]:
     false match costs one extra round and changes nothing: the nudge says to carry
     on if the tool was not called for."""
     expected: set = set()
+    # A request to act in the world, when there are tools that act in the world.
+    # Live demo: "send an email to ... with the subject ..." got the email typed
+    # out in the reply and "you will see it ready for your approval", with no
+    # proposal made: the person would have waited on a card that never came.
+    if proposable and _ACTION_ASK.search(msg or ""):
+        expected |= set(proposable)
     if _TIMED_ASK.search(msg or ""):
         expected |= {"remind_me", "schedule_job"}
     if _STANDING_ASK.search(msg or ""):
@@ -826,7 +838,8 @@ async def _converse(msg: str, key: str, surface: str = "web") -> dict:
                 system, msg, providers=providers, model=TOOL_MODEL, max_rounds=6,
                 trace=tool_trace, prior=prior,
                 steer=ways_mod.as_guidance(ways_used),
-                expect_one_of=_expected_tools(msg))
+                expect_one_of=_expected_tools(
+                    msg, set(proposer.actions) if proposer is not None else None))
             # Tool answers come back plain (a changelog, a file dump). Pass them back
             # through the Keeper's voice: preserving every fact: so a tool-grounded
             # reply still sounds like the Keeper, not a report.
