@@ -213,9 +213,17 @@ def revoice(text: str, water_state: str = persona.DEFAULT_WATER_STATE, *,
         return text
     if not out:
         return text
-    # A link is kept, not judged: put back any the voice dropped, rather than
-    # throwing the whole re-voice away over a URL nobody reads aloud.
-    for link in _LINK.findall(text):
+    # A link is copied, never written: one in the voiced text that the original does
+    # not contain is the model retyping it, and on camera it changed "Vva3" to
+    # "Voa3" in a calendar link, so the person got a broken link and then the right
+    # one. Drop those; then put back any real link the voice left out.
+    real = _LINK.findall(text)
+    for link in _LINK.findall(out):
+        if link not in real:
+            out = out.replace(link, "")
+    out = re.sub(r"[ \t]*\(\s*\)|\[\s*\]\(\s*\)", "", out)
+    out = re.sub(r"[ \t]+\n", "\n", out).strip()
+    for link in real:
         if link not in out:
             out = f"{out}\n{link}"
     lost = _lost_specifics(text, out)

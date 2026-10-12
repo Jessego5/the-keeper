@@ -194,3 +194,15 @@ def test_a_dropped_link_is_put_back_not_a_reason_to_go_plain():
         "A letter from the Riverside Gallery: they want your paintings."))
     assert out.startswith("A letter from the Riverside Gallery")
     assert out.endswith("https://mail.google.com/mail/u/0/#all/1a12eb80c73dad04")
+
+
+
+def test_a_link_the_voice_retyped_wrong_is_dropped():
+    """On camera: the voice rewrote a calendar link with two letters changed, so
+    the reply held a broken link and then the real one."""
+    real = "https://www.google.com/calendar/event?eid=aXVwOTlzZWlkMgbWluc2Vva3lvb24yMkBt"
+    original = f"Call the Riverside Gallery, Tuesday 3:00 PM. {real}"
+    out = compose.revoice(original, generate=lambda s, u: (
+        "Tuesday at 3:00 PM, the Riverside Gallery call. "
+        "https://www.google.com/calendar/event?eid=aXVwOTlzZWlkMgbWluc2Voa3lvb24yMkBt"))
+    assert "Voa3" not in out and out.count("https://") == 1 and out.endswith(real)
