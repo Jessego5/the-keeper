@@ -696,6 +696,18 @@ def _expected_tools(msg: str, proposable: Optional[set] = None) -> Optional[set]
     return expected or None
 
 
+def _now_note(now: Optional[float] = None) -> str:
+    """Today, said next to the request. The time was always in the system prompt,
+    and in a fresh conversation the model still asked the calendar about "this
+    week" in October 2023: the date it carries from training beat the one buried in
+    a long prompt. Found on camera, recording the README demo. Next to the message,
+    with the weekday spelled out, is where it gets used."""
+    dt = datetime.fromtimestamp(now or time.time()).astimezone()
+    return (f"Right now it is {dt:%A %d %B %Y, %H:%M} ({dt.tzname()}, UTC"
+            f"{dt:%z}). Use this for anything about dates or times: 'today', 'this "
+            f"week', 'tomorrow' all count from here.")
+
+
 def _recent_turns(key: Optional[str], now: Optional[float] = None) -> list:
     """The tail of a conversation as chat messages, oldest first.
 
@@ -837,7 +849,8 @@ async def _converse(msg: str, key: str, surface: str = "web") -> dict:
             reply = await compose.tool_reply(
                 system, msg, providers=providers, model=TOOL_MODEL, max_rounds=6,
                 trace=tool_trace, prior=prior,
-                steer=ways_mod.as_guidance(ways_used),
+                steer="\n\n".join(x for x in (
+                    _now_note(now), ways_mod.as_guidance(ways_used)) if x),
                 expect_one_of=_expected_tools(
                     msg, set(proposer.actions) if proposer is not None else None))
             # Tool answers come back plain (a changelog, a file dump). Pass them back

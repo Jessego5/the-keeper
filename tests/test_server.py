@@ -12,6 +12,8 @@ import asyncio
 import json
 import time
 
+from datetime import datetime
+
 import httpx
 import pytest
 
@@ -1145,3 +1147,11 @@ async def test_a_refused_calendar_is_not_an_empty_week(monkeypatch):
     monkeypatch.setitem(server._upcoming, "at", 0.0)
     out = await server.upcoming()
     assert out == {"events": [], "connected": False}
+
+
+
+def test_today_is_said_next_to_the_request(monkeypatch, tmp_path):
+    """The note names the weekday, the date and the year, so "this week" cannot be
+    read against the model's training year."""
+    note = server._now_note(datetime(2026, 10, 12, 9, 30).timestamp())
+    assert "Monday 12 October 2026, 09:30" in note and "this week" in note
