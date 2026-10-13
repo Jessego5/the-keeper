@@ -44,7 +44,7 @@ def _body(sign):
 def test_a_changed_sign_off_is_a_habit(gen, tmp_path):
     for n in range(TRIALS):
         store = ways.WayStore(tmp_path / f"a{n}.jsonl")
-        w = ways.learn_from_edit("mail__send", {"body": _body("Best regards,\nJessica")},
+        w = ways.learn_from_edit("mail__send", {"body": _body("Best regards,\nJordan")},
                                  {"body": _body("J")}, gen, store)
         assert w is not None, f"trial {n}: learned nothing"
         # How the task is named varies ("emails to Sam", "sign-offs"); what must
