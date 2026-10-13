@@ -54,7 +54,7 @@ Keep the **trace** open (`/trace-view`) to watch every tool fire.
 - [ ] **Temporal / change-aware (the tide)**: a fact that updates an old one supersedes it, history kept. *Try:* `i stopped painting in march` then `actually i started painting again` → ask `how's my painting going?`; `changes_tracked` rises in `/state`.
 - [ ] **Cross-session memory**: facts from one conversation surface in another. *Try:* mention something, click **+ new** in the sidebar, ask about it in the fresh chat.
 - [ ] **Reflection → insights** ⏳, idle, it synthesizes higher-level reads of you, stored retrievably. *Trigger:* have ≥3 facts, then crank the clock (see §F), watch the **insights** tile / **latest reflection** on the dashboard.
-- [ ] **Consolidation (MemGPT)** ⏳, over ~60 facts, old low-value ones are summarized + archived. *Hard to hit by hand; verified by tests. Ask me to seed facts if you want to see it.*
+- [ ] **Consolidation (MemGPT)** ⏳, over ~60 facts, old low-value ones are summarized + archived. *Hard to hit by hand; verified by tests (`tests/test_memory.py`).*
 
 ## C. Tools (MCP + native)
 - [ ] **Read your files** (MCP, sandboxed), *Try:* `look in my files and tell me what's on my to-do list` (reads `keeper_sandbox/list.txt`). *Avoid a bare "what's on my list?", that's ambiguous with the reminders "list."*
@@ -98,7 +98,7 @@ Keep the **trace** open (`/trace-view`) to watch every tool fire.
 ## G. Delivery channels
 - [ ] **Web (SSE)**: proactive lines appear in the open chat tab.
 - [ ] **Native banner**: macOS notification (see §F).
-- [ ] **Telegram (opt-in)** ⏳, set `TELEGRAM_BOT_TOKEN` + `TELEGRAM_CHAT_ID` in `backend/.env` (BotFather), restart → proactive lines hit your phone too. `channels` in `/state` shows `telegram`.
+- [ ] **Telegram (opt-in)** ⏳, put BotFather's `TELEGRAM_BOT_TOKEN` in `backend/.env`, then `.venv/bin/python scripts/telegram_setup.py` sets the avatar, the menu and you as the owner. Restart → proactive lines hit your phone too, with the banner. `channels` in `/state` shows `telegram`.
 
 ## H. Observability
 - [ ] **Dashboard**: <http://localhost:8790/dashboard> (energy, memory, goals, house, reminders, reflection).
@@ -106,9 +106,24 @@ Keep the **trace** open (`/trace-view`) to watch every tool fire.
 - [ ] **/state**: the whole live state as JSON.
 - [ ] **Conversation sidebar**: multiple chats, each persisted; **+ new** to start one, click to switch.
 
-## I. Under the hood
+## I. Acting for you (approvals, Google, phone, schedules)
+- [ ] **Proposals wait for a yes**: anything that sends, creates or writes becomes a card with the exact payload. *Try:* `write a file called plan.txt saying "frames on friday"` → a card appears; **approve** runs it, **decline** drops it. Cards expire after a day.
+- [ ] **Edit before approving**: *Try:* on a card, **edit**, change a field, approve → the edited version is what runs.
+- [ ] **Gmail + Calendar** ⏳, after `.venv/bin/python scripts/google_auth.py` (steps in `backend/.env.example`). *Try:* `what's on my calendar this week?`, then `add "call the gallery" to my calendar tomorrow at 3pm` → a card, then the event in Google Calendar.
+- [ ] **Send an email, behind a yes** ⏳, *Try:* `email me@example.com that the frames arrived` → a card with to / subject / body; approving SENDS it.
+- [ ] **Inbox and calendar watching** ⏳, a new email or moved meeting that bears on what it knows becomes something it may say. `[sources]` in the terminal shows each one scored.
+- [ ] **Approve from your phone** ⏳, with Telegram set up, a card arrives with **approve / decline** buttons; the message is edited to show the outcome.
+- [ ] **Chat from your phone** ⏳, message the bot; it answers in its own **telegram** thread in the sidebar, with the same memory.
+- [ ] **The dial**: *Try:* `be quieter for a while`, or `/quiet` and `/off` in Telegram. *See:* the **dial** panel. Off silences its own initiative; reminders and cards still arrive.
+- [ ] **Jobs on a schedule**: *Try:* `every weekday at 8, check my inbox for anything from the gallery` → the **on a schedule** panel. `cancel that job` removes it.
+- [ ] **Morning brief** ⏳, *Try:* `brief me every weekday at 8` → today's events, the mail that needs you, what's waiting on your yes.
+- [ ] **Ways it learns**: *Try:* `from now on, sign my emails just J`, or edit a draft's sign-off before approving → the **how you like things done** panel. *Forget* removes one.
+- [ ] **Coming up**: the dashboard's **coming up** panel lists the next week from your calendar.
+- [ ] **Always on**: `scripts/keeper_service.sh install` (launchd: at login, after a crash); a second copy refuses to start.
+
+## J. Under the hood
 - [ ] **Voice fidelity harness**: `.venv/bin/python backend/voice_test.py` (scores lines across every mode).
-- [ ] **Test suite**: `.venv/bin/python -m pytest -q` (~233 tests, offline; evals excluded by default).
+- [ ] **Test suite**: `.venv/bin/python -m pytest -q` (665 tests, offline; evals excluded by default).
 
 ---
 
@@ -121,5 +136,4 @@ curl -s -X POST localhost:8790/config -H 'content-type: application/json' -d '{"
 curl -s -X POST localhost:8790/config -H 'content-type: application/json' -d '{"speed":1}'
 ```
 Routines and consolidation are the only two genuinely hard to trigger by hand (they need
-real presence transitions / 60+ facts). They're covered by the test suite, ask me if you
-want a quick way to force them.
+real presence transitions / 60+ facts). Both are covered by the test suite.

@@ -5,17 +5,49 @@
 <h1 align="center">The Keeper</h1>
 
 > An AI companion that decides on its own when to speak: long-term
-> memory that tracks what *changed* about you, tools over MCP, sandboxed code
-> execution, A2A interop with other agents, and a native OS notification that
-> reaches you with the browser closed.
+> memory that tracks what *changed* about you, your Gmail and Google Calendar
+> with nothing sent until you say yes, a chat on your phone, errands on a
+> schedule, and a native OS notification that reaches you with the browser closed.
 
 **[Features](FEATURES.md)** · **[Architecture](docs/ARCHITECTURE.md)** · **[Demo script](docs/DEMO.md)** · **[Voice spec](KEEPER_VOICE.md)** · **[Testing rules](tests/README.md)**
 
 ![CI](https://github.com/Jessego5/the-keeper/actions/workflows/ci.yml/badge.svg)
-![tests](https://img.shields.io/badge/tests-457%20unit%20%2B%20integration-informational)
-![evals](https://img.shields.io/badge/LLM%20evals-60-informational)
+![tests](https://img.shields.io/badge/tests-665%20unit%20%2B%20integration-informational)
+![evals](https://img.shields.io/badge/LLM%20evals-73-informational)
+
+<p align="center">
+  <a href="docs/media/the-keeper-demo.mp4">
+    <img src="docs/screenshots/demo-poster.png" width="720" alt="The demo video: the Keeper introduces itself, then remembers, drafts a calendar event and an email for approval, and reaches out on its own">
+  </a>
+  <br>
+  <b><a href="docs/media/the-keeper-demo.mp4">▶ Watch the demo video</a></b> · <a href="https://github.com/Jessego5/the-keeper/raw/main/docs/media/the-keeper-demo.mp4">download it</a>
+  <br>
+  <sub>2 min 21 s, with sound: memory, a calendar event and an email that wait for
+  a yes, and a line it decides to send on its own.</sub>
+</p>
 
 ## What it can actually do
+
+- **It acts, but only with your yes.** Anything that changes the world (an email,
+  a calendar event, a file) becomes a card showing the exact payload that will run,
+  never a summary of it. Approve, edit or decline on the page or with buttons in
+  Telegram. Each card runs at most once and expires after a day.
+- **Gmail and Google Calendar**, through
+  [google_workspace_mcp](https://github.com/taylorwilsdon/google_workspace_mcp).
+  Reading is direct; sending and creating go through the card above. It also watches
+  the inbox and the next day's calendar, and speaks up only when something bears on
+  what it knows about you.
+- **A chat on your phone.** The Telegram bot is a way back in, not just a speaker:
+  talk to it there in its own thread, approve from the notification, and turn it
+  down with `/quiet` or `/off`.
+- **Errands on a schedule.** "Every weekday at 8, check my inbox" becomes a job that
+  survives restarts. An opt-in morning brief reads today's events and the mail that
+  needs you, then lists what is waiting on your yes and what it is holding for today.
+- **It learns how you like things done.** Say "from now on, keep emails short", or
+  just edit one of its drafts before approving it: the difference becomes a *way*
+  it applies to the next draft of that kind, listed on the dashboard to forget.
+- **A proactivity dial.** Off, quiet, usual, eager. Off silences only its own
+  initiative; reminders you asked for and cards waiting on you still arrive.
 
 - **Tools over [MCP](https://modelcontextprotocol.io).** Servers you configure,
   launched over stdio: files, fetch, search, time, git. Read-only by default, with
@@ -25,9 +57,10 @@
   5 s CPU cap, a 512 MB address-space limit, an 8 s wall clock and a 4 000-char
   output cap. The fences and the places they leak are written down in
   [`sandbox.py`](backend/sandbox.py) rather than claimed.
-- **Thirteen native tools of its own**, on top of whatever MCP provides:
-  reminders it hands back at the right moment, an append-only journal, and goals
-  broken into steps that are each assigned to you or to it.
+- **Twenty native tools of its own**, on top of whatever MCP provides:
+  reminders it hands back at the right moment, an append-only journal, goals
+  broken into steps that are each assigned to you or to it, and the jobs, ways and
+  dial above.
 - **Specialists and background work.** A researcher, archivist, scribe and analyst,
   reachable either with `delegate`, which answers in the same breath, or
   `spawn_task`, which goes away and comes back unprompted when it is done.
@@ -37,6 +70,8 @@
 - **Four delivery surfaces.** A native OS banner that reaches you with the browser
   closed, live web events, Telegram and Discord. `/state` reports which are really
   live rather than which are configured.
+- **Always on.** A launchd agent starts it at login and after a crash, and a lock
+  file means a second copy cannot start at all.
 
 There is no hosted demo on purpose. It is single-user by design, it reads your
 idle time and screen-lock state, and it fires OS notifications. Those are the
@@ -92,7 +127,22 @@ firehose.
 
 The same event fires a native desktop banner with the Keeper's own icon, so it
 reaches you with the browser shut: the window above is just where it is easiest
-to photograph.
+to photograph. With Telegram set up, the line lands on your phone in the same
+moment:
+
+![A macOS banner from the Keeper and the same line arriving in its Telegram chat, together, with nobody having typed](docs/screenshots/reach.gif)
+
+**Asking it to do something is a different path.** It drafts, shows you exactly
+what will run, and does nothing until you approve. Here a calendar request becomes
+a card, the card is approved, and the event appears in Google Calendar with the
+title, day and time the card said:
+
+![A calendar request becomes an approval card with the exact payload; approved, the event appears in Google Calendar](docs/screenshots/approve.gif)
+
+The card is rendered from the stored arguments, not from a model's description of
+them, so what you approve is what runs. Edit a field first and it runs the edited
+version; it also compares your edit with its draft and keeps the difference as a
+way to do it next time.
 
 **The trace is the thing to open first.** Per turn it shows the register and why,
 what memory was injected, every tool that fired with its arguments and result, and
@@ -138,7 +188,19 @@ docker compose up -d
 .venv/bin/python -m uvicorn scripts.almanac_agent:app --port 8791
 ```
 
-**Requirements:** Python 3.11+, macOS for presence sensing and native banners
+**Optional, the rest of your life** (each step is in
+[`backend/.env.example`](backend/.env.example)):
+
+```bash
+.venv/bin/python scripts/google_auth.py     # Gmail + Calendar, consent once
+.venv/bin/python scripts/telegram_setup.py  # the bot: avatar, menu, and you as owner
+scripts/keeper_service.sh install           # keep it running, at login and after a crash
+```
+
+Google needs an OAuth client of your own (a free Cloud project, left in Testing).
+Use a spare account first if you want to see what it does before it reads yours.
+
+**Requirements:** Python 3.13, macOS for presence sensing and native banners
 (everything else is cross-platform), Node 20+ and `uv` only if you enable MCP
 tool servers.
 
@@ -165,10 +227,13 @@ flowchart TB
     subgraph proactive["Proactive loop, on its own clock"]
         TICK[tick] --> G1{day spent?} --> G2{cooldown?} --> G3{screen locked?}
         G3 --> G4{roll to speak?} --> G5{anything to say?}
-        G5 --> OUT[notification / SSE / Discord]
+        G5 --> OUT[banner / SSE / Telegram / Discord]
     end
-    SRC[RSS + MCP tools] --> REL[relevance gate<br/>mention 0.45 / interrupt 0.75]
+    GEN -->|changes the world| PROP[proposal card<br/>exact payload]
+    PROP -->|your yes, web or Telegram| RUN[runs once]
+    SRC[RSS + Gmail + Calendar] --> REL[relevance gate<br/>mention 0.45 / interrupt 0.75]
     REL --> G4
+    JOBS[jobs on a schedule] --> OUT
     STORE --> REC
     STORE --> REL
 ```
@@ -189,7 +254,7 @@ flowchart TB
 
 Two loops share one store. When you speak, the **passive loop** reads a register
 from the message, recalls facts scored by relevance, recency and importance,
-composes a reply, scores that reply against eleven voice rules and retries if it
+composes a reply, scores that reply against the seven voice rules and retries if it
 fails, then distills durable facts back into the store. If a new fact updates an
 old one, a judge confirms it and the old fact is *closed*, not deleted, so the
 change itself becomes history the Keeper can point at later.
@@ -212,6 +277,12 @@ backend/
   voice_eval.py     13 checks over the seven rules: 8 mechanical, 5 judged
   mood.py           register classification, with fallbacks
   tools.py          MCP client: timeouts, health, read-only by default
+  proposals.py      the approval queue: exact payloads, at most once, expiry
+  inbox.py          Telegram as a way in: chat, buttons, /quiet and /off
+  jobs.py           errands on a schedule, the morning brief
+  ways.py           how you like things done, learned from words and edits
+  dial.py           off / quiet / usual / eager
+  unbidden.py       every line it sent on its own, replayed to a page that missed it
   a2a.py            agent card, peer consultation, SSRF checks
   sandbox.py        run_python fences, and their documented limits
   *_bench.py        measurement harnesses (register, interruption policy)
@@ -280,7 +351,7 @@ rather than credited with the restraint the cooldown provides.
 
 ### LLM evaluation
 
-- **Harness:** 60 evals in `tests/evals/`, plus 440 unit and integration tests.
+- **Harness:** 73 evals in `tests/evals/`, plus 665 unit and integration tests.
   Run on demand, not in CI, because the API key deliberately never goes to GitHub.
 - **Judges:** LLM-as-judge for relevance, supersession, and knowledge update;
   `metrics.py` adds `token_f1` and `exact_match` alongside, since substring checks
@@ -293,8 +364,9 @@ rather than credited with the restraint the cooldown provides.
   judge copying the example out of its own prompt onto every item in a scan; a
   similarity floor that hid event-phrased updates ("Moved to Chicago last month")
   from the judge entirely; a voice rule matching "ache" inside "gouache".
-- **Guardrails:** MCP tools read-only by default with an explicit allowlist; every
-  MCP call on a deadline; the proactive loop sealed away from tools; outbound A2A
+- **Guardrails:** MCP tools read-only by default with an explicit allowlist;
+  anything that sends, creates or writes held for a human yes on the exact payload;
+  every MCP call on a deadline; the proactive loop sealed away from tools; outbound A2A
   calls refusing any non-global IP; the Keeper's own A2A endpoint behind a bearer
   token compared with `secrets.compare_digest`.
 
@@ -339,8 +411,8 @@ it should have been the rule from the first eval rather than the fourth bug.
 ## Testing and reliability
 
 ```bash
-.venv/bin/pytest                       # unit + integration (440)
-.venv/bin/pytest tests/evals -m eval   # the live tier (60, needs a key)
+.venv/bin/pytest                       # unit + integration (665)
+.venv/bin/pytest tests/evals -m eval   # the live tier (73, needs a key)
 .venv/bin/ruff check backend tests
 python backend/mood_bench.py           # register classifier
 python backend/proactive_bench.py      # interruption policy
@@ -366,22 +438,24 @@ python backend/proactive_bench.py      # interruption policy
 
 ## Limitations and next steps
 
-- **No conversation history reaches the model.** Each turn is stateless apart from
-  distilled long-term memory, so a bare follow-up like "what about the other one?"
-  has nothing to resolve against. Memory is the mechanism by design, but this is a
-  real gap rather than a pure design choice.
+- **Only a short conversation window.** The last eight messages from the past two
+  hours reach the model, with the outcome of any card decided in between. Anything
+  older lives only as distilled memory, so a follow-up to yesterday's conversation
+  resolves against facts, not against what was said.
+- **Google tokens expire weekly.** An OAuth project left in Testing (the price of
+  skipping Google's review for an app with one user) issues tokens that last seven
+  days; `scripts/google_auth.py` renews one.
 - **Model aliases are floating, not pinned.** `gpt-4o` and `gpt-4o-mini` can change
   behaviour under the evals without a commit. Pinning to dated snapshots is the
   correct fix and is not done.
 - **Presence sensing is macOS only.** In Docker all three sensors go null and the
   native banner cannot fire; `/state` says so rather than pretending.
 - **No auth on the HTTP surface.** Anything that can reach `127.0.0.1:8790` can
-  drive it. Acceptable for a local single-user app behind a Host check, and the
+  drive it, though approving a card also requires a same-origin request. Acceptable for a local single-user app behind a Host check, and the
   first thing to fix if it were ever exposed.
 - **The register labels are one person's judgment**, on 100 cases. Directional,
   not ground truth, and the dataset says so in its own description.
-- **Next:** pin the model snapshots; carry a short conversation window into the
-  passive path; structured outputs for the verdict parsers, which are lenient
+- **Next:** pin the model snapshots; structured outputs for the verdict parsers, which are lenient
   free-text readers today precisely because models misspell their own answers.
 
 ---
