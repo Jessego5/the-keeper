@@ -1155,3 +1155,17 @@ def test_today_is_said_next_to_the_request(monkeypatch, tmp_path):
     read against the model's training year."""
     note = server._now_note(datetime(2026, 10, 12, 9, 30).timestamp())
     assert "Monday 12 October 2026, 09:30" in note and "this week" in note
+
+
+# --- the bundled interface font --- #
+
+async def test_the_bundled_font_is_served(client):
+    r = await client.get("/fonts/Fraunces.ttf")
+    assert r.status_code == 200 and r.headers["content-type"] == "font/ttf"
+
+
+async def test_the_font_route_serves_nothing_else(client):
+    """A fixed list, not a folder: no path a page could ask for reaches another
+    file."""
+    for name in ("OFL.txt", "..%2Fserver.py", "keeper.png", "Fraunces.TTF"):
+        assert (await client.get(f"/fonts/{name}")).status_code == 404

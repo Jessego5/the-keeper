@@ -209,6 +209,27 @@
   @media (max-width: 640px) {
     #sidebar { flex-basis: 9.5rem; width: 9.5rem; }
   }
+
+  /* Fraunces for everything around the conversation; the conversation itself
+     (chat lines, the message box, the trace's cue and reply) stays in Iowan, the
+     voice the Keeper has always spoken in. Bundled, not fetched: the Keeper works
+     offline and should not call out to a font server each time a page opens. */
+  @font-face { font-family: "Fraunces"; font-style: normal; font-weight: 100 900;
+    src: url("/fonts/Fraunces.ttf") format("truetype"); font-display: swap; }
+  @font-face { font-family: "Fraunces"; font-style: italic; font-weight: 100 900;
+    src: url("/fonts/Fraunces-Italic.ttf") format("truetype"); font-display: swap; }
+  :root { --ui: "Fraunces", "Iowan Old Style", Palatino, Georgia, serif; }
+
+  body, button, #sidebar, header, .ts, #hint, #deeplink a, .watermark, #pending,
+  .proposal .p-head, .proposal .p-outcome, .proposal .p-learned, .proposal button,
+  .proposal .p-edit label { font-family: var(--ui); font-variation-settings: "SOFT" 100, "WONK" 1; }
+  .line .text, #entry, #entry::placeholder { font-family: var(--serif);
+    font-variation-settings: normal; }
+  #sidebar .side-title, header, .proposal .p-head, .proposal .p-edit label,
+  #deeplink a { font-variant-caps: all-small-caps; text-transform: none; letter-spacing: 0.07em; text-indent: 0; }
+  #sidebar .side-title { font-size: 0.82rem; }
+  header { font-size: 0.95rem; }
+  .proposal .p-head, #deeplink a { font-size: 0.78rem; }
 </style>
 </head>
 <body>

@@ -38,7 +38,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from fastapi import FastAPI, Request
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, Response, StreamingResponse
 from pydantic import BaseModel
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
@@ -1948,6 +1948,19 @@ async def a2a_endpoint(req: Request):
 async def trace():
     """The last turns' decisions, memory injected, register, tools fired, reply."""
     return list(STATE.traces)
+
+
+# The bundled interface font, and nothing else from that folder: a fixed list, so
+# this can never be used to read a file by name.
+FONTS = {"Fraunces.ttf", "Fraunces-Italic.ttf"}
+
+
+@app.get("/fonts/{name}")
+async def font(name: str):
+    if name not in FONTS:
+        return Response(status_code=404)
+    return FileResponse(STATIC_DIR / "fonts" / name, media_type="font/ttf",
+                        headers={"cache-control": "max-age=86400"})
 
 
 @app.get("/trace-view")

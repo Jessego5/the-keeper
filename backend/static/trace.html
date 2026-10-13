@@ -48,7 +48,21 @@
   .flag { color:var(--amber); }
   .foot { text-align:center; color:var(--current); font-size:0.62rem; margin-top:1rem; }
   .dim{opacity:.65;font-size:.85em}
-  </style>
+  
+  /* Fraunces for everything around the conversation; the conversation itself
+     (chat lines, the message box, the trace's cue and reply) stays in Iowan, the
+     voice the Keeper has always spoken in. Bundled, not fetched: the Keeper works
+     offline and should not call out to a font server each time a page opens. */
+  @font-face { font-family: "Fraunces"; font-style: normal; font-weight: 100 900;
+    src: url("/fonts/Fraunces.ttf") format("truetype"); font-display: swap; }
+  @font-face { font-family: "Fraunces"; font-style: italic; font-weight: 100 900;
+    src: url("/fonts/Fraunces-Italic.ttf") format("truetype"); font-display: swap; }
+  :root { --ui: "Fraunces", "Iowan Old Style", Palatino, Georgia, serif; }
+
+  h1, .label { font-family: var(--ui); font-variation-settings: "SOFT" 100, "WONK" 1; font-variant-caps: all-small-caps; text-transform: none; letter-spacing: 0.07em; text-indent: 0; }
+  h1 { font-size: 0.95rem; }
+  .label { font-size: 0.78rem; }
+</style>
 </head>
 <body>
   <div class="wrap">

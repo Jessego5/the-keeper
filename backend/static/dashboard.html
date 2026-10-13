@@ -83,7 +83,23 @@
   .dial { display:flex; gap:0.5rem; flex-wrap:wrap; margin-bottom:0.55rem; }
   .dial .badge.on, .dial .badge.on:hover { color:var(--deep); border-color:var(--tide);
                     background:var(--tide); }
-  </style>
+  
+  /* Fraunces for everything around the conversation; the conversation itself
+     (chat lines, the message box, the trace's cue and reply) stays in Iowan, the
+     voice the Keeper has always spoken in. Bundled, not fetched: the Keeper works
+     offline and should not call out to a font server each time a page opens. */
+  @font-face { font-family: "Fraunces"; font-style: normal; font-weight: 100 900;
+    src: url("/fonts/Fraunces.ttf") format("truetype"); font-display: swap; }
+  @font-face { font-family: "Fraunces"; font-style: italic; font-weight: 100 900;
+    src: url("/fonts/Fraunces-Italic.ttf") format("truetype"); font-display: swap; }
+  :root { --ui: "Fraunces", "Iowan Old Style", Palatino, Georgia, serif; }
+
+  body, .btn, .badge { font-family: var(--ui); font-variation-settings: "SOFT" 100, "WONK" 1; }
+  h1, .tile .label, .reflection .label, .goal .gp { font-variant-caps: all-small-caps; text-transform: none; letter-spacing: 0.07em; text-indent: 0; }
+  h1 { font-size: 0.95rem; }
+  .tile .label, .reflection .label { font-size: 0.78rem; }
+  .tile .val { font-weight: 420; letter-spacing: -0.01em; }
+</style>
 </head>
 <body>
   <div class="wrap">
