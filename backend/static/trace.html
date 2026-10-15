@@ -13,6 +13,9 @@
   }
   * { box-sizing:border-box; }
   html,body { margin:0; min-height:100%; }
+  /* Behind the fixed ramp, for anything past the first screen: overscroll, a
+     full-page capture. Without it that part showed the browser's grey. */
+  html { background:var(--deep); }
   /* background-attachment:fixed maps the ramp to the VIEWPORT, not the document.
      Without it the gradient stretches across the full scroll height, and the trace
      grows without limit, so a long session smeared it into flat dull bands. */
