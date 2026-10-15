@@ -69,6 +69,39 @@ def test_a_faithful_revoice_is_kept():
     assert out == "Friday at 3:15, the dentist."
 
 
+def test_a_capitalised_helper_word_is_not_a_name():
+    """Seen re-recording the README: "Would you like me to read them?" voiced
+    without "would" was thrown away as a lost name."""
+    out = compose.revoice("Would you like me to read the notes?",
+                          generate=lambda s, u: "Shall I read the notes to you?")
+    assert out == "Shall I read the notes to you?"
+
+
+def test_a_headline_needs_most_of_its_capitals_not_all():
+    """Every word of a headline is capitalised. "Invites Us to Slow Down and
+    Practice Noticing" retold in a sentence lost no fact."""
+    original = ("Jonathan Knight's Meditative Series 'Exhale' Invites Us to Slow "
+                "Down and Practice Noticing.")
+    voiced = ("Jonathan Knight's meditative series, Exhale, asks you to slow and "
+              "practice noticing.")
+    assert compose.revoice(original, generate=lambda s, u: voiced) == voiced
+
+
+def test_a_headline_that_loses_most_of_itself_is_not_used():
+    original = ("Jonathan Knight's Meditative Series 'Exhale' Invites Us to Slow "
+                "Down and Practice Noticing.")
+    assert compose.revoice(original, generate=lambda s, u: (
+        "A photographer asks you to breathe.")) == original
+
+
+def test_a_name_at_the_start_of_a_sentence_still_counts():
+    """The guard was written for who did what to whom: "Sam wrote back" must not
+    lose Sam because Sam happens to open the sentence."""
+    original = "Sam wrote back. He can do Saturday."
+    assert compose.revoice(original, generate=lambda s, u: (
+        "Someone wrote back about Saturday.")) == original
+
+
 # --- a timed request that nothing was called for gets one more round --- #
 
 class _FakeOpenAI:

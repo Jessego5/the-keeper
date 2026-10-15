@@ -242,7 +242,14 @@ _NOT_NAMES = {"the", "a", "an", "i", "it", "its", "this", "that", "these", "thos
               "their", "here", "there", "what", "when", "if", "and", "but", "so",
               "yes", "no", "done", "in", "on", "at", "for", "to", "of", "with",
               "from", "by", "as", "is", "was", "be", "not", "then", "also", "just",
-              "nothing", "something", "everything", "one", "all", "some", "each"}
+              "nothing", "something", "everything", "one", "all", "some", "each",
+              # capitalised at the start of a sentence or in a headline, and never
+              # a name: "Would you like…" and "…Invites Us to Slow Down" both
+              # threw away a good re-voice, found re-recording the README demo
+              "us", "me", "him", "them", "would", "could", "should", "can",
+              "might", "must", "do", "does", "did", "have", "has", "had",
+              "are", "were", "how", "why", "who", "where", "which", "up", "down",
+              "out", "into", "about", "or", "now"}
 _LINK = re.compile(r"https?://\S+")
 _ADDRESS = re.compile(r"\b[\w.+-]+@[\w-]+\.[\w.]+\b")
 
@@ -262,16 +269,30 @@ def _lost_specifics(original: str, voiced: str) -> set:
     # Inside a link or an address, letters and digits are not facts to say; the
     # link is checked whole, above, and an address is spoken or not as a unit.
     scan = _ADDRESS.sub(" ", _LINK.sub(" ", original))
-    for tok in _SPECIFIC.findall(scan):
-        if tok.lower().strip("'") in _NOT_NAMES:
-            continue
-        if tok.lower() in have:
-            continue
-        # "3 commits" voiced as "three commits" kept the fact.
-        if tok.isdigit() and int(tok) < len(_NUMBER_WORDS) and re.search(
-                rf"\b{_NUMBER_WORDS[int(tok)]}\b", have):
-            continue
-        lost.add(tok)
+    for sentence in re.split(r"(?<=[.!?])\s+|\n+", scan):
+        missing, capitals = set(), 0
+        for tok in _SPECIFIC.findall(sentence):
+            if tok.lower().strip("'") in _NOT_NAMES:
+                continue
+            if not tok[0].isdigit():
+                capitals += 1
+            if tok.lower() in have:
+                continue
+            # "3 commits" voiced as "three commits" kept the fact.
+            if tok.isdigit() and int(tok) < len(_NUMBER_WORDS) and re.search(
+                    rf"\b{_NUMBER_WORDS[int(tok)]}\b", have):
+                continue
+            missing.add(tok)
+        # A headline capitalises every word, so each one reads as a name, and a
+        # re-voice that says "a meditative series" for "Meditative Series" lost
+        # nothing. There, the re-voice must keep most of the capitals, not all.
+        # Numbers are still checked one by one.
+        words = re.findall(r"[A-Za-z][\w'-]*", sentence)
+        headline = len(words) >= 5 and capitals >= 0.6 * len(words)
+        names_missing = {t for t in missing if not t[0].isdigit()}
+        if headline and len(names_missing) * 2 <= capitals:
+            missing -= names_missing
+        lost |= missing
     return lost
 
 
