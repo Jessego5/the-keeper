@@ -123,7 +123,7 @@ Keep the **trace** open (`/trace-view`) to watch every tool fire.
 
 ## J. Under the hood
 - [ ] **Voice fidelity harness**: `.venv/bin/python backend/voice_test.py` (scores lines across every mode).
-- [ ] **Test suite**: `.venv/bin/python -m pytest -q` (665 tests, offline; evals excluded by default).
+- [ ] **Test suite**: `.venv/bin/python -m pytest -q` (671 tests, offline; evals excluded by default).
 
 ---
 

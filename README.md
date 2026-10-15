@@ -12,15 +12,15 @@
 **[Features](FEATURES.md)** · **[Architecture](docs/ARCHITECTURE.md)** · **[Demo script](docs/DEMO.md)** · **[Voice spec](KEEPER_VOICE.md)** · **[Testing rules](tests/README.md)**
 
 ![CI](https://github.com/Jessego5/the-keeper/actions/workflows/ci.yml/badge.svg)
-![tests](https://img.shields.io/badge/tests-665%20unit%20%2B%20integration-informational)
-![evals](https://img.shields.io/badge/LLM%20evals-73-informational)
+![tests](https://img.shields.io/badge/tests-671%20unit%20%2B%20integration-informational)
+![evals](https://img.shields.io/badge/LLM%20evals-74-informational)
 
 <p align="center">
-  <a href="docs/media/the-keeper-demo.mp4">
+  <a href="https://jessego5.github.io/the-keeper/demo.html">
     <img src="docs/screenshots/demo-poster.png" width="720" alt="The demo video: the Keeper introduces itself, then remembers, drafts a calendar event and an email for approval, and reaches out on its own">
   </a>
   <br>
-  <b><a href="docs/media/the-keeper-demo.mp4">▶ Watch the demo video</a></b> · <a href="https://github.com/Jessego5/the-keeper/raw/main/docs/media/the-keeper-demo.mp4">download it</a>
+  <b><a href="https://jessego5.github.io/the-keeper/demo.html">▶ Watch the demo video</a></b> · <a href="https://github.com/Jessego5/the-keeper/raw/main/docs/media/the-keeper-demo.mp4">download it</a>
   <br>
   <sub>2 min 21 s, with sound: memory, a calendar event and an email that wait for
   a yes, and a line it decides to send on its own.</sub>
@@ -91,7 +91,8 @@ earns a register it is not allowed to claim on wording alone.
 > i stopped painting in march      [tidal]  inherited (no signal in this message)
 > actually i started painting again[tidal]  classified tidal
 > how is my painting going?        [turn]   turn earned by a recorded reversal:
-                                            Started painting again.
+                                            Stopped painting previously; now
+                                            painting again.
 
 facts kept 1 · changes tracked 1
 ```
@@ -101,22 +102,27 @@ change itself is kept as history. `turn` is the rarest register and cannot be
 bought with phrasing. Say "everything is finally turning around for me" and it
 comes back `tidal`, with `turn not earned, nothing the store remembers changed`.
 
-**Then nobody types anything.** Two minutes later the same window moves on its
+**Then nobody types anything.** A little later the same window moves on its
 own. It is not a timer going off: something it watches turned out to bear on a
 fact it keeps, and that is the only reason it is allowed to interrupt you.
 
-![The same conversation, still. Then an unbidden line arrives on its own, two minutes after the last thing anyone typed](docs/screenshots/proactive.gif)
+![The same conversation, still. Then an unbidden line arrives on its own, after the last thing anyone typed](docs/screenshots/proactive.gif)
 
 ```
-[sources] scanned 13, 6 judged not worth saying
-[sources] pending 'Denizens of a Crowded City Populate Erin Milez's D…'
-          relevance=0.9 because='Started painting again.'
+[sources] scanned 8, 8 judged not worth saying
+[register] turn earned by: 'Stopped painting previously; now painting again.'
+[sources] memory changed, re-scoring 10 item(s) without refetching
+[sources] pending 'Symmetry Meets the Sacred in Shuling Guo's Dreamy,…'
+          relevance=0.9 because='Stopped painting previously; now painting again.'
 [proactive] tick spoke=True reason='spoke about something watched'
 ```
 
-The `because` is the fact it turned on, copied out of the store: the same
-reversal that earned `turn` a moment earlier. Had you never mentioned painting,
-that item scores near zero and you never hear about it. Most of what it scans
+The first scan came before it knew anything about you, and all eight items were
+judged not worth saying. When memory changed, it re-scored what it had already
+fetched rather than waiting for the feed. The `because` is the fact it turned on,
+copied out of the store: the same reversal that earned `turn` a moment earlier.
+Had you never mentioned painting, that item stays near zero and you never hear
+about it. Most of what it scans
 never clears the bar, which is the subject of the dashboard below.
 
 Two thresholds, not one. Clearing **0.45** only changes what it says when it was
@@ -153,15 +159,16 @@ showing `was` then `now`:
 ![The trace: an unbidden line, an A2A consultation, and the injected memory showing what changed](docs/screenshots/trace.png)
 
 **The dashboard shows what it decided *not* to say.** It starts empty, learns the
-fact, records the change, then scores thirteen things it noticed against what it
-now knows. Two clear the bar. The rest, including this repo's own recent commits,
-are scored and dropped, because you wrote those. The rejecting is the point.
+fact, records the change, then scores what it noticed against what it now knows.
+One item clears the bar to interrupt. Four more would only be mentioned if it were
+speaking anyway, and the rest are dropped. The rejecting is the point.
 
-![The dashboard filling: counters moving as facts land, then thirteen items scored and mostly dropped](docs/screenshots/dashboard.gif)
+![The dashboard filling: counters moving as facts land, then the noticed items scored, one to interrupt and the rest mostly dropped](docs/screenshots/dashboard.gif)
 
 <sub>Recorded against a running instance with the Keeper's clock compressed
-(`speed 600`), which is the same knob the demo script uses, so an hour of its
-patience fits in seven seconds. Nothing else is sped up.</sub>
+(`speed 600`), the same knob the demo script uses, so an hour of its patience fits
+in a few seconds. The dashboard GIF also plays at 3.5x, so the 40-second take fits
+in under twelve; the chat GIF is real time.</sub>
 
 ---
 
@@ -351,7 +358,7 @@ rather than credited with the restraint the cooldown provides.
 
 ### LLM evaluation
 
-- **Harness:** 73 evals in `tests/evals/`, plus 665 unit and integration tests.
+- **Harness:** 74 evals in `tests/evals/`, plus 671 unit and integration tests.
   Run on demand, not in CI, because the API key deliberately never goes to GitHub.
 - **Judges:** LLM-as-judge for relevance, supersession, and knowledge update;
   `metrics.py` adds `token_f1` and `exact_match` alongside, since substring checks
@@ -411,8 +418,8 @@ it should have been the rule from the first eval rather than the fourth bug.
 ## Testing and reliability
 
 ```bash
-.venv/bin/pytest                       # unit + integration (665)
-.venv/bin/pytest tests/evals -m eval   # the live tier (73, needs a key)
+.venv/bin/pytest                       # unit + integration (671)
+.venv/bin/pytest tests/evals -m eval   # the live tier (74, needs a key)
 .venv/bin/ruff check backend tests
 python backend/mood_bench.py           # register classifier
 python backend/proactive_bench.py      # interruption policy
