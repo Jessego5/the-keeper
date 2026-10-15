@@ -708,6 +708,23 @@ def _now_note(now: Optional[float] = None) -> str:
             f"week', 'tomorrow' all count from here.")
 
 
+def _memory_note(mem: str) -> str:
+    """What it keeps about them that bears on this, said next to the request too.
+
+    Recall was always in the system prompt, above the tool addendum. Asked "how is
+    my painting going?" with "was: stopped painting in March, now: started again"
+    recalled and the turn register earned on it, the model answered two times in
+    three by offering to read the journal: the addendum's paragraphs about
+    journals and goals came after the memory and won. Found re-recording the README
+    demo. The same cure as the date and the ways: the few lines that matter for
+    this message, next to it."""
+    if not mem.strip():
+        return ""
+    return ("What you keep about them that bears on this message. It is what they "
+            "told you, not a note or a file: when it answers them, answer from it, "
+            f"and reach for a tool only for what it does not hold.\n{mem.strip()}")
+
+
 def _recent_turns(key: Optional[str], now: Optional[float] = None) -> list:
     """The tail of a conversation as chat messages, oldest first.
 
@@ -850,7 +867,8 @@ async def _converse(msg: str, key: str, surface: str = "web") -> dict:
                 system, msg, providers=providers, model=TOOL_MODEL, max_rounds=6,
                 trace=tool_trace, prior=prior,
                 steer="\n\n".join(x for x in (
-                    _now_note(now), ways_mod.as_guidance(ways_used)) if x),
+                    _now_note(now), _memory_note(mem),
+                    ways_mod.as_guidance(ways_used)) if x),
                 expect_one_of=_expected_tools(
                     msg, set(proposer.actions) if proposer is not None else None))
             # Tool answers come back plain (a changelog, a file dump). Pass them back

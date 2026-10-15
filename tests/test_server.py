@@ -1150,6 +1150,30 @@ async def test_a_refused_calendar_is_not_an_empty_week(monkeypatch):
 
 
 
+async def test_what_it_keeps_is_said_next_to_the_request(monkeypatch, tmp_path):
+    """Recall used to sit only above the tool addendum, and lost to it: "how is my
+    painting going?" was answered with an offer to read the journal."""
+    _isolate_delivery(monkeypatch, tmp_path)
+    steers = []
+
+    async def fake_tool_reply(system, user, steer="", **kw):
+        steers.append(steer)
+        return "it came back"
+
+    monkeypatch.setattr(server.compose, "tool_reply", fake_tool_reply)
+    monkeypatch.setattr(server.compose, "revoice", lambda text, *a, **k: text)
+    monkeypatch.setattr(server.memory, "recall",
+                        lambda *a, **k: "- Started painting again.")
+    monkeypatch.setattr(server, "_distill_async", _noop_distill)
+    await server.chat(server.ChatIn(message="how is my painting going?"))
+    assert "- Started painting again." in steers[0]
+    assert "answer from it" in steers[0]
+
+
+def test_nothing_recalled_adds_no_memory_note():
+    assert server._memory_note("  \n") == ""
+
+
 def test_today_is_said_next_to_the_request(monkeypatch, tmp_path):
     """The note names the weekday, the date and the year, so "this week" cannot be
     read against the model's training year."""
